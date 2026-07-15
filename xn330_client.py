@@ -62,7 +62,7 @@ def execute_host_query(conn, sample_id: str):
     # Strip down trailing delimiters to strictly match the 13-field structural array
     # Sysmex format: Q | 1 | ^SampleID | | | | | | | | | | A
     # 'A' tells the machine to look up and return ALL matching stored database results.
-    query_string = f"Q|1|^{sample_id}||||||||||A"
+    query_string = f"Q|1|^{sample_id}||ALL||||||||A"
     if not send_record_and_wait(conn, 2, query_string):
         conn.sendall(EOT)
         return False

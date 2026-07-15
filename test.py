@@ -67,7 +67,7 @@ def execute_host_query(conn, sample_id: str):
         return False
         
     # 2. Query Frame (Clean Sysmex XN format for target Sample Lookup)
-    query_string = f"Q|1|^{sample_id}||||||||||O"
+    query_string = f"Q|1|^{sample_id}||ALL||||||||A"
     if not send_record_and_wait(conn, 2, query_string):
         conn.sendall(EOT)
         return False
