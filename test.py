@@ -1,12 +1,11 @@
-
-
+#!/usr/bin/env python3
 import socket
 import re
 import json
+import time
 from datetime import datetime
 
-HOST = '0.0.0.0'   # bind to all interfaces so it works regardless of which
-                    # link-local/static IP is currently active
+HOST = '0.0.0.0'
 PORT = 6000
 
 ENQ = b'\x05'
@@ -15,220 +14,139 @@ NAK = b'\x15'
 EOT = b'\x04'
 STX = b'\x02'
 ETX = b'\x03'
-CR = b'\x0d'
-LF = b'\x0a'
-
-
-# ---------------------------------------------------------------------------
-# Frame building (for host-initiated messages, e.g. queries)
-# ---------------------------------------------------------------------------
+CR  = b'\x0d'
+LF  = b'\x0a'
 
 def build_frame(frame_no: int, text: str) -> bytes:
-    """Build a properly framed + checksummed ASTM message ready to send."""
     body = f"{frame_no}{text}\r".encode('ascii')
     payload = body + ETX
     checksum = sum(payload) & 0xFF
     checksum_hex = f"{checksum:02X}".encode('ascii')
     return STX + payload + checksum_hex + CR + LF
 
+def send_record_and_wait(conn, frame_no: int, text: str) -> bool:
+    frame = build_frame(frame_no, text)
+    print(f">> TX Query Block: {text.strip()}")
+    conn.sendall(frame)
+    try:
+        reply = conn.recv(1024)
+        if reply == ACK:
+            return True
+        print(f"!! Expected ACK, got: {reply}")
+    except socket.error as e:
+        print(f"!! Socket error during query TX: {e}")
+    return False
 
-def build_query(sample_id: str, seq: int = 1, frame_no: int = 1) -> bytes:
+def execute_host_query(conn, sample_id: str):
     """
-    Build a host -> IPU Query (Q) record asking for analysis order info
-    on a given sample ID. General ASTM format: Q|seq|^SampleID
-
-    NOTE: this follows the general ASTM E1381/E1394 query convention seen
-    across ASTM-based clinical analyzers. Sysmex XN may expect additional
-    sub-fields specific to its spec. Treat this as a first attempt and
-    confirm the analyzer responds (rather than NAKs) before relying on it.
+    Safely initiates a background query payload.
+    Uses 'R' flag in 13th field to pull results instead of orders.
     """
-    text = f"Q|{seq}|^{sample_id}"
-    return build_frame(frame_no, text)
+    print(f"\n[QUERY ENGINE] Sending background fetch request for Sample: {sample_id}...")
+    
+    # Force Line Control
+    conn.sendall(ENQ)
+    try:
+        reply = conn.recv(1024)
+    except socket.error:
+        print("!! Connection timed out or reset during line seizure.")
+        return False
 
-
-# ---------------------------------------------------------------------------
-# Decoding
-# ---------------------------------------------------------------------------
-
-def strip_frame(raw: bytes) -> str:
-    """Strip STX/frame-number/ETX/checksum/CRLF wrapper, return payload text."""
-    text = raw.decode('utf-8', errors='replace')
-    if text.startswith('\x02'):
-        text = text[2:]          # drop STX + frame number digit
-    if '\x03' in text:
-        text = text.split('\x03')[0]   # cut at ETX, drop checksum+CRLF
-    return text.rstrip('\r\n')
-
-
-RECORD_TYPES = {
-    'H': 'Header',
-    'P': 'Patient',
-    'O': 'Order',
-    'C': 'Comment',
-    'R': 'Result',
-    'Q': 'Query',
-    'L': 'Terminator',
-}
-
-
-def decode_record(line: str) -> dict:
-    """Decode a single ASTM record line into a structured dict by type."""
-    # strip leading frame-number digit, e.g. "6R|1|..." -> "R|1|..."
-    line = re.sub(r'^\d(?=[A-Z]\|)', '', line)
-    if not line or '|' not in line:
-        return {'type': 'Unknown', 'raw': line}
-
-    rec_type = line[0]
-    fields = line.split('|')
-    kind = RECORD_TYPES.get(rec_type, f'Unknown({rec_type})')
-
-    if rec_type == 'H':
-        # H|\^&|||    XN-330^00-29^18762^^^^CX851950||||||||E1394-97
-        sender = fields[4] if len(fields) > 4 else ''
-        parts = sender.split('^')
-        return {
-            'type': kind,
-            'analyzer_model': parts[0].strip() if parts else '',
-            'software_version': parts[1] if len(parts) > 1 else '',
-            'serial_number': parts[2] if len(parts) > 2 else '',
-            'raw': line,
-        }
-
-    if rec_type == 'O':
-        # O|1||^^   sample_id^M|test_list...
-        sample_field = fields[2] if len(fields) > 2 else ''
-        sample_id = sample_field.split('^')[-2].strip() if '^' in sample_field else sample_field.strip()
-        tests = fields[3] if len(fields) > 3 else ''
-        test_names = [t.split('^')[-1] for t in tests.split('\\') if t]
-        return {
-            'type': kind,
-            'sample_id': sample_id,
-            'tests_ordered': test_names,
-            'raw': line,
-        }
-
-    if rec_type == 'R':
-        # R|seq|^^^^TESTNAME^rep|value|unit||flag||status||operator||timestamp
-        seq = fields[1] if len(fields) > 1 else ''
-        test_field = fields[2] if len(fields) > 2 else ''
-        test_name = test_field.split('^')[-2] if '^' in test_field else test_field
-        value = fields[3] if len(fields) > 3 else ''
-        unit = fields[4] if len(fields) > 4 else ''
-        flag = fields[6] if len(fields) > 6 else ''
-        status = fields[8] if len(fields) > 8 else ''
-        operator = fields[10] if len(fields) > 10 else ''
-        timestamp = fields[-1] if fields else ''
-        return {
-            'type': kind,
-            'seq': seq,
-            'test': test_name,
-            'value': value,
-            'unit': unit,
-            'flag': flag,        # L=low, H=high, A=abnormal, N=normal
-            'status': status,    # F=final
-            'operator': operator,
-            'timestamp': timestamp,
-            'raw': line,
-        }
-
-    if rec_type == 'P':
-        return {'type': kind, 'raw': line}
-
-    if rec_type == 'C':
-        comment = fields[3] if len(fields) > 3 else ''
-        return {'type': kind, 'comment': comment, 'raw': line}
-
-    if rec_type == 'L':
-        return {'type': kind, 'raw': line}
-
-    return {'type': kind, 'raw': line}
-
-
-def print_record(rec: dict):
-    t = rec['type']
-    if t == 'Header':
-        print(f"[HEADER] {rec['analyzer_model']}  SN:{rec['serial_number']}  SW:{rec['software_version']}")
-    elif t == 'Order':
-        print(f"[ORDER]  Sample: {rec['sample_id']}  Tests: {', '.join(rec['tests_ordered'][:5])}...")
-    elif t == 'Result':
-        flag_str = f" [{rec['flag']}]" if rec['flag'] else ''
-        print(f"  {rec['test']:20s} {rec['value']:>10s} {rec['unit']:10s}{flag_str}")
-    elif t == 'Terminator':
-        print(f"[END]    {rec['raw']}")
-    else:
-        print(f"[{t.upper()}]  {rec['raw']}")
-
-
-# ---------------------------------------------------------------------------
-# Main listener
-# ---------------------------------------------------------------------------
+    if reply != ACK:
+        print(f"!! Analyzer refused line control. Sent ENQ, got: {reply}")
+        return False
+        
+    # 1. Header Frame
+    if not send_record_and_wait(conn, 1, "H|\\^&|||LIS|||||||||1394-97"):
+        conn.sendall(EOT)
+        return False
+        
+    # 2. Query Frame (13th field set to 'R' for Results Lookup)
+    query_string = f"Q|1|^{sample_id}||||||||||R"
+    if not send_record_and_wait(conn, 2, query_string):
+        conn.sendall(EOT)
+        return False
+        
+    # 3. Terminator Frame
+    if not send_record_and_wait(conn, 3, "L|1|N"):
+        conn.sendall(EOT)
+        return False
+        
+    # Release Line back to listen state
+    conn.sendall(EOT)
+    print("[QUERY ENGINE] Query frame broadcasted. Waiting for machine response loop...\n")
+    return True
 
 def main():
-    session_records = []
+    sample_id = input("Enter sample ID to query automatically: ").strip()
+    if not sample_id:
+        return
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind((HOST, PORT))
     sock.listen(1)
-    print(f'Listening on {HOST}:{PORT} (all interfaces)...')
+    
+    print(f"\n[SERVER] Automated background engine listening on port {PORT}...")
     conn, addr = sock.accept()
-    print(f'Connected by {addr}\n')
+    print(f"[SERVER] Machine connected from {addr[0]}")
+    conn.settimeout(5) # tight timeout windows for active swaps
 
+    session_records = []
+    
     try:
-        while True:
-            data = conn.recv(4096)
-            if not data:
-                print('Connection closed by analyzer')
-                break
-
-            if data == ENQ:
-                conn.sendall(ACK)
-                continue
-
-            if data == EOT:
-                print('\n>> Session ended (EOT)')
-                break
-
-            if data.startswith(STX):
-                payload = strip_frame(data)
-                conn.sendall(ACK)
-                rec = decode_record(payload)
-                session_records.append(rec)
-                print_record(rec)
-                continue
-
-            # Unknown byte sequence, ACK to keep protocol moving
+        # Step 1: Let the machine speak first or clear its buffers
+        print("[PHASE 1] Initializing stream. Letting machine flush state...")
+        initial_data = conn.recv(1024)
+        
+        if initial_data == ENQ:
+            # If the machine wanted to send something, acknowledge it and let it finish
+            print(">> Machine sent ENQ. Sending ACK to drain its buffer...")
             conn.sendall(ACK)
+            
+            # Read until machine finishes its thought with an EOT
+            while True:
+                chunk = conn.recv(4096)
+                if not chunk or chunk == EOT:
+                    print(">> Machine buffer flushed (EOT received).")
+                    break
+                if chunk.startswith(STX):
+                    conn.sendall(ACK) # Keep it happy until it finishes
+        
+        # Give the machine a brief 200ms processing pause to stabilize its state machine
+        time.sleep(0.2)
+        
+        # Step 2: Now that the line is idle, trigger our query
+        query_sent = execute_host_query(conn, sample_id)
+        
+        if query_sent:
+            print("[PHASE 2] Collecting incoming data packets matching query...")
+            # Step 3: Listen for the database response returning back to us
+            while True:
+                data = conn.recv(4096)
+                if not data:
+                    break
+                
+                if data == ENQ:
+                    conn.sendall(ACK)
+                    continue
+                elif data == EOT:
+                    print('>> Target results streamed completely (EOT received).')
+                    break
+                elif data.startswith(STX):
+                    # We are receiving data frames!
+                    conn.sendall(ACK)
+                    print(f" [DATA RECEIVED] {len(data)} raw bytes caught.")
+                    # (Insert your decode_record logic here to append to session_records)
 
-        # --- Example: send a host-initiated query on a NEW session ---
-        # The analyzer always initiates the TCP connection (see docstring),
-        # so a query can only be sent *after* it connects and during an
-        # active session - e.g. right after receiving its Header record,
-        # before it proceeds to send results on its own.
-        #
-        # query_frame = build_query(sample_id="100")
-        # conn.sendall(query_frame)
-        # response = conn.recv(4096)
-        # print(f"Query response: {response}")
-
-    except KeyboardInterrupt:
-        print('\nStopped by user.')
+    except ConnectionResetError:
+        print("\n!! Error: Analyzer still dropped connection. Verification required.")
+        print(">> Check if IPU Setting 'Realtime Query' or 'Host Query' is checked on the machine.")
+    except socket.timeout:
+        print("\nSession hit idle timeout window.")
     finally:
         conn.close()
         sock.close()
-
-    results = [r for r in session_records if r['type'] == 'Result']
-    out = {
-        'received_at': datetime.now().isoformat(),
-        'source': addr[0],
-        'records': session_records,
-        'results': results,
-    }
-    fname = f"xn330_result_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-    with open(fname, 'w') as f:
-        json.dump(out, f, indent=2)
-    print(f'\nSaved {len(results)} result records to {fname}')
-
 
 if __name__ == '__main__':
     main()
