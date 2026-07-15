@@ -53,21 +53,21 @@ def execute_host_query(conn, sample_id: str):
         print("!! Analyzer refused line control.")
         return False
         
-    # 1. Send Header Record
+    # 1. Send Header Record (Frame 1)
     if not send_record_and_wait(conn, 1, "H|\\^&|||LIS|||||||||1394-97"):
         conn.sendall(EOT)
         return False
         
-    # 2. Send Query Record configured for Historical/Data Request
-    # Sysmex field formatting layout:
-    # Q | Seq | ^SampleID | (blank fields...) | Request Information Status Flag
-    # Adding 'A' or 'O' at the end specifies an Order/Result lookup rather than a real-time sampling request.
-    query_string = f"Q|1|^{sample_id}||||||||||O"
+    # 2. Send Query Record (Frame 2)
+    # Strip down trailing delimiters to strictly match the 13-field structural array
+    # Sysmex format: Q | 1 | ^SampleID | | | | | | | | | | A
+    # 'A' tells the machine to look up and return ALL matching stored database results.
+    query_string = f"Q|1|^{sample_id}||||||||||A"
     if not send_record_and_wait(conn, 2, query_string):
         conn.sendall(EOT)
         return False
         
-    # 3. Send Terminator Record
+    # 3. Send Terminator Record (Frame 3)
     if not send_record_and_wait(conn, 3, "L|1|N"):
         conn.sendall(EOT)
         return False
