@@ -1,4 +1,4 @@
-C:\Users\shifttech\Desktop\labo_test\xn330_client.py
+C:\Users\shifttech\Desktop\labo_test> & C:\Users\shifttech\AppData\Local\Programs\Python\Python37\python.exe C:\Users\shifttech\Desktop\labo_test\xn330_client.py
 Enter sample ID to pull from machine history: 142
 
 [SERVER] Waiting for Sysmex analyzer to connect to your PC on port 6000...
@@ -6,10 +6,15 @@ Enter sample ID to pull from machine history: 142
 
 --- Seizing Line Control to Query Sample: 142 ---
 >> Sending: H|\^&|||LIS|||||||||1394-97
->> Sending: Q|1|^142||||||||O
+>> Sending: Q|1|^142||||||||||O
 >> Sending: L|1|N
 --- Query Transmitted Successfully. Relinquishing line control. ---
 
 Now listening for the data response blocks from the machine...
-
-Session hit idle timeout window.
+Traceback (most recent call last):
+  File "C:\Users\shifttech\Desktop\labo_test\xn330_client.py", line 179, in <module>
+    main()
+  File "C:\Users\shifttech\Desktop\labo_test\xn330_client.py", line 139, in main
+    data = conn.recv(4096)
+ConnectionResetError: [WinError 10054] An existing connection was forcibly closed by the remote host
+PS C:\Users\shifttech\Desktop\labo_test> 
