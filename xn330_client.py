@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
 """
-Sysmex XN-330 ASTM listener with active query capability.
-Now sends host-initiated queries to ask for specific sample data.
+Sysmex XN-330 ASTM client.
+Connect TO the analyzer and request data.
 """
 
 import socket
 import re
 import json
 from datetime import datetime
-
-HOST = '0.0.0.0'
-PORT = 6000
 
 ENQ = b'\x05'
 ACK = b'\x06'
@@ -143,36 +140,49 @@ def print_record(rec: dict):
 
 
 def main():
-    session_records = []
+    analyzer_ip = input("Enter analyzer IP (default 169.254.128.155): ").strip() or "169.254.128.155"
+    analyzer_port = 6000
+    sample_id = input("Enter sample ID to query: ").strip()
+
+    if not sample_id:
+        print("Sample ID required")
+        return
+
+    print(f"\nConnecting to {analyzer_ip}:{analyzer_port}...")
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind((HOST, PORT))
-    sock.listen(1)
-    print(f'Listening on {HOST}:{PORT}...')
-    conn, addr = sock.accept()
-    print(f'Connected by {addr}\n')
-
-    conn.settimeout(10)  # 10 second timeout
-
-    # Send initial ACK to let analyzer know we're ready
-    conn.sendall(ACK)
-    print(">> Sent initial ACK")
-
-    query_sent = False
-    frame_no = 0
+    sock.settimeout(10)
 
     try:
+        sock.connect((analyzer_ip, analyzer_port))
+        print(f"Connected!\n")
+
+        # Send query
+        query_frame = build_query(sample_id, seq=1, frame_no=1)
+        print(f"Sending query for sample: {sample_id}")
+        print(f"Raw bytes: {query_frame}\n")
+        sock.sendall(query_frame)
+
+        # Receive response
+        session_records = []
+        print("Waiting for response...\n")
+
         while True:
-            data = conn.recv(4096)
+            data = sock.recv(4096)
             print(f"[RAW] Received {len(data)} bytes: {data}")
+
             if not data:
                 print('Connection closed')
                 break
 
             if data == ENQ:
-                conn.sendall(ACK)
+                print(">> Got ENQ, sending ACK")
+                sock.sendall(ACK)
                 continue
+
+            if data == NAK:
+                print(">> Got NAK - analyzer rejected query")
+                break
 
             if data == EOT:
                 print('\n>> Session ended (EOT)')
@@ -180,46 +190,36 @@ def main():
 
             if data.startswith(STX):
                 payload = strip_frame(data)
-                conn.sendall(ACK)
+                sock.sendall(ACK)
                 rec = decode_record(payload)
                 session_records.append(rec)
                 print_record(rec)
-
-                # After receiving Header, send a query for a specific sample
-                if rec['type'] == 'Header' and not query_sent:
-                    frame_no = 1
-                    sample_id = input("\n>> Enter sample ID to query (or press Enter to skip): ").strip()
-                    if sample_id:
-                        query_frame = build_query(sample_id, seq=1, frame_no=frame_no)
-                        print(f">> Sending query for sample: {sample_id}")
-                        print(f"   Raw bytes: {query_frame}")
-                        conn.sendall(query_frame)
-                        query_sent = True
-                    else:
-                        query_sent = True  # Mark sent to avoid asking again
-
                 continue
 
-            # Unknown byte
-            conn.sendall(ACK)
+            sock.sendall(ACK)
 
-    except KeyboardInterrupt:
-        print('\nStopped by user.')
+        # Save results
+        results = [r for r in session_records if r['type'] == 'Result']
+        out = {
+            'query_time': datetime.now().isoformat(),
+            'analyzer': analyzer_ip,
+            'sample_id': sample_id,
+            'records': session_records,
+            'results': results,
+        }
+        fname = f"xn330_query_{sample_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        with open(fname, 'w') as f:
+            json.dump(out, f, indent=2)
+        print(f'\nSaved {len(results)} result records to {fname}')
+
+    except socket.timeout:
+        print("Timeout: analyzer didn't respond")
+    except ConnectionRefusedError:
+        print(f"Connection refused: analyzer not listening on {analyzer_ip}:{analyzer_port}")
+    except Exception as e:
+        print(f"Error: {e}")
     finally:
-        conn.close()
         sock.close()
-
-    results = [r for r in session_records if r['type'] == 'Result']
-    out = {
-        'received_at': datetime.now().isoformat(),
-        'source': addr[0],
-        'records': session_records,
-        'results': results,
-    }
-    fname = f"xn330_result_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-    with open(fname, 'w') as f:
-        json.dump(out, f, indent=2)
-    print(f'\nSaved {len(results)} result records to {fname}')
 
 
 if __name__ == '__main__':
