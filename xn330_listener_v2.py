@@ -153,12 +153,15 @@ def main():
     conn, addr = sock.accept()
     print(f'Connected by {addr}\n')
 
+    conn.settimeout(5)  # 5 second timeout to avoid hanging forever
+
     query_sent = False
     frame_no = 0
 
     try:
         while True:
             data = conn.recv(4096)
+            print(f"[RAW] Received {len(data)} bytes: {data}")
             if not data:
                 print('Connection closed')
                 break
