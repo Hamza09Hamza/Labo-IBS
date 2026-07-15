@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+"""
+Sysmex XN-330 Direct Active Query Engine.
+Immediately sends ENQ upon connection to catch the analyzer while it is listening.
+"""
 import socket
 import re
 import json
@@ -18,6 +22,7 @@ CR  = b'\x0d'
 LF  = b'\x0a'
 
 def build_frame(frame_no: int, text: str) -> bytes:
+    """Build a properly framed + checksummed ASTM message."""
     body = f"{frame_no}{text}\r".encode('ascii')
     payload = body + ETX
     checksum = sum(payload) & 0xFF
@@ -25,8 +30,9 @@ def build_frame(frame_no: int, text: str) -> bytes:
     return STX + payload + checksum_hex + CR + LF
 
 def send_record_and_wait(conn, frame_no: int, text: str) -> bool:
+    """Sends an ASTM record and expects an ACK from the analyzer."""
     frame = build_frame(frame_no, text)
-    print(f">> TX Query Block: {text.strip()}")
+    print(f">> TX Record: {text.strip()}")
     conn.sendall(frame)
     try:
         reply = conn.recv(1024)
@@ -34,17 +40,14 @@ def send_record_and_wait(conn, frame_no: int, text: str) -> bool:
             return True
         print(f"!! Expected ACK, got: {reply}")
     except socket.error as e:
-        print(f"!! Socket error during query TX: {e}")
+        print(f"!! Socket error during TX: {e}")
     return False
 
 def execute_host_query(conn, sample_id: str):
     """
-    Safely initiates a background query payload.
-    Uses 'R' flag in 13th field to pull results instead of orders.
+    Immediately seizes line control and transmits the query block.
     """
-    print(f"\n[QUERY ENGINE] Sending background fetch request for Sample: {sample_id}...")
-    
-    # Force Line Control
+    print(f"\n[QUERY ENGINE] Sending active ENQ to seize line control...")
     conn.sendall(ENQ)
     try:
         reply = conn.recv(1024)
@@ -53,16 +56,18 @@ def execute_host_query(conn, sample_id: str):
         return False
 
     if reply != ACK:
-        print(f"!! Analyzer refused line control. Sent ENQ, got: {reply}")
+        print(f"!! Analyzer refused line control. Expected ACK, got: {reply}")
         return False
         
+    print("[QUERY ENGINE] Line seized successfully. Delivering ASTM frames...")
+    
     # 1. Header Frame
     if not send_record_and_wait(conn, 1, "H|\\^&|||LIS|||||||||1394-97"):
         conn.sendall(EOT)
         return False
         
-    # 2. Query Frame (13th field set to 'R' for Results Lookup)
-    query_string = f"Q|1|^{sample_id}||||||||||R"
+    # 2. Query Frame (Clean Sysmex XN format for target Sample Lookup)
+    query_string = f"Q|1|^{sample_id}||||||||||O"
     if not send_record_and_wait(conn, 2, query_string):
         conn.sendall(EOT)
         return False
@@ -72,10 +77,20 @@ def execute_host_query(conn, sample_id: str):
         conn.sendall(EOT)
         return False
         
-    # Release Line back to listen state
+    # Release Line so the analyzer can switch to Send Mode and answer us
     conn.sendall(EOT)
-    print("[QUERY ENGINE] Query frame broadcasted. Waiting for machine response loop...\n")
+    print("[QUERY ENGINE] Session released to analyzer. Awaiting data stream...\n")
     return True
+
+# Simple regex-free record decoder for quick testing output
+def fast_log_payload(payload: str):
+    if '|' in payload:
+        parts = payload.split('|')
+        rec_type = parts[0][-1] if parts[0] else ''
+        if rec_type == 'R' and len(parts) > 4:
+            print(f" [RESULT] Parameter: {parts[2]:12s} Value: {parts[3]:10s} Unit: {parts[4]}")
+        elif rec_type in ['H', 'O', 'P', 'L']:
+            print(f" [{rec_type.upper()} RECORD] {payload[:50]}...")
 
 def main():
     sample_id = input("Enter sample ID to query automatically: ").strip()
@@ -87,63 +102,45 @@ def main():
     sock.bind((HOST, PORT))
     sock.listen(1)
     
-    print(f"\n[SERVER] Automated background engine listening on port {PORT}...")
+    print(f"\n[SERVER] Direct Engine listening on port {PORT}...")
     conn, addr = sock.accept()
-    print(f"[SERVER] Machine connected from {addr[0]}")
-    conn.settimeout(5) # tight timeout windows for active swaps
+    print(f"[SERVER] Machine socket connected from {addr[0]}")
+    conn.settimeout(8) # 8 second window for response processing
 
-    session_records = []
-    
     try:
-        # Step 1: Let the machine speak first or clear its buffers
-        print("[PHASE 1] Initializing stream. Letting machine flush state...")
-        initial_data = conn.recv(1024)
-        
-        if initial_data == ENQ:
-            # If the machine wanted to send something, acknowledge it and let it finish
-            print(">> Machine sent ENQ. Sending ACK to drain its buffer...")
-            conn.sendall(ACK)
+        # Step 1: Fire the Query sequence instantly upon network connection
+        if execute_host_query(conn, sample_id):
             
-            # Read until machine finishes its thought with an EOT
-            while True:
-                chunk = conn.recv(4096)
-                if not chunk or chunk == EOT:
-                    print(">> Machine buffer flushed (EOT received).")
-                    break
-                if chunk.startswith(STX):
-                    conn.sendall(ACK) # Keep it happy until it finishes
-        
-        # Give the machine a brief 200ms processing pause to stabilize its state machine
-        time.sleep(0.2)
-        
-        # Step 2: Now that the line is idle, trigger our query
-        query_sent = execute_host_query(conn, sample_id)
-        
-        if query_sent:
-            print("[PHASE 2] Collecting incoming data packets matching query...")
-            # Step 3: Listen for the database response returning back to us
+            # Step 2: Now wait for the machine to send its response data blocks
+            print("[PHASE 2] Listening for returning data blocks...")
             while True:
                 data = conn.recv(4096)
                 if not data:
+                    print(">> Connection closed by machine.")
                     break
                 
                 if data == ENQ:
                     conn.sendall(ACK)
                     continue
                 elif data == EOT:
-                    print('>> Target results streamed completely (EOT received).')
+                    print('>> Session finished completely (EOT received).')
                     break
                 elif data.startswith(STX):
-                    # We are receiving data frames!
+                    # We caught a data frame packet! Acknowledge it instantly.
                     conn.sendall(ACK)
-                    print(f" [DATA RECEIVED] {len(data)} raw bytes caught.")
-                    # (Insert your decode_record logic here to append to session_records)
+                    
+                    # Clean and display the raw payload text
+                    raw_text = data.decode('utf-8', errors='ignore')
+                    clean_text = raw_text.split('\x03')[0] if '\x03' in raw_text else raw_text
+                    clean_text = clean_text.replace('\x02', '').strip()
+                    
+                    fast_log_payload(clean_text)
 
     except ConnectionResetError:
-        print("\n!! Error: Analyzer still dropped connection. Verification required.")
-        print(">> Check if IPU Setting 'Realtime Query' or 'Host Query' is checked on the machine.")
+        print("\n!! Error: Analyzer forcefully reset the connection (WinError 10054).")
+        print(">> This means the machine received the query, but rejected sample ID format or database pulling via host is disabled.")
     except socket.timeout:
-        print("\nSession hit idle timeout window.")
+        print("\nSession hit idle timeout waiting for analyzer data response.")
     finally:
         conn.close()
         sock.close()
