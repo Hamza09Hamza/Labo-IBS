@@ -58,8 +58,12 @@ def execute_host_query(conn, sample_id: str):
         conn.sendall(EOT)
         return False
         
-    # 2. Send Query Record (Requesting specific Sample ID)
-    if not send_record_and_wait(conn, 2, f"Q|1|^{sample_id}||||||||O"):
+    # 2. Send Query Record configured for Historical/Data Request
+    # Sysmex field formatting layout:
+    # Q | Seq | ^SampleID | (blank fields...) | Request Information Status Flag
+    # Adding 'A' or 'O' at the end specifies an Order/Result lookup rather than a real-time sampling request.
+    query_string = f"Q|1|^{sample_id}||||||||||O"
+    if not send_record_and_wait(conn, 2, query_string):
         conn.sendall(EOT)
         return False
         
