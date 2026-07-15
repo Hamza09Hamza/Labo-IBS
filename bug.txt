@@ -1,4 +1,4 @@
-PS C:\Users\shifttech\Desktop\labo_test> & C:\Users\shifttech\AppData\Local\Programs\Python\Python37\python.exe C:\Users\shifttech\Desktop\labo_test\test.py
+PS C:\Users\shifttech\Desktop\labo_test> & C:\Users\shifttech\AppData\Local\Programs\Python\Python37\python.exe c:/Users/shifttech/Desktop/labo_test/test.py
 Enter sample ID to query automatically: 142
 
 [SERVER] Direct Engine listening on port 6000...
@@ -7,10 +7,11 @@ Enter sample ID to query automatically: 142
 [QUERY ENGINE] Sending active ENQ to seize line control...
 [QUERY ENGINE] Line seized successfully. Delivering ASTM frames...
 >> TX Record: H|\^&|||LIS|||||||||1394-97
->> TX Record: Q|1|^142||||||||||O
+>> TX Record: Q|1|^142||ALL||||||||A
 >> TX Record: L|1|N
 [QUERY ENGINE] Session released to analyzer. Awaiting data stream...
 
 [PHASE 2] Listening for returning data blocks...
 
 Session hit idle timeout waiting for analyzer data response.
+PS C:\Users\shifttech\Desktop\labo_test>  
