@@ -1,0 +1,54 @@
+=== Result from XN-330^00-29^18762^^^^CX851950 ===
+Captured: 2026-07-15T10:50:47
+
+-- Measured Results --
+  - White Blood Cell count: 7.54 10^3/uL
+  - Red Blood Cell count: 3.82 10^6/uL  [LOW]
+  - Hemoglobin: 9.5 g/dL  [LOW]
+  - Hematocrit: 27.1 %  [LOW]
+  - Mean Corpuscular Volume: 70.9 fL  [LOW]
+  - Mean Corpuscular Hemoglobin: 24.9 pg  [LOW]
+  - Mean Corpuscular Hemoglobin Concentration: 35.1 g/dL
+  - Platelet count: 128 10^3/uL  [LOW]
+  - Neutrophils (%): 50.1 %
+  - Lymphocytes (%): 40.1 %
+  - Monocytes (%): 6.0 %
+  - Eosinophils (%): 3.3 %
+  - Basophils (%): 0.5 %
+  - Neutrophils (absolute): 3.78 10^3/uL
+  - Lymphocytes (absolute): 3.02 10^3/uL
+  - Monocytes (absolute): 0.45 10^3/uL
+  - Eosinophils (absolute): 0.25 10^3/uL
+  - Basophils (absolute): 0.04 10^3/uL
+  - Immature Granulocytes (%): 0.3 %
+  - Immature Granulocytes (absolute): 0.02 10^3/uL
+  - Red cell Distribution Width (SD): 43.2 fL
+  - Red cell Distribution Width (CV): 16.7 %  [HIGH]
+  - Microcytic RBC ratio: 22.9 %
+  - Macrocytic RBC ratio: 3.0 %
+  - Platelet Distribution Width: ---- fL  [ABNORMAL]
+  - Mean Platelet Volume: ---- fL  [ABNORMAL]
+  - Platelet Large Cell Ratio: ---- %  [ABNORMAL]
+  - Plateletcrit: ---- %  [ABNORMAL]
+
+-- Interpretive / Suspect Flags --
+  - Anemia: flagged ABNORMAL
+  - PLT Abn Distribution: flagged ABNORMAL
+  - Blasts/Abn Lympho (suspect score): 60/100
+  - Left Shift (suspect score): 0/100
+  - Atypical Lympho (suspect score): 10/100
+  - NRBC (suspect score): 0/100
+  - RBC Agglutination (suspect score): 60/100
+  - Turbidity/HGB Interference (suspect score): 90/100
+  - Iron Deficiency (suspect score): 80/100
+  - HGB Defect (suspect score): 80/100
+  - Fragments (suspect score): 20/100
+  - PLT Clumps (suspect score): 0/100
+  - Positive Morph: flagged ABNORMAL
+  - Positive Count: flagged ABNORMAL
+
+-- Referenced Graphics (filenames only, not embedded images) --
+  - SCAT_WDF: PNG&R&20260715&R&2026_07_09_10_31_210_WDF.PNG
+  - SCAT_WDF-CBC: PNG&R&20260715&R&2026_07_09_10_31_210_WDF_CBC.PNG
+  - DIST_RBC: PNG&R&20260715&R&2026_07_09_10_31_210_RBC.PNG
+  - DIST_PLT: PNG&R&20260715&R&2026_07_09_10_31_210_PLT.PNG

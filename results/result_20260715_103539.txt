@@ -1,0 +1,57 @@
+=== Result from XN-330^00-29^18762^^^^CX851950 ===
+Captured: 2026-07-15T10:35:39
+
+-- Measured Results --
+  - White Blood Cell count: 2.47 10^3/uL  [LOW]
+  - Red Blood Cell count: 2.85 10^6/uL  [LOW]
+  - Hemoglobin: 9.2 g/dL  [LOW]
+  - Hematocrit: 27.8 %  [LOW]
+  - Mean Corpuscular Volume: 97.5 fL
+  - Mean Corpuscular Hemoglobin: 32.3 pg
+  - Mean Corpuscular Hemoglobin Concentration: 33.1 g/dL
+  - Platelet count: 242 10^3/uL
+  - Neutrophils (%): 56.4 %
+  - Lymphocytes (%): 29.1 %
+  - Monocytes (%): 10.5 %
+  - Eosinophils (%): 3.2 %
+  - Basophils (%): 0.8 %
+  - Neutrophils (absolute): 1.39 10^3/uL  [LOW]
+  - Lymphocytes (absolute): 0.72 10^3/uL  [LOW]
+  - Monocytes (absolute): 0.26 10^3/uL
+  - Eosinophils (absolute): 0.08 10^3/uL
+  - Basophils (absolute): 0.02 10^3/uL
+  - Immature Granulocytes (%): 0.4 %
+  - Immature Granulocytes (absolute): 0.01 10^3/uL
+  - Red cell Distribution Width (SD): 68.3 fL  [HIGH]
+  - Red cell Distribution Width (CV): 19.4 %  [HIGH]
+  - Microcytic RBC ratio: 1.9 %
+  - Macrocytic RBC ratio: 11.7 %
+  - Platelet Distribution Width: 10.9 fL
+  - Mean Platelet Volume: 10.4 fL
+  - Platelet Large Cell Ratio: 26.8 %
+  - Plateletcrit: 0.25 %
+
+-- Interpretive / Suspect Flags --
+  - Lymphopenia: flagged ABNORMAL
+  - Leukocytopenia: flagged ABNORMAL
+  - Anisocytosis: flagged ABNORMAL
+  - Anemia: flagged ABNORMAL
+  - Blasts/Abn Lympho (suspect score): 50/100
+  - Left Shift (suspect score): 0/100
+  - Atypical Lympho (suspect score): 0/100
+  - NRBC (suspect score): 0/100
+  - RBC Agglutination (suspect score): 80/100
+  - Turbidity/HGB Interference (suspect score): 90/100
+  - Iron Deficiency (suspect score): 70/100
+  - HGB Defect (suspect score): 70/100
+  - Fragments (suspect score): 10/100
+  - PLT Clumps (suspect score): 0/100
+  - Positive Diff: flagged ABNORMAL
+  - Positive Morph: flagged ABNORMAL
+  - Positive Count: flagged ABNORMAL
+
+-- Referenced Graphics (filenames only, not embedded images) --
+  - SCAT_WDF: PNG&R&20260715&R&2026_07_10_17_22_100_WDF.PNG
+  - SCAT_WDF-CBC: PNG&R&20260715&R&2026_07_10_17_22_100_WDF_CBC.PNG
+  - DIST_RBC: PNG&R&20260715&R&2026_07_10_17_22_100_RBC.PNG
+  - DIST_PLT: PNG&R&20260715&R&2026_07_10_17_22_100_PLT.PNG

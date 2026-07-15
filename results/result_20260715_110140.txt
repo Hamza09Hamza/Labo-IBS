@@ -1,0 +1,50 @@
+=== Result from XN-330^00-29^18762^^^^CX851950 ===
+Captured: 2026-07-15T11:01:40
+
+-- Measured Results --
+  - White Blood Cell count: 4.05 10^3/uL
+  - Red Blood Cell count: 5.41 10^6/uL
+  - Hemoglobin: 14.5 g/dL
+  - Hematocrit: 44.0 %
+  - Mean Corpuscular Volume: 81.3 fL
+  - Mean Corpuscular Hemoglobin: 26.8 pg
+  - Mean Corpuscular Hemoglobin Concentration: 33.0 g/dL
+  - Platelet count: 100 10^3/uL  [LOW]
+  - Neutrophils (%): 51.2 %
+  - Lymphocytes (%): 38.8 %
+  - Monocytes (%): 9.1 %
+  - Eosinophils (%): 0.7 %
+  - Basophils (%): 0.2 %
+  - Neutrophils (absolute): 2.07 10^3/uL
+  - Lymphocytes (absolute): 1.57 10^3/uL
+  - Monocytes (absolute): 0.37 10^3/uL
+  - Eosinophils (absolute): 0.03 10^3/uL
+  - Basophils (absolute): 0.01 10^3/uL
+  - Immature Granulocytes (%): 0.2 %
+  - Immature Granulocytes (absolute): 0.01 10^3/uL
+  - Red cell Distribution Width (SD): 42.5 fL
+  - Red cell Distribution Width (CV): 14.1 %
+  - Microcytic RBC ratio: 4.8 %
+  - Macrocytic RBC ratio: 4.4 %
+  - Platelet Distribution Width: 18.0 fL  [HIGH]
+  - Mean Platelet Volume: 12.5 fL
+  - Platelet Large Cell Ratio: 45.0 %  [HIGH]
+  - Plateletcrit: 0.13 %  [LOW]
+
+-- Interpretive / Suspect Flags --
+  - Blasts/Abn Lympho (suspect score): 60/100
+  - Left Shift (suspect score): 0/100
+  - Atypical Lympho (suspect score): 10/100
+  - NRBC (suspect score): 0/100
+  - RBC Agglutination (suspect score): 60/100
+  - Turbidity/HGB Interference (suspect score): 90/100
+  - Iron Deficiency (suspect score): 90/100
+  - HGB Defect (suspect score): 90/100
+  - Fragments (suspect score): 0/100
+  - PLT Clumps (suspect score): 0/100
+
+-- Referenced Graphics (filenames only, not embedded images) --
+  - SCAT_WDF: PNG&R&20260715&R&2026_07_06_08_24_109_WDF.PNG
+  - SCAT_WDF-CBC: PNG&R&20260715&R&2026_07_06_08_24_109_WDF_CBC.PNG
+  - DIST_RBC: PNG&R&20260715&R&2026_07_06_08_24_109_RBC.PNG
+  - DIST_PLT: PNG&R&20260715&R&2026_07_06_08_24_109_PLT.PNG
