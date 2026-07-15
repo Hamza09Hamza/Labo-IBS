@@ -1,13 +1,2 @@
-PS C:\Users\shifttech\Desktop\labo_test> git pull                                                                                                               
-Updating 68087d8..63777d6
-Fast-forward
- xn330_client.py      | 226 +++++++++++++++++++++++++++++++++++++++++++++++++++
- xn330_listener_v2.py |   6 +-
- 2 files changed, 231 insertions(+), 1 deletion(-)
- create mode 100644 xn330_client.py
-PS C:\Users\shifttech\Desktop\labo_test> & C:\Users\shifttech\AppData\Local\Programs\Python\Python37\python.exe C:\Users\shifttech\Desktop\labo_test\xn330_client.py     
-Enter analyzer IP (default 169.254.128.155): 169.254.128.155
-Enter sample ID to query: 142    
 
-Connecting to 169.254.128.155:6000...
-Connection refused: analyzer not listening on 169.254.128.155:6000
+https://www.scribd.com/document/444706807/XN-L-Interfacing-Guide-pdf

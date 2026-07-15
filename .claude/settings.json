@@ -3,7 +3,8 @@
     "allow": [
       "Bash(git remote *)",
       "Bash(git branch *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "WebSearch"
     ]
   }
 }
