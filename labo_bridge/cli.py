@@ -1,7 +1,8 @@
 """
 Command-line interface for labo_bridge.
 
-  python -m labo_bridge run <machine> [--quiet]
+  python -m labo_bridge run all [--quiet]        # every analyzer, one process, one port each
+  python -m labo_bridge run <machine> [--quiet]  # just one analyzer
   python -m labo_bridge query [list | <sample_id>]
   python -m labo_bridge match [list | pending | map <machine> <code> <param_id>
                               | approve <id> | reject <id>]
@@ -14,12 +15,15 @@ from . import server, storage, mappings
 
 def cmd_run(args):
     if not args:
-        print("usage: run <machine> [--quiet]")
+        print("usage: run all | run <machine> [--quiet]")
         print(f"machines: {sorted(server.MACHINES)}")
         return 1
-    machine = args[0]
+    target = args[0]
     quiet = "--quiet" in args[1:]
-    server.run(machine, quiet=quiet)
+    if target == "all":
+        server.run_all(quiet=quiet)
+    else:
+        server.run(target, quiet=quiet)
     return 0
 
 

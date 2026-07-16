@@ -8,10 +8,14 @@ Two protocol styles are supported behind one accept-loop:
   HL7/MLLP    (cyanvision): whole segments decoded by decode_segment(), and a
       full HL7 ACK message is sent back per message.
 
-Each machine's config (protocol, decoder, extras) is declared in MACHINES.
+Each machine's config (protocol, decoder, port, extras) is declared in MACHINES.
+Every machine gets its OWN port, since the wire protocols don't self-identify
+enough to share one socket - run_all() starts one listener thread per machine
+in a single process so all four analyzers can stay connected simultaneously.
 """
 
 import socket
+import threading
 from datetime import datetime
 
 from .protocols import astm, hl7_mllp
@@ -19,18 +23,17 @@ from .decoders import xn330, ismart, elitech, cyanvision
 from . import storage, matcher
 
 HOST = "0.0.0.0"
-PORT = 6000
 
-# machine -> config
+# machine -> config. Each machine listens on its own fixed port.
 MACHINES = {
     "xn330":      {"protocol": "astm", "decode_record": xn330.decode_record,
-                   "initial_ack": False},
+                   "initial_ack": False, "port": 6001},
     "ismart":     {"protocol": "astm", "decode_record": ismart.decode_record,
-                   "initial_ack": True},
+                   "initial_ack": True, "port": 6002},
     "elitech":    {"protocol": "astm", "decode_record": elitech.decode_record,
-                   "initial_ack": False},
+                   "initial_ack": False, "port": 6003},
     "cyanvision": {"protocol": "hl7",  "decode_segment": cyanvision.decode_segment,
-                   "initial_ack": False},
+                   "initial_ack": False, "port": 6004},
 }
 
 
@@ -40,10 +43,11 @@ def _ingest_result(conn_db, machine, sample_id, rec, quiet):
     m = matcher.match(machine, rec.get("test_code", ""))
     storage.store_match(conn_db, machine, sample_id, rec, m)
     if not quiet:
-        tag = (f"-> param {m['param_id']} ({m['abbrev']})"
-               if m["param_id"] else "-> PENDING (no curated match)")
-        print(f"    {rec.get('test_code',''):10s} {rec.get('value',''):>10s} "
-              f"{rec.get('unit',''):8s} {tag}")
+        tag = (f"matched -> labo_param.id={m['param_id']} ({m['abbrev']} / {m['name']})"
+               if m["param_id"] else "PENDING (no curated match, needs manual review)")
+        print(f"[{machine}] WROTE result  sample={sample_id!r:14} "
+              f"test={rec.get('test_code',''):10s} value={rec.get('value',''):>10s} "
+              f"unit={rec.get('unit',''):8s} | {tag}")
 
 
 class _Session:
@@ -65,20 +69,22 @@ class _Session:
         if kind == "header":
             self.analyzer_model = ev.get("analyzer_model", "")
             if not self.quiet:
-                print(f"  [HEADER] {self.analyzer_model}")
+                print(f"[{self.machine}] HEADER analyzer={self.analyzer_model}")
         elif kind == "patient":
             self.patient_id = ev.get("patient_id", "")
             self.patient_name = ev.get("patient_name", "")
             if not self.quiet:
-                print(f"  [PATIENT] {self.patient_name or '(none)'} "
+                print(f"[{self.machine}] PATIENT {self.patient_name or '(none)'} "
                       f"(ID: {self.patient_id or '(none)'})")
         elif kind == "order":
             self.sample_id = ev.get("sample_id", "") or self.sample_id
+            paillasse = ev.get("paillasse")
             storage.store_sample(self.db, self.machine, self.sample_id or "",
                                  self.analyzer_model, self.patient_name,
-                                 self.patient_id, self.source_ip)
+                                 self.patient_id, self.source_ip, paillasse)
             if not self.quiet:
-                print(f"  [ORDER] sample {self.sample_id}")
+                bench = f" paillasse={paillasse}" if paillasse else ""
+                print(f"[{self.machine}] WROTE sample  sample={self.sample_id!r}{bench}")
         elif kind == "result":
             sid = self.sample_id or self.patient_id or ""
             if self.sample_id is None:
@@ -114,7 +120,7 @@ def _handle_astm(conn, addr, cfg, machine, conn_db, quiet):
             elif b0 == astm.EOT:
                 buffer = buffer[1:]
                 if not quiet:
-                    print(f"  >> batch complete ({session.result_count} results)")
+                    print(f"[{machine}] batch complete ({session.result_count} results written)")
             elif b0 == astm.STX:
                 idx = buffer.find(bytes([astm.LF]))
                 if idx == -1:
@@ -150,40 +156,82 @@ def _handle_hl7(conn, addr, cfg, machine, conn_db, quiet):
                     control_id = ev.get("control_id", "")
                 session.handle_event(ev)
             if not quiet:
-                print(f"  >> message complete ({session.result_count} results)")
+                print(f"[{machine}] message complete ({session.result_count} results written)")
             conn.sendall(hl7_mllp.build_ack(control_id or "0"))
 
 
-def run(machine: str, quiet: bool = False):
-    if machine not in MACHINES:
-        raise SystemExit(f"unknown machine {machine!r}; "
-                         f"choose from {sorted(MACHINES)}")
+def _serve_one_machine(machine: str, quiet: bool, stop_event: threading.Event):
+    """Bind this machine's dedicated port and accept connections forever."""
     cfg = MACHINES[machine]
+    port = cfg["port"]
     conn_db = storage.connect()
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind((HOST, PORT))
+    sock.bind((HOST, port))
     sock.listen(5)
-    print(f"[{machine}] listening on {HOST}:{PORT} "
-          f"({cfg['protocol'].upper()}). DB: {storage.DB_PATH}")
-    print("Waiting for the analyzer... Ctrl+C to stop.\n")
+    sock.settimeout(1.0)  # so we can notice stop_event without blocking forever
+    print(f"[{machine}] listening on {HOST}:{port} ({cfg['protocol'].upper()}). "
+          f"DB: {storage.DB_PATH}")
 
     handler = _handle_hl7 if cfg["protocol"] == "hl7" else _handle_astm
     try:
-        while True:
-            conn, addr = sock.accept()
-            print(f"Connected by {addr[0]}:{addr[1]} at "
+        while not stop_event.is_set():
+            try:
+                conn, addr = sock.accept()
+            except socket.timeout:
+                continue
+            print(f"[{machine}] connected by {addr[0]}:{addr[1]} at "
                   f"{datetime.now().isoformat(timespec='seconds')}")
             try:
                 handler(conn, addr, cfg, machine, conn_db, quiet)
             except Exception as e:
-                print(f"  error handling connection: {e}")
+                print(f"[{machine}] error handling connection: {e}")
             finally:
                 conn.close()
-            print("Ready for next connection.\n")
-    except KeyboardInterrupt:
-        print("\nStopped.")
+            print(f"[{machine}] ready for next connection.")
     finally:
         sock.close()
         conn_db.close()
+
+
+def run(machine: str, quiet: bool = False):
+    """Run a single machine's listener in the current thread (blocks)."""
+    if machine not in MACHINES:
+        raise SystemExit(f"unknown machine {machine!r}; "
+                         f"choose from {sorted(MACHINES)}")
+    stop_event = threading.Event()
+    try:
+        _serve_one_machine(machine, quiet, stop_event)
+    except KeyboardInterrupt:
+        print(f"\n[{machine}] stopped.")
+
+
+def run_all(quiet: bool = False):
+    """
+    Run all machines' listeners simultaneously, each on its own port, in one
+    process. This is the normal deployment mode: every analyzer stays
+    connected to this same server at once.
+    """
+    stop_event = threading.Event()
+    threads = []
+    for machine in MACHINES:
+        t = threading.Thread(target=_serve_one_machine, args=(machine, quiet, stop_event),
+                             name=f"listener-{machine}", daemon=True)
+        t.start()
+        threads.append(t)
+
+    print(f"\nAll {len(threads)} analyzer listeners running. Ports: " +
+          ", ".join(f"{m}={cfg['port']}" for m, cfg in MACHINES.items()))
+    print("Press Ctrl+C to stop.\n")
+
+    try:
+        while True:
+            for t in threads:
+                t.join(timeout=0.5)
+    except KeyboardInterrupt:
+        print("\nStopping all listeners...")
+        stop_event.set()
+        for t in threads:
+            t.join(timeout=2)
+        print("Stopped.")

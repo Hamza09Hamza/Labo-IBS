@@ -35,6 +35,7 @@ def _init(conn: sqlite3.Connection) -> None:
             patient_name   TEXT,
             patient_id     TEXT,
             source_ip      TEXT,
+            paillasse      TEXT,   -- bench/workstation, parsed from sample_id when present
             received_at    TEXT
         )
     """)
@@ -73,7 +74,7 @@ def _init(conn: sqlite3.Connection) -> None:
 
 
 def store_sample(conn, machine, sample_id, analyzer_model, patient_name,
-                 patient_id, source_ip):
+                 patient_id, source_ip, paillasse=None):
     """Upsert a sample; clears any prior results/matches for the same key."""
     conn.execute("DELETE FROM results WHERE machine=? AND sample_id=?",
                  (machine, sample_id))
@@ -81,9 +82,9 @@ def store_sample(conn, machine, sample_id, analyzer_model, patient_name,
                  (machine, sample_id))
     conn.execute("DELETE FROM samples WHERE machine=? AND sample_id=?",
                  (machine, sample_id))
-    conn.execute("INSERT INTO samples VALUES (?,?,?,?,?,?,?)",
+    conn.execute("INSERT INTO samples VALUES (?,?,?,?,?,?,?,?)",
                  (machine, sample_id, analyzer_model, patient_name, patient_id,
-                  source_ip, datetime.now().isoformat()))
+                  source_ip, paillasse, datetime.now().isoformat()))
     conn.commit()
 
 

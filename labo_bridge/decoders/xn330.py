@@ -51,6 +51,30 @@ def extract_code(test_field: str) -> str:
     return parts[4] if len(parts) > 4 else test_field
 
 
+SPECIMEN_ID_RE = re.compile(r"^(\d{2})(\d{2})(\d{4})(\d{2})$")
+
+
+def parse_specimen_id(sample_id: str) -> dict:
+    """
+    This lab's specimen IDs (e.g. "2607044407") are formatted as:
+        YY MM SSSS PP
+        26 07 0444 07  -> year 2026, month 07, sequence #444 this month,
+                          paillasse (bench) 07
+    Returns {} if sample_id doesn't match this 10-digit pattern (e.g. IDs
+    from other sources/formats) rather than guessing.
+    """
+    m = SPECIMEN_ID_RE.match((sample_id or "").strip())
+    if not m:
+        return {}
+    year, month, sequence, paillasse = m.groups()
+    return {
+        "year": 2000 + int(year),
+        "month": int(month),
+        "sequence": int(sequence),
+        "paillasse": paillasse,
+    }
+
+
 def decode_record(line: str) -> dict:
     """Decode one XN-330 ASTM record line into a normalized event dict."""
     line = re.sub(r"^\d(?=[A-Z]\|)", "", line)  # strip leading frame digit
@@ -77,7 +101,9 @@ def decode_record(line: str) -> dict:
         if not sample_id and len(fields) > 3:
             parts = [p for p in fields[3].split("^") if p]
             sample_id = parts[0] if parts else ""
-        return {"kind": "order", "sample_id": sample_id, "raw": line}
+        ev = {"kind": "order", "sample_id": sample_id, "raw": line}
+        ev.update(parse_specimen_id(sample_id))  # adds year/month/sequence/paillasse if it matches
+        return ev
 
     if rtype == "R":
         if len(fields) < 4:
