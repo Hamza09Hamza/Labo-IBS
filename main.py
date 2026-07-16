@@ -109,10 +109,31 @@ def parse_result_record(fields):
     return ("result", f"  - {code}: {value}{flag_note}")
 
 
+def extract_specimen_id(fields):
+    """
+    O record layout (pipe-delimited), per ASTM spec:
+    O|seq|specimen_id|instrument_specimen_id^^^^rep^B|test_list|...
+    The actual sample/specimen ID is usually nested inside the
+    instrument_specimen_id field between ^ separators, e.g. "^^2607044407^B".
+    Falls back to the plain specimen_id field (index 2) if that's populated instead.
+    """
+    if len(fields) < 4:
+        return None
+
+    plain_specimen_id = fields[2].strip() if len(fields) > 2 else ""
+    if plain_specimen_id:
+        return plain_specimen_id
+
+    instrument_field = fields[3] if len(fields) > 3 else ""
+    parts = [p for p in instrument_field.split("^") if p]
+    return parts[0] if parts else None
+
+
 def parse_message(all_frames_text: str) -> str:
     """Turn the joined ASTM text into a human-readable, sectioned summary."""
     results, flags, graphics = [], [], []
     machine_id = None
+    specimen_id = None
 
     for record in all_frames_text.split("\r"):
         record = record.strip()
@@ -123,6 +144,10 @@ def parse_message(all_frames_text: str) -> str:
 
         if rtype == "H" and len(fields) > 4:
             machine_id = fields[4].strip()
+        elif rtype == "O":
+            found_id = extract_specimen_id(fields)
+            if found_id:
+                specimen_id = found_id
         elif rtype == "R":
             parsed = parse_result_record(fields)
             if parsed:
@@ -134,7 +159,8 @@ def parse_message(all_frames_text: str) -> str:
                 elif category == "graphic":
                     graphics.append(line)
 
-    out = [f"=== Result from {machine_id or 'analyzer'} ===",
+    out = [f"=== Specimen ID: {specimen_id or 'UNKNOWN'} ===",
+           f"Analyzer: {machine_id or 'unknown'}",
            f"Captured: {datetime.now().isoformat(timespec='seconds')}", ""]
 
     out.append("-- Measured Results --")
@@ -146,78 +172,99 @@ def parse_message(all_frames_text: str) -> str:
     out.append("-- Referenced Graphics (filenames only, not embedded images) --")
     out.extend(graphics if graphics else ["  (none)"])
 
-    return "\n".join(out)
+    # If we parsed nothing useful at all, something arrived that we're not
+    # recognizing - show the raw text so we can see what it actually was
+    # instead of just silently reporting "(none)" everywhere.
+    if not results and not flags and not graphics:
+        out.append("")
+        out.append("-- RAW MESSAGE (nothing above was recognized - here's what arrived) --")
+        out.append(all_frames_text.replace("\r", "\n"))
+
+    return "\n".join(out), specimen_id
 
 
-def save_report(report_text: str) -> str:
+def save_report(report_text: str, specimen_id: str = None) -> str:
     os.makedirs(RESULTS_DIR, exist_ok=True)
-    filename = f"result_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    safe_id = (specimen_id or "unknown").replace("/", "-").replace("\\", "-")
+    filename = f"result_{safe_id}_{timestamp}.txt"
     filepath = os.path.join(RESULTS_DIR, filename)
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(report_text)
     return filepath
 
 
+def handle_connection(conn, addr):
+    """Process one analyzer connection from ENQ through EOT."""
+    print(f"Connected from: {addr}")
+    buffer = b""
+    message_text = ""
+
+    while True:
+        data = conn.recv(4096)
+        if not data:
+            print("Connection closed by analyzer.")
+            return
+
+        buffer += data
+
+        while buffer:
+            first_byte = buffer[0]
+
+            if first_byte == ENQ:
+                conn.sendall(bytes([ACK]))
+                buffer = buffer[1:]
+
+            elif first_byte == EOT:
+                buffer = buffer[1:]
+                report, specimen_id = parse_message(message_text)
+                print("\n" + report)
+                saved_path = save_report(report, specimen_id)
+                print(f"(saved to {saved_path})\n")
+                message_text = ""
+
+            elif first_byte == STX:
+                crlf_idx = buffer.find(bytes([CR, LF]))
+                if crlf_idx == -1:
+                    break
+                full_frame = buffer[:crlf_idx + 2]
+                buffer = buffer[crlf_idx + 2:]
+
+                inner = full_frame[2:-4]
+                try:
+                    text = inner.decode("ascii", errors="replace")
+                except Exception:
+                    text = ""
+                message_text += text + "\r"
+
+                conn.sendall(bytes([ACK]))
+
+            else:
+                buffer = buffer[1:]
+
+
 def run_server():
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind((HOST, PORT))
-    s.listen(1)
-    print(f"Listening on {HOST}:{PORT} ... waiting for the analyzer to connect.")
-
-    conn, addr = s.accept()
-    print(f"Connected from: {addr}")
-
-    buffer = b""
-    message_text = ""
+    s.listen(5)  # allow a few pending connections to queue up, not just 1
+    print(f"Listening on {HOST}:{PORT} ... waiting for results. Press Ctrl+C to stop.")
 
     try:
         while True:
-            data = conn.recv(4096)
-            if not data:
-                print("Connection closed by analyzer.")
-                break
-
-            buffer += data
-
-            while buffer:
-                first_byte = buffer[0]
-
-                if first_byte == ENQ:
-                    conn.sendall(bytes([ACK]))
-                    buffer = buffer[1:]
-
-                elif first_byte == EOT:
-                    buffer = buffer[1:]
-                    report = parse_message(message_text)
-                    print("\n" + report)
-                    saved_path = save_report(report)
-                    print(f"\n(saved to {saved_path})")
-                    message_text = ""
-
-                elif first_byte == STX:
-                    crlf_idx = buffer.find(bytes([CR, LF]))
-                    if crlf_idx == -1:
-                        break
-                    full_frame = buffer[:crlf_idx + 2]
-                    buffer = buffer[crlf_idx + 2:]
-
-                    inner = full_frame[2:-4]
-                    try:
-                        text = inner.decode("ascii", errors="replace")
-                    except Exception:
-                        text = ""
-                    message_text += text + "\r"
-
-                    conn.sendall(bytes([ACK]))
-
-                else:
-                    buffer = buffer[1:]
-
+            # Loop forever: after each result finishes, go straight back to
+            # waiting for the next connection. This is what makes it a real
+            # unattended listener instead of a one-shot script.
+            conn, addr = s.accept()
+            try:
+                handle_connection(conn, addr)
+            except Exception as e:
+                print(f"Error handling connection from {addr}: {e}")
+            finally:
+                conn.close()
     except KeyboardInterrupt:
-        print("Stopped by user.")
+        print("\nStopped by user.")
     finally:
-        conn.close()
         s.close()
 
 
