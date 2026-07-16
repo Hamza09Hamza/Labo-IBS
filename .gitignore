@@ -1,2 +1,10 @@
 results/
 cyanvision_captures/
+
+# Local capture database (runtime data, created on first connection)
+*.db
+labo_bridge.db
+
+# Python
+__pycache__/
+*.pyc

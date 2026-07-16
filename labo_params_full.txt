@@ -1,0 +1,652 @@
+﻿id	coalesce	coalesce	coalesce	coalesce
+4	T + 120	2	T + 120 mn 	g/l
+12		28	Bilirubine	
+13		29	Urobilinogéne	
+14		30	Nitrites	
+15	Protéines	56	Protéines	
+16	Glucose	57	Glucose	
+17		58	Corps cétoniques	
+18	Sang	59	Sang	
+19	pH	60	pH	
+80	GR	71	Globules Rouges 	.10^6/mm3
+81	GB	72	Globules Blancs 	/mm3
+89	A 1	52	A 1	%
+90	A 2	53	A 2	%
+93	pettes	85	Plaquettes 	
+94	P.N à 4	86	P.N à 4 Lobes	%
+95	P.N à 5	87	P.N à 5 Lobes	%
+102	1 ere H	73	1 ere Heure	mm
+103	2 eme H	74	2 eme Heure	mm
+125	T + 30	4	T + 30 mn	g/l
+130		555791	   Formes doublées	  %
+137		2028	Aspect MACROSCOPIQUE 	
+143	T0	2034	T0	g/l
+10100	CCMH	83	CCMH 	g/dl
+97000	Hemcte.	78	Hématocrite 	  %
+98000	hémoglob	79	Hémoglobine 	g/dl
+99002	NS	12	NUMERATION SANGUINE	
+99032	IgG CHLAMYDIA	251	Ac anti C.trachomatis IgG( EIA)	UR/ ml
+99033	IgA CHLAMYDIA	252	Ac anti C trachomatis IgA(EIA)	
+99130	VDRL	20095	Sérologie ( VDRL)	
+99131	TPHA	20096	Sérologie (TPHA)	
+99134	Neu	88	Neutrophiles  	  %
+99136	Mono	555569	Monocytes 	  %
+99137	Lympho	91	Lymphocytes  	  %
+99138	Baso	92	Basophiles 	  %
+99140	  Hémoglobine A1	20098	  Hémoglobine A1	  %
+99141	  Hémoglobine A2	20099	  Hémoglobine A2	  %
+99142	  Hémoglobine F	20100	  Hémoglobine F	  %
+99143	Hémoglobine S	20101	  Hémoglobine S	  %
+99144	Hémoglobine C	20102	  Hémoglobine C	  %
+99147	EQUILIBRE LEUCOCYTAIRE	80	EQUILIBRE LEUCOCYTAIRE	
+99204	Taux ( RUB)	20161	Titre 	UI/ml
+99205	Remarque RUB	20162	Remarque 	
+99206	Levures (para)	20163	Levures	
+99207	Leucocytes 	20164	Leucocytes	
+99208	Hématies ( para)	20165	Hématies 	
+99209	Parasites (para)	20166	Parasites présents	
+99221	Interprétation chlam	253	Interprétation 	
+99222	EXAMEN MACROSCOPIQUE	20178	EXAMEN MACROSCOPIQUE	
+99223	EXAMEN MICROSCOPIQUE	20179	EXAMEN MICROSCOPIQUE	
+99251	 leuc	20207	Leucocytes	.10^3/mm3
+99285	Conclusion EHB	20241	Conclusion	
+99307	TGMH	20263	TGMH 	pg
+99308	INR	20264	INR	
+99311	AMC	20267	Amoxiciline + Ac. clavulanique	
+99312	AM	20268	Ampicilline	
+99313	AZM	20269	Azithromycine	
+99314	NA	20270	Ac. nalidixique	
+99315	ATM	20271	Aztreonam	
+99316	CZ	20272	Cefazoline	
+99317	CF	20273	Cefalotine	
+99318		20274	Cefoxitine	
+99319	CTX	20275	Cefotaxime	
+99320	 SAM	20276	Ampiciline + sulbactame	
+99321	AZ	20277	Azlociline	
+99322	CEC	20278	Cefaclore	
+99323	MA	20279	Cefamandole	
+99324	FEP	20280	Cefepime	
+99325	CFM	20281	Cefixime	
+99326	CRO	20282	Ceftriaxone	
+99327	CAZ	20283	Ceftazidime	
+99328	CXM	20284	Cefuroxime	
+99329	CN	20285	Cefalexine	
+99330	C	20286	Chloramphenicol	
+99331	CIP	20287	Ciprofloxacine	
+99332	CLR	20288	Clarithromycine	
+99333	CC	20289	Clindamycine	
+99334	CL	20290	Colistine	
+99335	Doxy	20291	Doxycycline	
+99336	E	20292	Erythromycine	
+99337	FOS	20293	Fosfomycine -Trométanol	
+99338	FT	20294	Nitrofurantoine	
+99339	GM	20295	Gentamicine	
+99340	GM500	20296	Gentamycine synergy	
+99342	K	20298	Kanamycine	
+99343	LVX	20299	Levofloxacine	
+99344	LOR	20300	Loracarbef	
+99345	MEM	20301	Meropenem	
+99346	MI	20302	Minocycline	
+99347	MOX	20303	Moxalactam	
+99348	NET	20304	Nétilmicine	
+99349	FD	20305	Nitrofurantoine	
+99350	NOR	20306	Norfloxacine	
+99351	OFX	20307	Ofloxacine	
+99352	OX	20308	Oxaciline	
+99353	P	20309	Penicilline	
+99354	PIP	20310	Piperacilline	
+99355	TZP	20311	Piperacilline + tazobactame	
+99356	F	20312	Fosfomycine	
+99357	SPT	20313	Spectinomycine	
+99358	STR	20314	Streptomycine	
+99359	ST2000	20315	Streptomycine synergie	
+99360	SSS	20316	Sulfamide	
+99361	TEC	20317	Teicoplanine	
+99362	TE	20318	Tetracycline	
+99363	TIC	20319	Ticarcilline	
+99364	TIM	20320	Ticarcilline + ac. clavulanique	
+99365	NN	20321	Tobramycine	
+99366	TMP	20322	Trimetroprime	
+99367	SXT	20323	Trimethoprime + sulfamethoxazole	
+99368	TEC	20324	Teicoplanine	
+99369	VA	20325	Vancomycine	
+99371	ASPECT	2001	Aspect 	
+99372	pH	2002	pH 	
+99373	EX-MICRO	2003	EXAMEN MICROSCOPIQUE	
+99377	cristaux	2007	Cristaux 	
+99378	levure	2008	Levures 	
+99379	parasite	2009	Parasites 	
+99380	culture 	2010	CULTURE 	
+99381	num bact	20011	Numération bactérienne 	
+99383	conclusion	20013	CONCLUSION	
+99385	Lieu de Prlv	20327	Lieu de Prélèvement 	
+99386	Cylindre	20328	Cylindre 	
+99387	PUS	20329	PUS 	
+99389	RP	20331	Rapides et progressifs 1h	  %
+99390	LFP	20332	Lents ou faiblement progressifs 1h 	  %
+99391	MNP4	20333	Mobiles mais non progressifs 4 h	  %
+99392	Immobiles	20334	Immobiles 1h	  %
+99393	RP4	20335	Rapides et progressifs 4h	  %
+99394	LFP4	20336	Lents ou faiblement progressifs 4h 	  %
+99395	Mnp4	20337	Mobiles mais non progressifs 1h	  %
+99396	Immobiles 4h	20338	Immobiles 4h	  %
+99397	Sniff Test	20339	Snif test 	
+99398	ETAT FRAIS	20340	ETAT FRAIS	
+99399	EX D APRES COLORATION	20341	EXAMEN  DIRECT APRES COLORATION	
+99400	FT	20342	Forme atypique	  %
+99401	F Atypique	20343	Forme typique	  %
+99402	après coloration de Gram	20344	après coloration de Gram l'examen retrouve 	
+99403	après coloration au Bleu de Méthylène l'examen retrouve :	20345	après coloration au Bleu de Méthylène l'examen retrouve 	
+99404	Score de NUGEN	20346	Score de NUGEN 	
+99405	Culture sur Milieu enrichie poly vitex inhibiteur (VCN) sous CO2	20347	Culture sur Milieu enrichie poly vitex inhibiteur (VCN) sous CO2 	
+99406	Culture sur Milieu enrichie GSC sous GSF sous CO2	20348	Culture sur Milieu enrichie GSC  CO2 	
+99407	Culture sur milieux ordinaires en aérobiose :	20349	Culture sur milieux ordinaires en aérobiose 	
+99422	K	250	Kaliémie  	mEq/l
+99423	CL	20366	Chlorurie 	mEq/24H
+99424	TP	20367	Taux de Prothrombine	  %
+99426	Ag HBs	20369	Antigene HBs	
+99427	VDRL	20370	VDRL	
+99428	TPHA	20371	TPHA 	
+99429	anticorps anti HCV	20372	Anticorps anti HCV	
+99430	durée d'abstinence	1300	Durée d'abstinence	-
+99431	volume	1322	Volume	 ml
+99432	viscosité	1323	Coagulation spontanée 	-
+99433	examen apres coloration de gram	1301	Examen direct aprés coloration de GRAM 	
+99434	examen direct aprés coloration MGG	1302	Examen direct aprés coloration MGG 	
+99435	examen direct	1303	Examen direct 	
+99436	mise en culture	1304	MISE EN CULTURE	
+99437	Num germe	1305	NUMERATION DES BACTERIES	
+99438	germe 1	1306	Germe isolé	
+99439	germe 2	1307	Germe 2 	
+99440	germe 3	1308	Germe 3 	
+99441	germe 4	1309	Germe 4	
+99442	germe5	1310	Germe 5 	
+99443	diagnostic bacteriologique	1311	Diagnostic bactériologique 	
+99444	Ureaplasma uréalyticum	1312	Uréaplasma uréalyticum	UFC/ml
+99445	mycoplasma hominis	1314	Mycoplasma hominis	UFC/ml
+99446	NA	20373	Natrémie 	mEq/l
+99447	densite	2000	Densité	
+99450	Taux (CMV IgG)	20377	Taux	AU/ ml
+99451	Taux (CMV IgM)	20378	Taux	UA/ml
+99452	Taux (CMV IgM)	20380	Taux	UA/ml
+99453	Taux(RubM)	20381	Taux 	
+99454	bactéries	500	Bactéries	
+99455	consistance	22222	consistance	
+99456	test	22223	test	
+99457	groupe	555555	Groupe	
+99458	rh	555556	Rhésus	
+99459	Tx	555557	Taux 	U/ml
+99460	Taux(CMV IgM)	555558	Taux	
+99461	Taux(TOXOM)	555559	Taux	
+99462	prelevement fait le	2100	Prélèvement fait le 	
+99463	cellules epithelialle	555560	Cellules épithéliales 	
+99465	germes isoles	555562	GERME(S) ISOLE(S) 	
+99466	Culture sur Milieu  GSF 	555563	Culture sur milieu GSF 	
+99467	culture sur milieu saboureaud :	555564	Culture sur milieu saboureaud 	
+99468	examen direct entre lame et lamelle	555565	Examen direct entre lame-lamelle 	
+99469	MISE EN CULTURE	555566	MISE EN CULTURE 	
+99472		555570		
+99473		555571		
+99475	bacterie isolée	555573	Bactérie isolée 	
+99476	CORTISOL SYN T+30 mn	555646	CORTISOL T+30 mn	nmol/L
+99477	taux toxo /e411	555574	Taux 	UI/ml
+99478	VGM	555575	VGM 	fL
+99479	lignée leucocytaire	555576	Lignée Leucocytaire 	
+99480	lignée thrombocytaire	555577	Lignée Thrombocytaire 	
+99481	lignée erythrocytaire	555578	Lignée Erythrocytaire 	
+99482	glycemie apres 2 h	555579	Glycémie 2 heure après  charge oral à 75 grammes de glucose	g/I
+99483	recherche	555580	Recherche 	
+99485	equilibre leucocytaire	555582	EQUILIBRE LEUCOCYTAIRE	
+99486	PNN	555583	Polynucléaires neutrophiles	  %
+99487	lymp	555584	Lymphocytes 	  %
+99488	autre cellule	555585	Autre cellules 	
+99489	culture sur Mx slect et enrichie	555586	Culture sur milieux sélèctifs et enrichies 	
+99490	résultat 2	555588	Résultat 	
+99491	culture sur mx ordi	555589	Culture sur milieux ordinaire 	
+99492	resultat1	555590	Résultat 	
+99493	culture	555591	Culture 	
+99494	couleur	555592	Couleur 	
+99495	volume liquide articulaire	555593	Volume 	 ml
+99496	la couleur	555594	Couleur 	
+99497	la limpidité	555595	Limpidité 	
+99498	la viscosité	555596	Viscosité 	
+99499	la recher cristaux	555597	Recherche de critaux à l'examen direct 	
+99500	la nature crist observé	555598	Nature des cristaux observés 	
+99501	la num elet nuclées	555599	Numération des élèments nuclées	
+99502	la formul leucocyt	555600	FORMULE LEUCOCYTAIRE	
+99503	la pnn	555601	Polynucleaires 	  %
+99504	la lymp	555602	Lymphocytes 	  %
+99505	la mono histio macrophage	555603	Monocytes histiocytes macrophages 	 /mm3
+99506	la hematies	555604	Hématies 	
+99507	la chondrocyte	555605	Chondrocytes 	
+99508	la cartilage	555606	Cartilage 	
+99509	la bacterie	555607	Bactéries 	
+99510	la autres element	555608	Autres éléments 	
+99511	la culture	555609	CULTURE SUR MILIEUX 	
+99512	la mileux enrichie	555610	Culture sur milieux enrichie/CO2 	
+99513	la culture mileux ordinaire	555611	Culture sur milieux ordinaires 	
+99514	la conclusion	555612	Conclusion 	
+99515	LA LOCALISATION	555613	LOCALISATION 	
+99516	charge en glucose	555614	Charge orale de 50 g en glucose 	
+99519	josamycine	555617	Josamycine	
+99520	pristinamycine	555618	Pristinamycine	
+99521	J0 à 8 heures	555619	Cortisol   J0 à 8 heures	nmol/L
+99522	J1 à 8 heures	555620	Cortisol  J1 à 8 heures	nmol/L
+99523	J0 à minuit ingestion de 1 mg de Dexaméthasone	555621	J0 à minuit ingestion de 1 mg de DXM	
+99524	Cad Hématies	555622	Hématies	élts/mn
+99525	Cad Leucocytes	555623	Leucocytes	élts/mn
+99526	Cad  Cellules épithéliales	555624	Cellules épithéliales	
+99527	Cad Cylindres	555625	Cylindres	élts/mn
+99528	Cadd Volume	555626	Volume	 ml
+99529	Cadd débit	555627	Débit	ml/mn
+99530	LCR aspect	555628	Aspect	
+99531	LCR examen macroscopique	555629	EXAMEN MACROSCOPIQUE	
+99532	LCR EXAMEN MICROSCOP	555630	EXAMEN MICROSCOPIQUE	
+99533	LCR LEUCOCYTES	555631	Leucocytes	 /mm3
+99534	LCR HEMATIES	555636	Hématies	
+99535	LCR albumine	555633	Albuminorachie	g/l
+99536	 bacterie	555634	Bactéries	
+99537	LCR conclusion	555635	Conclusion	
+99542	T+270	555641	79	g/l
+99546	cortisol de base SYNACTHENE	555645	CORTISOL A 8 HEURES	nmol/L
+99547	CORTISOL T+60 mn	555647	CORTISOL T+60 mn	nmol/L
+99548	Injection de 0.25 de synacthène	555648	Injection de 0.25 mg de Synacthène	
+99549	leuco chimie	555650	Leucocytes	
+99550	TQ	555651	Temps de Quick	secondes
+99551	TP 2	555652	Taux de Prothrombine	  %
+99552	T + 120	3	T + 120 mn	g/l
+99554	DIU	555654	Diurèse	 ml
+99555	NA	555655	Natriurie 	mEq/24H
+99556	K	555656	Kaliurie  	mEq/24H
+99557	Rq toxo	555657	Remarque 	
+99558	couleur	555658	couleur 	
+99559	recherche d'aggl	555659	Recherche 	
+99560	TYPE	555660	Type	
+99561	TAUX Proteinurie des 24 h	555661	Taux	mg/24H
+99562	Taux microalbuminurie/24h	555662	Taux	mg/24H
+99563	cristaux	555663	Cristaux	
+99564	ANTIBIOTIQUES	555664	ANTIBIOTIQUES TESTES	
+99565	vide	555665		
+99566	vide	555666		
+99567	PRLV	555667	PRELEVEMENT	
+99568	Emission le	555668	Emission le  	
+99569	Lieu	555669	Lieu 	
+99570	Heure	555670	Heure	
+99571	Nombre : 	555671	Nombre de jours d'abstinence	
+99572	Vide	555672		
+99573	CARACTERISTIQUE PHYCO-CHIMIQUE	555673	CARACTERISTIQUE PHYCO-CHIMIQUE	
+99574	Vide	555674		
+99575	Aspect	555675	Aspect  	
+99576	Viscosité	555676	Viscosité	
+99577	Volume de l'ejaculât:	555677	Volume de l'ejaculât	
+99578	pH	555678	pH	
+99579	Temps de fluidification	555679	Temps de fluidification	
+99580	Vide	555680		
+99581	NUMERATION - CYTOLOGIE	555681	NUMERATION - CYTOLOGIE	
+99582	vide	555682		
+99583	Nombre de spermatozoides/ml	555683	Nombre de spermatozoïdes/ml	
+99584	Nombre de spermatozoides/ejaculat	555684	Nombre de spermatozoïdes/ejaculât	
+99585	Nombre de cellule rondes/ml	555685	Nombre de cellule rondes/ml	
+99586	Nombre de globules blancs/ml	555686	Nombre de globules blancs/ml	
+99587	Hémacies	555687	Hématies	
+99588	Cellules épithiliales	555688	Cellules épithiliales	
+99589	Agglutinats	555689	Agglutinats	
+99590	Vide	555690		
+99591	Vide	555691		
+99592	MOBILITE TOTAL	555692	MOBILITE TOTALE 	
+99593	La première heure	555693	La première heure ( a+b+c )	
+99594	La quatrième heure	555694	La quatrième heure ( a+b+c )	
+99595	Vide	555695		
+99596	VITALITE	555696	VITALITE	
+99597	La première heure	555697	La première heure	
+99598	Vide	555698		
+99599	Vide	555699		
+99600	Vide	555700		
+99601	Vide	555701		
+99602	Vide	555702		
+99603	SPERMOCYTOGRAMME	555703	SPERMOCYTOGRAMME 	
+99604	Vide	555704		
+99605	Vide	555705		
+99606	Vide	555706		
+99607	Vide	555707		
+99608	Spermatozoïdes normaux	555708	Spermatozoïdes normaux	
+99609	Spermatozoïdes anormaux	555709	Spermatozoïdes anormaux	
+99610	1) ANOMALIE DE LATÊTE	555710	1) ANOMALIE DE LATÊTE ( < à 35 % )	
+99611	Forme a : tête allongée	555711	Forme a  tête allongée	
+99612	Forme b : tête amincie	555712	Forme b  tête amincie	
+99613	Forme a : tête allongée	555713	   Spermatozoides à tête allongée	  %
+99614	Forme c :tête microcéphale	555714	   Spérmatozoides microcéphales	  %
+99615	Forme d :tête macrocéphale	555715	   Spermatozoides macrocéphales	  %
+99616	Forme e :têtes multiples	555716	Forme e têtes multiples	
+99617	Forme f : base de la tête anormale	555717	Forme f  base de la tête anormale	
+99618	Forme g: acrosome absent/ malformé	555718	Forme g acrosome absent/ malformé	
+99619	tête irréguliére	555719	   Spermatozoides à tête irréguliére	  %
+99620	2)Anomalie cytoplasmique	555720	2) Anomalie cytoplasmique	
+99621	Forme h : Reste cytoplasmique	555721	Forme h  Reste cytoplasmique	
+99622	3) Anomalies de la pièce intermédiaire	555722	2) ANOMALIES DE LA PIECE INTERMEDIAIRE ( < à 20 % )	
+99623	Forme i : pièce intermédiare	555723	Restes cytoplasmiques	
+99624	Forme j : angulation pièce intermédiare	555724	Forme j  angulation pièce intermédiare	
+99625	4) Anomalie du flagelle :	555725	3) ANOMALIES DU FLAGELLE ( < à 20 % )	
+99626	Forme k : Flagelle absent	555726	Forme k  Flagelle absent	
+99627	Forme I : Flagelle court	555727	Forme I  Flagelle court	
+99628	Forme m : Flagelle de calibre irrégulier	555728	Forme m  Flagelle de calibre irrégulier	
+99629	Forme o : Flagelle enroulé	555729	   Flagelle enroulé	
+99630	fl angule	555730	   Flagelle angulé	
+99631	IAM : index d'anomalies multiples	555731	INDEX D'ANOMALIES MULTIPLES	
+99632	CONCULSION	555732	CONCLUSION SPG	
+99634	IMP	555734	Imipeneme	
+99635	CS	555735	Colistine	
+99636		555736		
+99638	SP	555740	Spiramycine	
+99639	PT	555738	Pristinamycine	
+99640	vide	555739		
+99641	siège de la lésion	555741	Siège de la lésion	
+99642	résultats	555742	Résultat	
+99643	PEF	555743	Pefloxacine	
+99644		555753	Siége du prélévement	
+99645	Ac anti	20010	Ac anti Mycoplasma hominis 	
+99646		555744	Ac anti Ureaplasma urealiticum 	
+99647		555745	Acide Fusidique	
+99648	AM	555746	Ampicilline	
+99649		555747	Novobiocine	
+99650	siège du prélèvement	555748	Type de prélèvement	
+99651	AC IgG 	555749	Anticorps IgG anti cardiolipines	UR/ ml
+99652		555750	Anticorps IgM anti cardiolipines	UR/ ml
+99653		555751	Anticorps IgG anti béta 2 glycoproteine	UR/ ml
+99654		555752	Anticorps IgM anti béta 2 glycoproteine	UR/ ml
+99656	TAUX GLU	555794	Taux 	g/24H
+99657	Taux Toxo igg Vidas	555755	Taux  	UI/ml
+99658	AC IgA Antigiadine	555756	AC ANTI-GLIADINE Ig A	UR/ ml
+99659	Ac Ig G Anti- Gliadine	555757	AC ANTI GLIADINE Ig G	UR/ ml
+99660	AC Ig A Anti- Tg	555758	AC ANTI-TRANSGLUTAMINASE Ig A	UR/ ml
+99661	AC Anti Tg Ig G	555759	AC ANTI- TRANSGLUTAMINASE Ig G	UR/ ml
+99662	Ig A sériques totales	555760	Ig A SERIQUES TOTALES	g/l
+99663	FAN	555761	FAN ou  ANA/ IFI/HEp2	
+99664	Aspect de la fluorescence	555762	Aspect de la fluorescence	
+99665	vide (cuture spg )	555763		
+99666	vide( IAM )	555764		
+99668	Vide ( exploration de la mdie coeliaque	555766		
+99669	Conclusion ( Mdie coeliaque )	555767	CONCLUSION 	
+99670	vide (mdie coeliaque )	555768		
+99671	vide (mdie coeliaque	555769		
+99672	vide (mdie coeliaque )	555770		
+99673	HLA B27	555771	Résultat ( Cytométrie en flux )	
+99674	Cylindres	555772	Cylindres	
+99675	Conclusion ( SAPL )	555773	CONCLUSION	
+99676	vide cocl sapl	555774		
+99677	clinda	555775	Clindamycine	
+99678	r cytoplasmiques	555776	   Restes cytoplasmiques	  %
+99679		555777	 4) FORMES DOUBLEES (< à 10 % )	
+99680	f double	555778	Formes doublées	
+99681	vide	555779	Selon les Normes OMS ( Mise à jour Décembre 2010 )	
+99682	vide	555780		
+99683	vide	555781		
+99684	vide	555782		
+99685	vide	555783		
+99686	vide	555784		
+99687	vide	555785		
+99688	vide	555786		
+99689	vide	555787		
+99690	vide	555788		
+99691	vide	555789		
+99692	vide	555790		
+99693	vide	555792		
+99694	vide	555793		
+99695	vide	555795		
+99696	IAM :	555796	  IAM	
+99697		555797	Nouvelles normes OMS ( Mise à jour Decembre 2010 )	
+99698	protéine	555798	PROTEINES	g/l
+99699	VIDE	555799		
+99700	VIDE	555800		
+99701	VIDE	555801		
+99702	VIDE	555802		
+99703	VIDE	555803		
+99704	ADRENALINE	555965	Adrénaline	nmol/L
+99705		555804	LDH Plévre / LDH Plasma	
+99706		555805	EXAMEN MACROSCOPIQUE	
+99707		555806	EXAMEN MACROSCOPIQUE	
+99708		555807	Aspect 	
+99709		555808	Couleur 	
+99710		555809	Viscosité 	
+99711	vide	555810		
+99712		555811	EXAMEN MICROSOPIQUE	
+99713		555812	Leucocytes 	 /mm3
+99714		555813	Hématies 	/mm3
+99715		555814	EQUILIBRE LEUCOCYTAIRE	
+99716		555815	Polynucléaires neutrophiles 	  %
+99717		555816	Lymphocytes 	  %
+99718		555817	Autres cellules 	
+99719		555818	PROTEINES	g/l
+99720	VIDE	555819		
+99721		555820	CULTURE	
+99722	VIDE	555821		
+99723		555822	CONCLUSION	
+99724	VIDE	555823		
+99725	VIDE	555824		
+99726	VIDE	555825		
+99727	VIDE	555826		
+99728		555827	GRAVITE 	
+99729	vide	555828		
+99730		555829	SAAG (Gradient d'abumine sérum-ascite)	g/I
+99731	VIDE	555830		
+99732	vide	555831		
+99733		555832	Remarque 	
+99734		555833	Remarque 	
+99735		555834	Gravité 	
+99736		555835	Calcémie 	mg/l
+99737		555836	Albuminémie 	g/l
+99738		555837	Siége du prélévement 	
+99739		555838	Examen direct 	
+99740		555839	Culture  	
+99741	RET	555840	En %	
+99742		555841	En valeur absolue	
+99743	Indice toxo M	555842	Indice 	
+99744	rem toxo M	555843	Remarque 	
+99745	T 60	555844	T + 60 mn 	g/l
+99746	T0	555845	T 0 	g/l
+99747	vide	555846		
+99748	vide	555847		
+99749	VIDE	555848		
+99750	VIDE	555849		
+99751	VIDE	555850		
+99752	leuco	555851	Leucocytes	 /mm3
+99753		555852	Hematies 	 /mm3
+99754		555853	Leucocytes 	 /mm3
+99755	Siége	555854	Siége de la lésion 	
+99756		555855	Résultat 	
+99757	Résultat chlam	555856	Résultat 	
+99758	retic	555857	Réticulocytes 	  %
+99759		555858	Valeur 	U/gHb
+99760	Conclu(cmv)	555859	Conclusion	
+99761	P.T	555860	Protéines totales sériques 	g/l
+99762		555861	Lieu du prélévement 	
+99763		555862	EXAMEN MICROSCOPIQUE 	
+99764		555863	Leucocytes 	
+99765		555864	Hématies 	
+99766		555865	Céllules épithéliales 	
+99767		555866	Bactéries 	
+99768		555867	Levures 	
+99769		555868	Parasites 	
+99770		555869	CULTURE 	
+99771	Vide	555870		
+99772		555871	CONCLUSION 	
+99773		555872	Ac anti-virus ourlien IgG 	
+99774		555873	Ac anti-virus ourlien IgM 	
+99775		555874	Conclusion 	
+99776	IgG	555875	Ac-anti -B.burgdorferi IgG	U/ml
+99777	IgM	555876	Ac-anti-B.burgdoferi IgM	U/ml
+99778	leuco	555877	leucocytes 	
+99779		555878	   Flagelle absent	  %
+99780	AMX	555879	Amoxicilline	
+99781	Ac anti HSV1  IgG	555880	Ac anti HSV1 IgG 	
+99782	Ac anti HSV2 IgG	555881	Ac anti HSV2 IgG 	
+99783	Ac anti HSV IgM	555882	Ac anti HSV   IgM  	
+99784	CMV IgG:	555883	Cytomegalovirus IgG	
+99785	CMV IgM :	555884	Cytomegalovirus IgM 	
+99786	Conclusion CMV:	555885	Conclusion 	
+99787		555886	Résultat 	
+99788	Acide pipemidique	555887	Acide pipemidique	
+99789	AMK	555888	Amikacine	
+99790		555889	Diurese (en litres)	
+99791		555890	Taux 	
+99792		555891	Diurese (en  litres)	
+99793		555892	Taux 	
+99794	Tx meta	555893	Taux (DM)	mg/24H
+99795	Tx vma	555894	Taux(vma)	mg/24H
+99796		555895	Résultat 	
+99797	Du	555896	Densité urinaire	
+99798	ni	555897	Nitroxoline	
+99799		555898	SPERMOCULTURE	
+99800		555899	Recherche de levures	
+99801	Tv	555900	Recherche de Trichomonas vaginalis	
+99802		555901	Culture	
+99803		555902	Ac anti-Leischmania infantum(IFI Biomérieux)	
+99804		555903	Ac-anti -Leischmania infantum (IFI Biomérieux )	
+99805		555904	Ac anti Leiscmania Infantum (Index EIA )	
+99806		555905	Immunoglobulines IgG	g/I
+99808		555907	Immunoglobulines IgA 	g/l
+99810		555909	Immunoglobulines IgE	g/l
+99811		555910	Ac anti-Toxocara canis(EIA Bordier)	
+99812		555911	Ac anti-Toxocara canis (EIA Ridascreen )	
+99813		555912	Facteur anti-Nucleaire IFI( Euroimmun)	
+99814		555913	    FAN/ANA 	
+99815		555914	   Aspect de la fluorescence 	
+99816		555915	   Titrage des ANA 	
+99817		555916	Anti-ENA ( Extractible Nuclear Antigen ) Western Blot 	
+99818		555917	   Anti-Nucleosome 	
+99819		555918	   Anti-DNA natif 	
+99820		555919	   Anti-Histones 	
+99821		555920	   Anti-Sm 	
+99822		555921	   Anti-nRNP/Sm 	
+99823		555922	   Anti-SS-A (Ro60) 	
+99824		555923	   Anti-Ro52 	
+99825		555924	   Anti-SS-B 	
+99826		555925	   Anti-Scl70 	
+99827		555926	   Anti-PM/Scl 	
+99828		555927	   Anti-Jo-1 	
+99829		555928	   Anti-CENP B 	
+99830		555929	   Anti-PCNA 	
+99831		555930	   Anti-Prot P rib 	
+99832		555931	Anticorps Anti-Cytoplasmiques Western-Blot 	
+99833		555932	   Anti-Mitochondrie AMA-M2 	
+99834		555933	CONCLUSION 	
+99835	v	555934		
+99836	v	555935		
+99837	prot/24h	555936	PROTEINES URINAIRES (Colorimétrie)	g/24H
+99838		555937	PR3	
+99839		555938	MPO	
+99840		555939	GBM	
+99841		555940	Conclusion 	
+99842		555941	  Aspect du sérum 	
+99843		555942	  Cholesterol total 	g/l
+99844		555943	  HDL- Cholesterol 	g/I
+99845		555944	  LDL-Cholesterol 	g/l
+99846		555945	  Triglycerides 	g/l
+99847		555946	TAUX	
+99848	Taux	555947	Taux	
+99849	rq	555948	rq	
+99850		555949	Taux 	
+99851		555950	Remarque	
+99852		555951	Ac anti-VZV IgG	mIU/ml
+99853		555952	Ac anti-VZV IgM	mUI/ml
+99854		555953	TRAK 	UI/I
+99855	vide	555954		
+99858		555957	Taux =	mg/24H
+99859		555958	Diurese 	ml
+99860		555959	IgM 	
+99861		555960	IgG 	
+99862		555961	Creaturie 	g/24H
+99863		555962	Densité 	
+99864		555963	Hematies 	 /mm3
+99865		555964	Immunoglobulines IgM 	g/l
+99866	NORADRENALINE	555966	Noradrélanine	nmol/L
+99867	DOPAMINE	555967	Dopamine	nmol/L
+99868		555968	Densité 	
+99869	Résultat	0	Résultat	mmol/L
+99870	Recherche IFI	555969	Recherche 	
+99871	CONCLUSION HERPES	555970	Conclusion	
+99872		555971	Resultat 	
+99873		555972	Résultat 	
+99874		555973	AMA-M2 	
+99875		555974	M2(BPO) 	
+99876		555975	SP 100 	
+99877		555976	PML 	
+99878		555977	gp 210 	
+99879		555978	LKM1	
+99880		555979	LC-1	
+99881		555980	SLA/LP	
+99882		555981	PR3 	
+99883		555982	MPO 	
+99884		555983	GBM 	
+99885		555984	Cystine	µmol/24h
+99886		555985	Cystine/Creatinine	µmol/mmol
+99887		555987	Anticorps Anti - VCA (Ig M) 	
+99888		555988	Anticorps Anti - VCA (IgG) 	
+99889		555989	Anticorps Anti - VCA (IgA)  	
+99890		555990	Anticorps Anti - EA ( IgG)  	
+99891		555991	Anticorps Anti - EA (IgA)   	
+99892		555992	Anticorps Anti - EBNA      	
+99894		555994	Anticorps Anti - EA (IgM)   	
+99895		555995	Aspect macroscopique 	
+99896		555996	Aspect macroscopique 	
+99897		555997	-Aspect 	
+99898		555998	-Couleur 	
+99899		555999	-Coagulation spontanée 	
+99900	vide	556000		
+99901		556001	Examen microscopique 	
+99902		556002	-Leucocytes 	 /mm3
+99903		556003	-Hematies 	 /mm3
+99904	vide	556004		
+99905		556005	Equilibre leucocytaire 	
+99906		556006	-Polynucléaires neutrophiles 	  %
+99907		556007	-Lymphocytes 	  %
+99908		556008	-Autres cellules 	
+99909		556009	PROTEINES 	g/I
+99910		556010	Aspect macroscopique 	
+99911		556011	 - Aspect 	
+99912		556012	 -Couleur 	
+99913		556013	 -Coagulation spontanée 	
+99914	vide	556014		
+99915		556015	Examen microscopique 	
+99916		556016	 -Leucocytes 	 /ml
+99917		556017	 -Hématies 	 /ml
+99918	vide	556018		
+99919		556019	Equilibre leucocytaire 	
+99920		556020	 -Polynucléaires neutrophiles 	  %
+99921		556021	 -Lymphocytes 	  %
+99922		556022	 -Autres cellules 	
+99923		556023	Taux de Proteines 	g/l
+99924	vide	556024		
+99925	Cl-	556025	Chloremie 	mEq/l
+99926	Conclusion	556026	Conclusion 	
+99927	Ac anti-virus rougeoleux IgG	556027	Ac anti-virus rougeoleux IgG 	
+99928	Ac anti-virus rougeoleux IgM	556028	Ac anti-virus rougeoleux IgM 	
+99929	Conclusion	556029	Conclusion 	
+99930		556030	Ac anti-Cerveau (IF) 	
+99931		556031	Ac anti-Cervelet (IF) 	
+99932		556032	Ac anti-NMO (IF) 	
+99933	leucocytes	556033	Leucocytes 	
+99934	Hématies	556034	Hématies 	
+99935	cellules épith	556035	Cellules épithéliales 	
+99936	cristaux	556036	Cristaux 	
+99937		556037	Leucocytes 	/mm3
+99938		556038	Leucocytes 	
+99939		556039	Taux selon MDRD	ml/mn/1.73 m2
+99940		556040	Ac anti toxine de B.pertusis 	
+99941		556041	Ac anti adényl-cyclase 	
+99942		556042	Ac anti-hémagglutinine filamenteuse 	
+99943		556043	Reaction au rose Bengale 	
+99944		556044	Serodiagnostic de Wrigt 	
+99945		556045	Carnitine totale 	µmoles/l
+99946		556046	Carnitine libre 	µmoles/l
+99947		556047	Interprétation 	
+99948		556048	Glycémie à T+60 	g/l
+99950	eosino	556050	Eosinophiles	  %
+99951	Trop I HS	27	Troponine I HS	ng/l
+99952	SGOT	12533	SGOT	UI/I
+99953	SGPT	1546	SGPT	UI/I
+99954	Bilirubine totale	12445	BILIRUBINE TOTALE	mg/l
+99955	Bilirubine directe	15466	BILIRUBINE DIRECTE	mg/l
+99956	Bilirubine Indirecte	1356	BILIRUBINE INDIRECTE	mg/l
+99957	T 60	999001	T + 60 mn 	g/I
+(650 rows)
