@@ -14,15 +14,16 @@ def match(machine: str, test_code: str) -> dict:
     Return {'param_id', 'abbrev', 'name', 'method',
             'service_tarification_id', 'service_tarification_name'}.
     method is 'curated' when found in the verified map, else 'none' (all
-    fields None). service_tarification_* comes from mappings.SERVICE_TARIFICATION
-    when that machine's whole map is known to belong to one exam; otherwise None.
+    fields None). Every code in mappings.MAPS carries its own
+    service_tarification_id/name - a machine is NOT assumed to belong to a
+    single exam (Selectra alone spans ~20 different exams; only XN-330's CBC
+    panel happens to share one, FNS).
     """
     code = (test_code or "").strip()
     machine_map = mappings.MAPS.get(machine, {})
-    st_id, st_name = mappings.SERVICE_TARIFICATION.get(machine, (None, None))
 
     if code in machine_map:
-        param_id, abbrev, name = machine_map[code]
+        param_id, st_id, st_name, abbrev, name = machine_map[code]
         return {"param_id": param_id, "abbrev": abbrev, "name": name,
                 "method": "curated",
                 "service_tarification_id": st_id,

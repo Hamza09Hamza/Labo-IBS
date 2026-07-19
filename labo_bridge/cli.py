@@ -69,7 +69,8 @@ def cmd_match(args):
     if sub == "map" and len(args) >= 4:
         machine, code, param_id = args[1], args[2], int(args[3])
         print(f"To make this permanent, add to labo_bridge/mappings.py:")
-        print(f'    "{code}": ({param_id}, "<abbrev>", "<name>"),   # in {machine.upper()}_MAP')
+        print(f'    "{code}": ({param_id}, <service_tarification_id>, '
+              f'"<service_tarification_name>", "<abbrev>", "<name>"),   # in {machine.upper()}_MAP')
         # Re-stage any pending rows for this code so they pick up the mapping.
         db.execute("UPDATE result_matches SET matched_param_id=?, match_method='curated', "
                    "status='matched' WHERE machine=? AND test_code=? AND status='pending'",

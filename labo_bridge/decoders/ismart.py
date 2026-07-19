@@ -24,10 +24,16 @@ def decode_record(line: str) -> dict:
                 "raw": line}
 
     if rtype == "O":
-        rack_position = fields[2] if len(fields) > 2 else ""
-        sample_id = fields[3] if len(fields) > 3 and fields[3] else rack_position
+        # O-2 is the real Specimen ID (the scanned/entered barcode - the same
+        # kind of ID XN-330/Selectra send). O-3 "Instrument Specimen ID" is a
+        # secondary ID the analyzer generates for its OWN internal tracking -
+        # it looks nothing like the clinic's real sample ID format and should
+        # only be a fallback, not the preferred source.
+        specimen_id = fields[2] if len(fields) > 2 else ""
+        instrument_specimen_id = fields[3] if len(fields) > 3 else ""
+        sample_id = specimen_id or instrument_specimen_id
         return {"kind": "order", "sample_id": sample_id,
-                "rack_position": rack_position,
+                "instrument_specimen_id": instrument_specimen_id,
                 "specimen_type": fields[14] if len(fields) > 14 else "", "raw": line}
 
     if rtype == "R":

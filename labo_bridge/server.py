@@ -14,6 +14,7 @@ enough to share one socket - run_all() starts one listener thread per machine
 in a single process so all four analyzers can stay connected simultaneously.
 """
 
+import os
 import socket
 import threading
 from datetime import datetime
@@ -23,6 +24,14 @@ from .decoders import xn330, ismart, selectra, cyanvision
 from . import storage, matcher, pg, api_client, config
 
 HOST = "0.0.0.0"
+
+# Every session (one ASTM batch / one HL7 message) gets its raw records and
+# parsed results saved here automatically - always, for every machine,
+# regardless of match status or API config. This is the reliable way to go
+# back and inspect exactly what an analyzer sent (e.g. to find which field
+# actually carries a value a decoder is reading from the wrong place)
+# instead of relying on live terminal output nobody captured.
+RESULTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, "results"))
 
 # machine -> config. Each machine listens on its own fixed port.
 # "selectra" is the chemistry analyzer's real machine name (ELITech is the
@@ -39,38 +48,108 @@ MACHINES = {
 }
 
 
-def _ingest_result(conn_db, machine, sample_id, rec, quiet, specimen=None):
+def _ingest_result(session, sample_id, rec):
     """
     Store a result locally and stage its match. If the match is confident
-    (curated), ALSO push it downstream - to either the clinic Postgres
-    staging table (pg.py, our temporary table) or the coworker's real
-    machine-result API (api_client.py), controlled by
-    config.USE_MACHINE_RESULT_API. Pending/unmatched results never leave the
-    local SQLite db either way. Shared by both protocol paths.
+    (curated), stage it for the downstream push:
+      - clinic API path (api_client.py): QUEUED onto session.api_batch and
+        flushed as ONE combined JSON array at the batch/message boundary
+        (_flush_api_batch) - never one POST call per result, per
+        API_LABO_MACHINE_RESULT.md's "body must be a JSON array" rule.
+      - clinic Postgres staging table path (pg.py, temporary): written
+        immediately, one row per result - plain SQL inserts don't need
+        batching the way the HTTP API does.
+    Controlled by config.USE_MACHINE_RESULT_API. Pending/unmatched results
+    never leave the local SQLite db either way. Shared by both protocol paths.
     """
-    specimen = specimen or {}
+    machine, conn_db, quiet = session.machine, session.db, session.quiet
     storage.store_result(conn_db, machine, sample_id, rec)
     m = matcher.match(machine, rec.get("test_code", ""))
     storage.store_match(conn_db, machine, sample_id, rec, m)
 
-    if m["param_id"]:
+    if m["method"] == "curated":
+        # param_id is None for non-composed exams - service_tarification_id
+        # alone is the complete match in that case (see mappings.py).
+        target = (f"labo_param.id={m['param_id']}" if m["param_id"]
+                  else f"service_tarification.id={m['service_tarification_id']}")
         if config.USE_MACHINE_RESULT_API:
-            sent_ok = api_client.write_matched_result(machine, sample_id, specimen,
-                                                      rec.get("test_code", ""), m, rec)
-            dest = "clinic API"
+            item = api_client.build_item(
+                sample_id=sample_id.strip(),
+                result_value=rec.get("value", ""),
+                unit=rec.get("unit") or None,
+                param_id=m.get("param_id"),
+                service_tarification_id=m.get("service_tarification_id")
+                                         if not m.get("param_id") else None,
+                machine=machine,
+            )
+            session.api_batch.append({"item": item, "sample_id": sample_id,
+                                       "test_code": rec.get("test_code", "")})
+            tag = (f"matched -> {target} ({m['abbrev']} / {m['name']}) "
+                   f"[queued for batched clinic API send]")
         else:
-            sent_ok = pg.write_matched_result(machine, sample_id, specimen,
+            sent_ok = pg.write_matched_result(machine, sample_id, session.specimen,
                                               rec.get("test_code", ""), m, rec)
-            dest = "clinic PG staging table"
-        tag = (f"matched -> labo_param.id={m['param_id']} ({m['abbrev']} / {m['name']}) "
-               f"{f'[written to {dest}]' if sent_ok else f'[{dest} write skipped, see warning above]'}")
+            tag = (f"matched -> {target} ({m['abbrev']} / {m['name']}) "
+                   f"{'[written to clinic PG staging table]' if sent_ok else '[clinic PG staging table write skipped, see warning above]'}")
     else:
         tag = "PENDING (no curated match, needs manual review, local only)"
 
+    line = (f"WROTE result  sample={sample_id!r:14} "
+            f"test={rec.get('test_code',''):10s} value={rec.get('value',''):>10s} "
+            f"unit={rec.get('unit',''):8s} | {tag}")
+    session.parsed_lines.append(line)
     if not quiet:
-        print(f"[{machine}] WROTE result  sample={sample_id!r:14} "
-              f"test={rec.get('test_code',''):10s} value={rec.get('value',''):>10s} "
-              f"unit={rec.get('unit',''):8s} | {tag}")
+        print(f"[{machine}] {line}")
+
+
+def _flush_api_batch(session):
+    """
+    Send every result queued this batch/message as ONE JSON array - called
+    at the natural batch boundary (ASTM EOT, or end of one HL7 message).
+    No-op if nothing was queued (API path off, or nothing matched).
+    """
+    if session.api_batch:
+        api_client.send_batch(session.machine, session.api_batch)
+        session.api_batch = []
+
+
+def _write_session_file(session):
+    """
+    Save this session's raw records (exactly as received, in order) and
+    parsed results to results/<machine>_<timestamp>.txt - called at the same
+    batch boundary as _flush_api_batch. Always written, whether or not
+    anything matched or the API path is on, so nothing is ever only visible
+    in a terminal someone forgot to capture.
+    """
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    fname = os.path.join(RESULTS_DIR, f"{session.machine}_{ts}.txt")
+    with open(fname, "w") as f:
+        f.write(f"=== {session.machine} session ===\n")
+        f.write(f"Captured: {datetime.now().isoformat()}\n")
+        f.write(f"Source IP: {session.source_ip}\n")
+        f.write(f"Analyzer: {session.analyzer_model}\n")
+        f.write(f"Patient: {session.patient_name or '(none)'}  "
+                f"(ID: {session.patient_id or '(none)'})\n")
+        f.write(f"Sample ID: {session.sample_id}\n")
+        f.write("\n-- FULL raw bytes received from the machine, unprocessed "
+                "(includes STX/ETX/ENQ/EOT/checksums, everything, no filtering) --\n")
+        f.write(repr(session.raw_bytes) + "\n")
+        f.write("\n-- Same bytes, readable (control chars shown as \\xNN, nothing hidden) --\n")
+        readable = "".join(
+            chr(b) if 32 <= b < 127 or b in (9, 10, 13) else f"\\x{b:02x}"
+            for b in session.raw_bytes
+        )
+        f.write(readable + "\n")
+        f.write("\n-- Raw records, split one per line (decoder's view after framing "
+                "is stripped - cross-check against the FULL bytes above) --\n")
+        for raw_line in session.raw_lines:
+            f.write(raw_line + "\n")
+        f.write("\n-- Parsed results --\n")
+        for parsed_line in session.parsed_lines:
+            f.write(parsed_line + "\n")
+    if not session.quiet:
+        print(f"[{session.machine}] saved session log to {fname}")
 
 
 class _Session:
@@ -87,9 +166,15 @@ class _Session:
         self.sample_id = None
         self.specimen = {}  # year/month/sequence/paillasse, when parseable
         self.result_count = 0
+        self.api_batch = []  # queued clinic-API items, flushed at batch end
+        self.raw_bytes = b""  # every byte received this batch, BEFORE any framing/decoding
+        self.raw_lines = []  # every record's raw text, in order - see _write_session_file
+        self.parsed_lines = []  # formatted result summary lines, see _write_session_file
 
     def handle_event(self, ev):
         kind = ev.get("kind")
+        if ev.get("raw"):
+            self.raw_lines.append(ev["raw"])
         if kind == "header":
             self.analyzer_model = ev.get("analyzer_model", "")
             if not self.quiet:
@@ -118,7 +203,7 @@ class _Session:
                                      self.analyzer_model, self.patient_name,
                                      self.patient_id, self.source_ip)
                 self.sample_id = sid
-            _ingest_result(self.db, self.machine, self.sample_id, ev, self.quiet, self.specimen)
+            _ingest_result(self, self.sample_id, ev)
             self.result_count += 1
 
 
@@ -136,6 +221,7 @@ def _handle_astm(conn, addr, cfg, machine, conn_db, quiet):
         if not data:
             break
         buffer += data
+        session.raw_bytes += data  # exact bytes as received, before any framing/decoding
 
         while buffer:
             b0 = buffer[0]
@@ -144,6 +230,14 @@ def _handle_astm(conn, addr, cfg, machine, conn_db, quiet):
                 buffer = buffer[1:]
             elif b0 == astm.EOT:
                 buffer = buffer[1:]
+                _flush_api_batch(session)
+                _write_session_file(session)
+                # A single connection can carry multiple ENQ..EOT batches -
+                # reset per-batch accumulators so each file reflects only
+                # its own batch, not every batch seen on this connection.
+                session.raw_bytes = b""
+                session.raw_lines = []
+                session.parsed_lines = []
                 if not quiet:
                     print(f"[{machine}] batch complete ({session.result_count} results written)")
             elif b0 == astm.STX:
@@ -173,6 +267,9 @@ def _handle_hl7(conn, addr, cfg, machine, conn_db, quiet):
         for message, remainder in hl7_mllp.iter_messages(buffer):
             buffer = remainder
             session = _Session(machine, addr[0], conn_db, quiet)
+            # Reconstruct the exact bytes as received, including the MLLP
+            # envelope (VT/FS/CR) that iter_messages strips off for parsing.
+            session.raw_bytes = hl7_mllp.B_VT + message + hl7_mllp.B_FS + bytes([hl7_mllp.CR])
             control_id = ""
             for seg in hl7_mllp.split_segments(message):
                 fields = seg.split("|")
@@ -180,6 +277,8 @@ def _handle_hl7(conn, addr, cfg, machine, conn_db, quiet):
                 if ev.get("kind") == "header":
                     control_id = ev.get("control_id", "")
                 session.handle_event(ev)
+            _flush_api_batch(session)
+            _write_session_file(session)
             if not quiet:
                 print(f"[{machine}] message complete ({session.result_count} results written)")
             conn.sendall(hl7_mllp.build_ack(control_id or "0"))

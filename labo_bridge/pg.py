@@ -18,7 +18,7 @@ results from the analyzer must never depend on Postgres being up.
 
 import psycopg2
 
-PG_DSN = "host=localhost port=5432 dbname=clinic user=postgres"
+PG_DSN = "host=192.168.137.1 port=5432 dbname=clinic user=postgres"
 
 _conn = None
 _warned = False

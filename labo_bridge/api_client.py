@@ -80,35 +80,49 @@ def build_item(sample_id, result_value, unit=None, param_id=None,
     return item
 
 
-def write_matched_result(machine, sample_id, specimen, test_code, match, rec):
+def send_batch(machine: str, queued: list) -> None:
     """
-    Same call signature as pg.write_matched_result, so server.py can swap
-    between the two via config.USE_MACHINE_RESULT_API without branching logic
-    elsewhere. Sends ONE result per call (the API also accepts batches via
-    send_results() directly, for future batching if useful).
-    Returns True if the API accepted the result, False otherwise.
+    Send every result queued during one session (one ASTM batch / one HL7
+    message) as a SINGLE JSON array in ONE POST call - the API requires a
+    JSON array even for a single result, and multiple results captured
+    together must be sent together, not as separate POSTs per result (see
+    API_LABO_MACHINE_RESULT.md's "Important" section).
+
+    `queued` is a list of dicts, each {"item": <dict from build_item()>,
+    "sample_id": str, "test_code": str} - see server.py's _ingest_result/
+    _flush_api_batch, which build this list as results stream in and flush
+    it at the batch boundary.
+
+    Always prints the exact outgoing JSON array before attempting the send -
+    useful for validating the request shape while the coworker's API isn't
+    live yet (every send currently fails with a connection error, but the
+    payload itself is still visible to check against API_LABO_MACHINE_RESULT.md).
+    Reports a per-item outcome when the API returns a matching "results"
+    breakdown, otherwise one combined outcome for the whole batch (e.g. on a
+    connection error, where no per-item breakdown exists).
     """
-    item = build_item(
-        sample_id=sample_id.strip(),
-        result_value=rec.get("value", ""),
-        unit=rec.get("unit") or None,
-        param_id=match.get("param_id"),
-        service_tarification_id=match.get("service_tarification_id")
-                                 if not match.get("param_id") else None,
-        machine=machine,
-    )
-    result = send_results([item])
+    if not queued:
+        return
+
+    items = [entry["item"] for entry in queued]
+    print(f"[api] >> POST {ENDPOINT}  ({len(items)} result(s) in one array)\n"
+          f"[api]    body: {json.dumps(items, ensure_ascii=False, indent=2)}")
+    result = send_results(items)
 
     if not result["ok"]:
-        print(f"[api] WARNING: failed to send {machine}/{sample_id}/{test_code} "
-              f"to clinic API: {result['error']} (status={result['status']})")
-        return False
+        labels = ", ".join(f"{machine}/{e['sample_id']}/{e['test_code']}" for e in queued)
+        print(f"[api] << send failed for batch [{labels}]: "
+              f"{result['error']} (status={result['status']})")
+        return
 
     body = result["body"]
-    if isinstance(body, dict) and body.get("failed", 0):
-        first = (body.get("results") or [{}])[0]
-        print(f"[api] REJECTED {machine}/{sample_id}/{test_code}: "
-              f"{first.get('message', body)}")
-        return False
-
-    return True
+    per_item = body.get("results") if isinstance(body, dict) else None
+    if per_item and len(per_item) == len(queued):
+        for entry, r in zip(queued, per_item):
+            label = f"{machine}/{entry['sample_id']}/{entry['test_code']}"
+            if r.get("success"):
+                print(f"[api] << accepted {label} (labo_result_id={r.get('laboResultId')})")
+            else:
+                print(f"[api] << REJECTED {label}: {r.get('message', r)}")
+    else:
+        print(f"[api] << batch response: {body}")

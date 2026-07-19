@@ -108,6 +108,6 @@ def store_match(conn, machine, sample_id, rec, match):
         (machine, sample_id, rec.get("test_code", ""), rec.get("value", ""),
          rec.get("unit", ""), match.get("param_id"), match.get("abbrev"),
          match.get("name"), match.get("method"),
-         "matched" if match.get("param_id") else "pending",
+         "matched" if match.get("method") == "curated" else "pending",
          datetime.now().isoformat()))
     conn.commit()
