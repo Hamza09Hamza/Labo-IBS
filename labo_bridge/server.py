@@ -36,6 +36,22 @@ RESULTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir,
 # machine -> config. Each machine listens on its own fixed port.
 # "selectra" is the chemistry analyzer's real machine name (ELITech is the
 # software/protocol stack it runs, not the machine itself).
+# "xs500i" (Sysmex XS-500i) is the clinic's main, highest-volume hematology
+# analyzer (being supplemented/replaced by the xn330, but both stay in
+# active use) - never connected to this bridge before. Unlike the other
+# machines, it has no network/host-settings interface of its own - it's
+# wired directly into a Windows PC, so there's no analyzer-side menu to
+# point at a host IP/port; whatever that PC is configured to do (e.g. a
+# serial-to-network bridge, or running its own forwarding software) is what
+# determines how/whether data reaches us here - confirm with the person
+# managing that PC before assuming this port is even reachable.
+# It reuses xn330's decoder as a starting point: both are Sysmex hematology
+# analyzers, and the clinic DB already tags the FNS exam's technique as
+# "SYSMEX XS 500i" (see mappings.py), so the same ASTM field layout and CBC
+# test codes are expected. If its real wire format differs,
+# _write_session_file's raw byte dump (results/xs500i_<timestamp>.txt) will
+# show exactly what's different so xn330.decode_record can be adjusted or a
+# dedicated decoder written.
 MACHINES = {
     "xn330":      {"protocol": "astm", "decode_record": xn330.decode_record,
                    "initial_ack": False, "port": 6001},
@@ -45,6 +61,8 @@ MACHINES = {
                    "initial_ack": False, "port": 6003},
     "cyanvision": {"protocol": "hl7",  "decode_segment": cyanvision.decode_segment,
                    "initial_ack": False, "port": 6004},
+    "xs500i":     {"protocol": "astm", "decode_record": xn330.decode_record,
+                   "initial_ack": False, "port": 6005},
 }
 
 

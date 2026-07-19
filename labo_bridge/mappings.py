@@ -150,9 +150,23 @@ SELECTRA_MAP = {
 # real patient result - nothing to map until real patient data is seen.
 CYANVISION_MAP = {}
 
+# Sysmex XS-500i - the clinic's main hematology analyzer (being
+# supplemented/replaced by the xn330, both stay in active use). Never
+# connected to this bridge before, so this map is a STARTING ASSUMPTION, not
+# yet independently verified against a real XS-500i capture: it copies
+# XN330_MAP as-is because (a) both are Sysmex hematology analyzers, and
+# (b) the FNS exam's own technique tag in the DB is literally "SYSMEX XS
+# 500i" (see the docstring above / mappings' original derivation), so this
+# machine is if anything the MORE authoritative source for these params,
+# not less. Still: re-confirm test codes against a real capture (results/
+# xs500i_<timestamp>.txt) before trusting this for patient data - older
+# Sysmex models can differ in field layout from the xn330.
+XS500I_MAP = dict(XN330_MAP)
+
 MAPS = {
     "xn330": XN330_MAP,
     "ismart": ISMART_MAP,
     "selectra": SELECTRA_MAP,
     "cyanvision": CYANVISION_MAP,
+    "xs500i": XS500I_MAP,
 }
