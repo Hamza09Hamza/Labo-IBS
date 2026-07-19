@@ -1,0 +1,120 @@
+{
+  "example_1_xn330_cbc_batch": {
+    "description": "Real XN-330 CBC panel, 13 matched results, sent as ONE POST with a JSON array (per API_LABO_MACHINE_RESULT.md - the body must be an array even for one result, and a batch's results must be sent together, not as separate POSTs each)",
+    "endpoint": "http://localhost:8080/labo/api/machine/result",
+    "headers": {
+      "Content-Type": "application/json",
+      "X-API-TOKEN": "labo@@2025"
+    },
+    "body": [
+      {
+        "sample_id": "2607045907",
+        "result_value": "7.33",
+        "unit": "10^3/uL",
+        "param_id": 81,
+        "machine": "xn330"
+      },
+      {
+        "sample_id": "2607045907",
+        "result_value": "6.59",
+        "unit": "10^6/uL",
+        "param_id": 80,
+        "machine": "xn330"
+      },
+      {
+        "sample_id": "2607045907",
+        "result_value": "17.1",
+        "unit": "g/dL",
+        "param_id": 98000,
+        "machine": "xn330"
+      },
+      {
+        "sample_id": "2607045907",
+        "result_value": "54.0",
+        "unit": "%",
+        "param_id": 97000,
+        "machine": "xn330"
+      },
+      {
+        "sample_id": "2607045907",
+        "result_value": "81.9",
+        "unit": "fL",
+        "param_id": 99478,
+        "machine": "xn330"
+      },
+      {
+        "sample_id": "2607045907",
+        "result_value": "25.9",
+        "unit": "pg",
+        "param_id": 99307,
+        "machine": "xn330"
+      },
+      {
+        "sample_id": "2607045907",
+        "result_value": "31.7",
+        "unit": "g/dL",
+        "param_id": 10100,
+        "machine": "xn330"
+      },
+      {
+        "sample_id": "2607045907",
+        "result_value": "147",
+        "unit": "10^3/uL",
+        "param_id": 93,
+        "machine": "xn330"
+      },
+      {
+        "sample_id": "2607045907",
+        "result_value": "61.5",
+        "unit": "%",
+        "param_id": 99134,
+        "machine": "xn330"
+      },
+      {
+        "sample_id": "2607045907",
+        "result_value": "30.8",
+        "unit": "%",
+        "param_id": 99137,
+        "machine": "xn330"
+      },
+      {
+        "sample_id": "2607045907",
+        "result_value": "6.0",
+        "unit": "%",
+        "param_id": 99136,
+        "machine": "xn330"
+      },
+      {
+        "sample_id": "2607045907",
+        "result_value": "1.6",
+        "unit": "%",
+        "param_id": 99950,
+        "machine": "xn330"
+      },
+      {
+        "sample_id": "2607045907",
+        "result_value": "0.1",
+        "unit": "%",
+        "param_id": 99138,
+        "machine": "xn330"
+      }
+    ]
+  },
+  "example_2_selectra_non_composed_exam": {
+    "description": "Selectra Creatinine result. This exam (Creatinemie, id 392) has no labo_param breakdown (is_composed=false), so we send service_tarification_id instead of param_id, per the API doc's 'With service_tarification_id (and no param_id)' rule.",
+    "endpoint": "http://localhost:8080/labo/api/machine/result",
+    "headers": {
+      "Content-Type": "application/json",
+      "X-API-TOKEN": "labo@@2025"
+    },
+    "body": [
+      {
+        "sample_id": "2607039707",
+        "result_value": "9.8",
+        "unit": "mg/L",
+        "service_tarification_id": 392,
+        "machine": "selectra"
+      }
+    ]
+  }
+}
