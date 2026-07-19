@@ -1,4 +1,11 @@
-"""ELITech Chemistry Analyzer - LIS2-A decoder (carried from elitech_daemon.py)."""
+"""
+Selectra chemistry analyzer - LIS2-A decoder (carried from elitech_daemon.py).
+
+The analyzer is a Selectra; ELITech is the name of the software/protocol
+stack it runs, not the machine itself - "selectra" is the correct name to
+use anywhere this needs to be identified (machine field sent to the clinic
+API, printed logs, DB rows), per the user's correction on 2026-07-16.
+"""
 
 import re
 

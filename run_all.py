@@ -7,7 +7,7 @@ every machine stays connected to this same server simultaneously.
 Ports (see labo_bridge/server.py MACHINES for the source of truth):
     xn330      -> 6001
     ismart     -> 6002
-    elitech    -> 6003
+    selectra   -> 6003  (chemistry analyzer; runs the ELITech/LIS2-A software)
     cyanvision -> 6004
 
 Every line printed is prefixed with the machine name, and every result

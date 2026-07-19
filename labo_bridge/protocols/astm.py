@@ -2,7 +2,8 @@
 ASTM E1381/E1394 (and the closely-related LIS2-A) low-level protocol.
 
 This is the control-character handshake shared by the Sysmex XN-330,
-I-Smart 30, and ELITech analyzers. The framing is:
+I-Smart 30, and Selectra (chemistry analyzer, runs the ELITech/LIS2-A
+software stack) analyzers. The framing is:
 
     ENQ                         -> host replies ACK (line seized)
     STX <frame#> <text> ETX <checksum> CR LF   -> host replies ACK

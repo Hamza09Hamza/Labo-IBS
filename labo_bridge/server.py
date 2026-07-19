@@ -3,7 +3,7 @@ Shared TCP server + per-connection dispatch.
 
 Two protocol styles are supported behind one accept-loop:
 
-  ASTM/LIS2-A (xn330, ismart, elitech): ENQ/ACK/STX-framing, records decoded
+  ASTM/LIS2-A (xn330, ismart, selectra): ENQ/ACK/STX-framing, records decoded
       one line at a time by the machine's decode_record().
   HL7/MLLP    (cyanvision): whole segments decoded by decode_segment(), and a
       full HL7 ACK message is sent back per message.
@@ -19,32 +19,55 @@ import threading
 from datetime import datetime
 
 from .protocols import astm, hl7_mllp
-from .decoders import xn330, ismart, elitech, cyanvision
-from . import storage, matcher
+from .decoders import xn330, ismart, selectra, cyanvision
+from . import storage, matcher, pg, api_client, config
 
 HOST = "0.0.0.0"
 
 # machine -> config. Each machine listens on its own fixed port.
+# "selectra" is the chemistry analyzer's real machine name (ELITech is the
+# software/protocol stack it runs, not the machine itself).
 MACHINES = {
     "xn330":      {"protocol": "astm", "decode_record": xn330.decode_record,
                    "initial_ack": False, "port": 6001},
     "ismart":     {"protocol": "astm", "decode_record": ismart.decode_record,
                    "initial_ack": True, "port": 6002},
-    "elitech":    {"protocol": "astm", "decode_record": elitech.decode_record,
+    "selectra":   {"protocol": "astm", "decode_record": selectra.decode_record,
                    "initial_ack": False, "port": 6003},
     "cyanvision": {"protocol": "hl7",  "decode_segment": cyanvision.decode_segment,
                    "initial_ack": False, "port": 6004},
 }
 
 
-def _ingest_result(conn_db, machine, sample_id, rec, quiet):
-    """Store a result and stage its match. Shared by both protocol paths."""
+def _ingest_result(conn_db, machine, sample_id, rec, quiet, specimen=None):
+    """
+    Store a result locally and stage its match. If the match is confident
+    (curated), ALSO push it downstream - to either the clinic Postgres
+    staging table (pg.py, our temporary table) or the coworker's real
+    machine-result API (api_client.py), controlled by
+    config.USE_MACHINE_RESULT_API. Pending/unmatched results never leave the
+    local SQLite db either way. Shared by both protocol paths.
+    """
+    specimen = specimen or {}
     storage.store_result(conn_db, machine, sample_id, rec)
     m = matcher.match(machine, rec.get("test_code", ""))
     storage.store_match(conn_db, machine, sample_id, rec, m)
+
+    if m["param_id"]:
+        if config.USE_MACHINE_RESULT_API:
+            sent_ok = api_client.write_matched_result(machine, sample_id, specimen,
+                                                      rec.get("test_code", ""), m, rec)
+            dest = "clinic API"
+        else:
+            sent_ok = pg.write_matched_result(machine, sample_id, specimen,
+                                              rec.get("test_code", ""), m, rec)
+            dest = "clinic PG staging table"
+        tag = (f"matched -> labo_param.id={m['param_id']} ({m['abbrev']} / {m['name']}) "
+               f"{f'[written to {dest}]' if sent_ok else f'[{dest} write skipped, see warning above]'}")
+    else:
+        tag = "PENDING (no curated match, needs manual review, local only)"
+
     if not quiet:
-        tag = (f"matched -> labo_param.id={m['param_id']} ({m['abbrev']} / {m['name']})"
-               if m["param_id"] else "PENDING (no curated match, needs manual review)")
         print(f"[{machine}] WROTE result  sample={sample_id!r:14} "
               f"test={rec.get('test_code',''):10s} value={rec.get('value',''):>10s} "
               f"unit={rec.get('unit',''):8s} | {tag}")
@@ -62,6 +85,7 @@ class _Session:
         self.patient_name = ""
         self.patient_id = ""
         self.sample_id = None
+        self.specimen = {}  # year/month/sequence/paillasse, when parseable
         self.result_count = 0
 
     def handle_event(self, ev):
@@ -79,6 +103,7 @@ class _Session:
         elif kind == "order":
             self.sample_id = ev.get("sample_id", "") or self.sample_id
             paillasse = ev.get("paillasse")
+            self.specimen = {k: ev[k] for k in ("year", "month", "sequence", "paillasse") if k in ev}
             storage.store_sample(self.db, self.machine, self.sample_id or "",
                                  self.analyzer_model, self.patient_name,
                                  self.patient_id, self.source_ip, paillasse)
@@ -93,7 +118,7 @@ class _Session:
                                      self.analyzer_model, self.patient_name,
                                      self.patient_id, self.source_ip)
                 self.sample_id = sid
-            _ingest_result(self.db, self.machine, self.sample_id, ev, self.quiet)
+            _ingest_result(self.db, self.machine, self.sample_id, ev, self.quiet, self.specimen)
             self.result_count += 1
 
 

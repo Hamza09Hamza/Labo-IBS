@@ -99,7 +99,7 @@ def decode_record(line: str) -> dict:
         # sample id: plain field 2, else nested in instrument field 3
         sample_id = fields[2].strip() if len(fields) > 2 and fields[2].strip() else ""
         if not sample_id and len(fields) > 3:
-            parts = [p for p in fields[3].split("^") if p]
+            parts = [p.strip() for p in fields[3].split("^") if p.strip()]
             sample_id = parts[0] if parts else ""
         ev = {"kind": "order", "sample_id": sample_id, "raw": line}
         ev.update(parse_specimen_id(sample_id))  # adds year/month/sequence/paillasse if it matches

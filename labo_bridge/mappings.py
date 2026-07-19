@@ -53,6 +53,12 @@ To add a mapping after verifying it against the DB, add a line here (or use
 `python -m labo_bridge match map <machine> <code> <param_id>`).
 """
 
+# All 13 XN-330 CBC codes below belong to the SAME exam: service_tarification
+# id=421, name="FNS" (verified via the join in the docstring above - every
+# param row came back tagged with this one service_tarification_id).
+XN330_SERVICE_TARIFICATION_ID = 421
+XN330_SERVICE_TARIFICATION_NAME = "FNS"
+
 # code -> (labo_param.id, abbreviation, name)
 XN330_MAP = {
     "WBC":   (81,    "GB",       "Globules Blancs"),
@@ -75,13 +81,24 @@ XN330_MAP = {
 # When building these, use the service_tarification join method documented
 # above - look up the relevant exam(s) (see the frequency query) rather than
 # scanning labo_param directly.
+# "selectra" is the chemistry analyzer's real machine name (it runs the
+# ELITech software/LIS2-A protocol stack, but the machine itself is a Selectra).
 ISMART_MAP = {}
-ELITECH_MAP = {}
+SELECTRA_MAP = {}
 CYANVISION_MAP = {}
 
 MAPS = {
     "xn330": XN330_MAP,
     "ismart": ISMART_MAP,
-    "elitech": ELITECH_MAP,
+    "selectra": SELECTRA_MAP,
     "cyanvision": CYANVISION_MAP,
+}
+
+# machine -> (service_tarification_id, service_tarification_name).
+# Only meaningful when every code in that machine's MAP belongs to a single
+# exam (true for XN-330/FNS). If a future machine's mapping spans multiple
+# exams, don't force it in here - extend the per-code tuples in its MAP
+# instead rather than assuming one exam per machine.
+SERVICE_TARIFICATION = {
+    "xn330": (XN330_SERVICE_TARIFICATION_ID, XN330_SERVICE_TARIFICATION_NAME),
 }
