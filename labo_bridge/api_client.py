@@ -20,7 +20,7 @@ import urllib.error
 
 from . import config
 
-ENDPOINT = "http://localhost:8080/labo/api/machine/result"
+ENDPOINT = "http://172.16.2.4:8282/labo/api/machine/result"
 API_TOKEN = "labo@@2025"
 
 

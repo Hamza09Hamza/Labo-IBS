@@ -1,8 +1,14 @@
 """
 Safe, surgical editor that adds a brand-new analyzer entry into server.py's
-MACHINES dict. Same approach as mappings_editor.py/machine_meta_editor.py -
-anchor on the dict literal via brace-depth counting and insert one new block
-before the closing brace, leaving every existing entry/comment untouched.
+MACHINES dict. Same approach as mappings_editor.py - anchor on the dict
+literal via brace-depth counting and insert one new block before the
+closing brace, leaving every existing entry/comment untouched.
+
+This dict still lives in a source file (unlike the rest of a machine's
+settings, which moved to labo_bridge.machine_config in Postgres - see
+pg.py's module docstring) because its values are live Python function
+references (each machine's decode_record/decode_segment callable), not
+plain data - those can't be stored as a database row.
 
 Only ADDS new machines - editing/removing an existing one isn't needed yet
 (existing machines are hand-verified, hardware-specific configs; adding a

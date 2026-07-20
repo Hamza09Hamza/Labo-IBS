@@ -66,6 +66,18 @@ MACHINES = {
 }
 
 
+def _get_machine_id(machine: str):
+    """
+    Look up the clinic labo_machine.id configured for this machine, from
+    labo_bridge.machine_config (editable live via the admin UI - see pg.py's
+    module docstring). Returns None if unset or Postgres is unreachable -
+    build_item() then falls back to sending the machine name string
+    instead, per the API's "machine (name only, no machine_id)" path.
+    """
+    cfg = pg.get_machine_config(machine)
+    return cfg.get("machine_id") if cfg else None
+
+
 def _ingest_result(session, sample_id, rec):
     """
     Match a result and persist it straight to Postgres - no local SQLite,
@@ -98,6 +110,7 @@ def _ingest_result(session, sample_id, rec):
                 service_tarification_id=m.get("service_tarification_id")
                                          if not m.get("param_id") else None,
                 machine=machine,
+                machine_id=_get_machine_id(machine),
             )
             session.api_batch.append({"item": item, "sample_id": sample_id,
                                        "test_code": rec.get("test_code", "")})

@@ -28,6 +28,21 @@ gets a proper API later to reconcile with real appointments/exams):
                                    like everything else. Never write here
                                    directly; always go through
                                    mappings_editor.py so both stay in sync.
+  labo_bridge.machine_config    - per-machine display/API settings (label,
+                                   kind, protocol, port, color, photo,
+                                   machine_id). This IS the source of truth
+                                   (unlike mappings, nothing else defines
+                                   these values) - it replaced editing
+                                   app.py's MACHINE_META dict directly,
+                                   because rewriting a live Python source
+                                   file on every settings change was fragile
+                                   (a save could hang for a long time
+                                   waiting on the OS/antivirus to release
+                                   the file handle, and a botched edit could
+                                   leave the file with invalid syntax and
+                                   crash the whole admin server on next
+                                   reload - both actually happened). A
+                                   plain UPDATE never has either problem.
 
 Connection uses the same local Postgres server/credentials already set up
 for this machine (pgpass.conf). If Postgres is unreachable, writes are
@@ -37,6 +52,7 @@ while it's down (this is a deliberate tradeoff, not an oversight - keep
 Postgres up when analyzers are actively sending results).
 """
 
+import threading
 import time
 
 import psycopg2
@@ -51,29 +67,42 @@ CONNECT_TIMEOUT_SECONDS = 2
 # feel like it's hanging/buggy rather than just "DB is down".
 RETRY_COOLDOWN_SECONDS = 15
 
-_conn = None
+# ONE psycopg2 connection object was previously shared across every thread
+# (5 machine listener threads + the Flask admin thread). psycopg2 connections
+# are NOT safe for concurrent use from multiple threads at once - if a
+# listener thread was mid-query (writing a result from an actively-streaming
+# analyzer) at the same moment the admin UI ran a query on that same
+# connection, they collided and one side could block indefinitely. This is
+# exactly why machine_id saves would hang only while a real machine was
+# connected and sending data, and work fine in isolated testing. Fix: give
+# each thread its own connection via threading.local() - every thread gets
+# its own socket to Postgres, no shared mutable connection state, no
+# blocking on another thread's in-flight query.
+_local = threading.local()
 _warned = False
 _last_failure_at = 0.0
 
 
 def _get_conn():
-    global _conn, _warned, _last_failure_at
-    if _conn is not None:
+    global _warned, _last_failure_at
+    conn = getattr(_local, "conn", None)
+    if conn is not None:
         try:
-            with _conn.cursor() as cur:
+            with conn.cursor() as cur:
                 cur.execute("SELECT 1")
-            return _conn
+            return conn
         except Exception:
-            _conn = None  # stale connection, reconnect below
+            _local.conn = None  # stale connection, reconnect below
 
     if time.monotonic() - _last_failure_at < RETRY_COOLDOWN_SECONDS:
         return None  # still in cooldown, don't hammer an unreachable host
 
     try:
-        _conn = psycopg2.connect(PG_DSN, connect_timeout=CONNECT_TIMEOUT_SECONDS)
-        _conn.autocommit = True
+        conn = psycopg2.connect(PG_DSN, connect_timeout=CONNECT_TIMEOUT_SECONDS)
+        conn.autocommit = True
+        _local.conn = conn
         _warned = False
-        return _conn
+        return conn
     except Exception as e:
         _last_failure_at = time.monotonic()
         if not _warned:
@@ -308,4 +337,88 @@ def delete_mapping_sync(machine, code):
         return True
     except Exception as e:
         print(f"[pg] WARNING: failed to delete mapping {machine}/{code} from labo_bridge.mappings: {e}")
+        return False
+
+
+_MACHINE_CONFIG_COLUMNS = ("machine", "label", "kind", "protocol", "port",
+                          "color", "photo", "photo_bg", "machine_id")
+
+
+def get_all_machine_configs():
+    """
+    Return {machine: {label, kind, protocol, port, color, photo, photo_bg,
+    machine_id}} for every configured machine, or {} if PG is unreachable.
+    The admin UI's /api/machines reads this instead of a hardcoded dict.
+    """
+    conn = _get_conn()
+    if conn is None:
+        return {}
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"SELECT {', '.join(_MACHINE_CONFIG_COLUMNS)} FROM labo_bridge.machine_config")
+            rows = cur.fetchall()
+        return {row[0]: dict(zip(_MACHINE_CONFIG_COLUMNS[1:], row[1:])) for row in rows}
+    except Exception as e:
+        print(f"[pg] WARNING: failed to read labo_bridge.machine_config: {e}")
+        return {}
+
+
+def get_machine_config(machine):
+    """Return one machine's config dict, or None if not found/PG unreachable."""
+    return get_all_machine_configs().get(machine)
+
+
+def upsert_machine_config(machine, label=None, kind=None, protocol=None, port=None,
+                          color=None, photo=None, photo_bg=None, machine_id="__unset__"):
+    """
+    Insert or partially update one machine's row in labo_bridge.machine_config.
+    Any field left at its default (None, or the machine_id sentinel) keeps
+    its current DB value rather than being overwritten - callers only pass
+    the fields they actually want to change (see api_put_machine_config /
+    add_machine in admin/app.py). Returns True on success, False if the
+    write was skipped (PG unreachable) or the machine doesn't exist yet for
+    a partial update.
+    """
+    conn = _get_conn()
+    if conn is None:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM labo_bridge.machine_config WHERE machine = %s", (machine,))
+            exists = cur.fetchone() is not None
+
+            if not exists:
+                cur.execute(
+                    """
+                    INSERT INTO labo_bridge.machine_config
+                        (machine, label, kind, protocol, port, color, photo, photo_bg, machine_id)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    """,
+                    (machine, label or machine, kind or "", protocol or "", port or 0,
+                     color or "#0C8599", photo, photo_bg or "transparent",
+                     None if machine_id == "__unset__" else machine_id),
+                )
+                return True
+
+            sets, params = [], []
+            for col, val in (("label", label), ("kind", kind), ("protocol", protocol),
+                             ("port", port), ("color", color), ("photo", photo),
+                             ("photo_bg", photo_bg)):
+                if val is not None:
+                    sets.append(f"{col} = %s")
+                    params.append(val)
+            if machine_id != "__unset__":
+                sets.append("machine_id = %s")
+                params.append(machine_id)
+            if not sets:
+                return True
+            sets.append("updated_at = now()")
+            params.append(machine)
+            cur.execute(
+                f"UPDATE labo_bridge.machine_config SET {', '.join(sets)} WHERE machine = %s",
+                params,
+            )
+        return True
+    except Exception as e:
+        print(f"[pg] WARNING: failed to write machine_config for {machine}: {e}")
         return False

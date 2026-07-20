@@ -682,6 +682,7 @@ document.getElementById("saveSettingsBtn").addEventListener("click", async () =>
 const configScrim = document.getElementById("configModalScrim");
 const cfgLabel = document.getElementById("cfgLabel");
 const cfgPort = document.getElementById("cfgPort");
+const cfgMachineId = document.getElementById("cfgMachineId");
 const configModalAlert = document.getElementById("configModalAlert");
 let configEditingMachine = null;
 
@@ -690,6 +691,7 @@ function openConfigModal(m) {
   document.getElementById("configModalTitle").textContent = `${m.label} Settings`;
   cfgLabel.value = m.label || "";
   cfgPort.value = m.port || "";
+  cfgMachineId.value = m.machine_id ?? "";
   configModalAlert.hidden = true;
   configScrim.classList.add("open");
   setTimeout(() => cfgLabel.focus(), 80);
@@ -709,6 +711,7 @@ document.addEventListener("keydown", (e) => {
 document.getElementById("configModalSave").addEventListener("click", async () => {
   const label = cfgLabel.value.trim();
   const portValue = cfgPort.value.trim();
+  const machineIdValue = cfgMachineId.value.trim();
   if (!label) {
     configModalAlert.hidden = false;
     configModalAlert.textContent = "Display name cannot be empty.";
@@ -720,9 +723,15 @@ document.getElementById("configModalSave").addEventListener("click", async () =>
     configModalAlert.textContent = "Port must be a number between 1024 and 65535.";
     return;
   }
+  const machineId = machineIdValue ? parseInt(machineIdValue, 10) : null;
+  if (machineId !== null && Number.isNaN(machineId)) {
+    configModalAlert.hidden = false;
+    configModalAlert.textContent = "Machine ID must be a number.";
+    return;
+  }
 
   try {
-    await apiPut(`/api/machines/${configEditingMachine}/config`, { label, port });
+    await apiPut(`/api/machines/${configEditingMachine}/config`, { label, port, machine_id: machineId });
     closeConfigModal();
     toast(`Settings saved for "${label}". Port changes apply immediately.`, "success");
     await loadMachines();

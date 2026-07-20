@@ -23,7 +23,6 @@ from labo_bridge import mappings as mappings_module, server as server_module
 from labo_bridge import runtime_ports, live_status
 from labo_bridge.admin import mappings_editor as me
 from labo_bridge.admin import config_editor as ce
-from labo_bridge.admin import machine_meta_editor as mme
 from labo_bridge.admin import machines_editor as mce
 
 try:
@@ -91,23 +90,17 @@ def static_files(filename):
 # Machines overview
 # ---------------------------------------------------------------------------
 
-MACHINE_META = {
-    "xn330":      {"label": "Sysmex XN-330",   "kind": "Hematology Analyzer",
-                   "protocol": "ASTM E1394", "port": 6001, "color": "#0C8599",
-                   "photo": "machines/xn330.png", "photo_bg": "transparent"},
-    "ismart":     {"label": "I-Smart 30 PRO",  "kind": "Electrolyte / ISE Analyzer",
-                   "protocol": "ASTM E1394-97", "port": 6002, "color": "#7C3AED",
-                   "photo": "machines/ismart.png", "photo_bg": "transparent"},
-    "selectra":   {"label": "Selectra",        "kind": "Chemistry Analyzer",
-                   "protocol": "LIS2-A (ELITech)", "port": 6003, "color": "#F59E0B",
-                   "photo": "machines/selectra.png", "photo_bg": "transparent"},
-    "cyanvision": {"label": "CyanVision",      "kind": "Chemistry Analyzer",
-                   "protocol": "HL7 v2.3.1 / MLLP", "port": 6004, "color": "#EC4899",
-                   "photo": "machines/cyanvision.png", "photo_bg": "transparent"},
-    "xs500i":     {"label": "Sysmex XS-500i",  "kind": "Hematology Analyzer (primary)",
-                   "protocol": "ASTM E1394 (via IPU)", "port": 6005, "color": "#0EA5E9",
-                   "photo": "machines/xs500i.png", "photo_bg": "transparent"},
-}
+# Per-machine display/API settings (label, kind, protocol, port, color,
+# photo, machine_id) now live in labo_bridge.machine_config (see pg.py's
+# module docstring for why: rewriting this file's source on every settings
+# change was fragile - a save could hang waiting on the OS/antivirus to
+# release the file handle, or a botched edit could leave invalid Python and
+# crash the whole admin server on next reload; both happened in practice).
+# This function replaces the old hardcoded MACHINE_META dict - call it
+# fresh wherever the old dict used to be read directly, since Postgres is
+# now the actual source of truth, not module-level state.
+def _machine_meta():
+    return pg_module.get_all_machine_configs() if pg_module else {}
 
 
 # machine key -> which existing machine's decoder it reuses + what protocol
@@ -128,8 +121,9 @@ ALLOWED_PHOTO_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".svg"}
 @app.route("/api/decoders")
 def api_decoders():
     """List existing machines whose decoder can be reused for a new analyzer."""
+    meta = _machine_meta()
     return jsonify([
-        {"machine": m, "label": MACHINE_META.get(m, {}).get("label", m), "protocol": p}
+        {"machine": m, "label": meta.get(m, {}).get("label", m), "protocol": p}
         for m, p in DECODER_CHOICES.items()
     ])
 
@@ -137,9 +131,9 @@ def api_decoders():
 @app.route("/api/machines", methods=["POST"])
 def api_add_machine():
     """
-    Add a brand-new analyzer: writes MACHINE_META (app.py), MACHINES
-    (server.py), and an empty curated map (mappings.py), saves an optional
-    photo upload, then starts its listener thread live via
+    Add a brand-new analyzer: writes labo_bridge.machine_config (Postgres),
+    MACHINES (server.py), and an empty curated map (mappings.py), saves an
+    optional photo upload, then starts its listener thread live via
     server_module.register_machine() - no process restart needed, same
     principle as the live port-rebind mechanism.
     """
@@ -185,8 +179,6 @@ def api_add_machine():
 
     try:
         mce.add_machine(machine, protocol, reuse_decoder_from, port)
-        mme.add_machine(machine, label, kind or "Analyzer", protocol.upper(), port,
-                        color, photo=photo_rel)
         me.add_machine_map(machine)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -204,9 +196,9 @@ def api_add_machine():
               "initial_ack": False, "port": port}
     server_module.register_machine(machine, new_cfg)
 
-    MACHINE_META[machine] = {"label": label, "kind": kind or "Analyzer",
-                             "protocol": protocol.upper(), "port": port,
-                             "color": color, "photo": photo_rel, "photo_bg": "transparent"}
+    pg_module.upsert_machine_config(machine, label=label, kind=kind or "Analyzer",
+                                    protocol=protocol.upper(), port=port,
+                                    color=color, photo=photo_rel, photo_bg="transparent")
     _reload_mappings()
 
     return jsonify({"ok": True, "machine": machine})
@@ -228,9 +220,10 @@ def api_machines():
         "SELECT machine, MAX(received_at) FROM labo_bridge.samples GROUP BY machine"
     )[1] or [])
 
+    all_meta = _machine_meta()
     out = []
     for machine, cfg in server_module.MACHINES.items():
-        meta = MACHINE_META.get(machine, {})
+        meta = all_meta.get(machine, {})
         machine_map = mappings_module.MAPS.get(machine, {})
         live = live_status.get(machine)
         last_seen = last_seen_map.get(machine)
@@ -244,6 +237,7 @@ def api_machines():
             "color": meta.get("color", "#0C8599"),
             "photo": meta.get("photo"),
             "photo_bg": meta.get("photo_bg", "transparent"),
+            "machine_id": meta.get("machine_id"),
             "mapped_codes": len(machine_map),
             "sample_count": sample_counts.get(machine, 0),
             "matched_count": matched_counts.get(machine, 0),
@@ -519,29 +513,29 @@ def api_put_api_settings():
 
 
 # ---------------------------------------------------------------------------
-# Machine config - display name (rewrites app.py's MACHINE_META) and listen
-# port (live rebind via runtime_ports.json - no restart needed, see
-# server.py's _serve_one_machine which polls this on every accept-loop tick)
+# Machine config - display name, machine_id (both in labo_bridge.
+# machine_config, a plain Postgres UPDATE - see pg.py's module docstring for
+# why this isn't a file edit anymore) and listen port (live rebind via
+# runtime_ports.json - no restart needed, see server.py's _serve_one_machine
+# which polls this on every accept-loop tick)
 # ---------------------------------------------------------------------------
 
 @app.route("/api/machines/<machine>/config", methods=["PUT"])
 def api_put_machine_config(machine):
-    if machine not in MACHINE_META:
+    if machine not in server_module.MACHINES:
         return jsonify({"error": f"unknown machine {machine!r}"}), 404
+    if pg_module is None:
+        return jsonify({"error": "clinic Postgres DB unreachable"}), 503
     body = request.get_json(force=True)
 
     label = body.get("label")
     port = body.get("port")
+    machine_id = body.get("machine_id", "__unset__")  # sentinel: key absent means "don't touch"
 
     if label is not None:
         label = label.strip()
         if not label:
             return jsonify({"error": "label cannot be empty"}), 400
-        try:
-            mme.set_label(machine, label)
-            MACHINE_META[machine]["label"] = label
-        except ValueError as e:
-            return jsonify({"error": str(e)}), 400
 
     if port is not None:
         try:
@@ -556,13 +550,35 @@ def api_put_machine_config(machine):
             return jsonify({"error": f"port {port} is already used by {in_use[0]}"}), 400
         runtime_ports.set_override(machine, port)
 
-    return jsonify({"ok": True, "label": MACHINE_META[machine].get("label"),
-                    "port": runtime_ports.get_port_for(machine, server_module.MACHINES[machine]["port"])})
+    if machine_id != "__unset__":
+        if machine_id is not None and machine_id != "":
+            try:
+                machine_id = int(machine_id)
+            except (TypeError, ValueError):
+                return jsonify({"error": "machine_id must be a number"}), 400
+        else:
+            machine_id = None
+
+    if label is not None or machine_id != "__unset__":
+        ok = pg_module.upsert_machine_config(machine, label=label, machine_id=machine_id)
+        if not ok:
+            return jsonify({"error": "failed to save - clinic Postgres DB unreachable"}), 503
+
+    meta = pg_module.get_machine_config(machine) or {}
+    return jsonify({"ok": True, "label": meta.get("label"),
+                    "port": runtime_ports.get_port_for(machine, server_module.MACHINES[machine]["port"]),
+                    "machine_id": meta.get("machine_id")})
 
 
 def main():
     print("Labo Bridge Admin running at http://127.0.0.1:5050")
-    app.run(host="127.0.0.1", port=5050, debug=False)
+    # threaded=True: without it, Flask's dev server handles ONE request at a
+    # time. With a machine actively streaming (Postgres writes on every
+    # result) plus the frontend's 2s polling loop, single-threaded mode lets
+    # requests queue up behind each other indefinitely under real load - a
+    # config save could sit "pending" for a long time not because anything
+    # is broken, but because it's stuck waiting for its turn.
+    app.run(host="127.0.0.1", port=5050, debug=False, threaded=True)
 
 
 if __name__ == "__main__":

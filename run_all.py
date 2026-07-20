@@ -29,7 +29,12 @@ def _run_admin():
     # use_reloader=False: Flask's debug reloader forks a second process,
     # which would duplicate every listener thread too - not compatible with
     # running everything in one process.
-    admin_app.app.run(host="127.0.0.1", port=5050, debug=False, use_reloader=False)
+    # threaded=True: without it, Flask serves ONE request at a time - with
+    # analyzers actively streaming (Postgres writes on every result) plus
+    # the admin UI's own 2s polling loop, single-threaded mode lets requests
+    # queue up behind each other for a long time under real load, making a
+    # save look like it's "hanging" when it's really just waiting its turn.
+    admin_app.app.run(host="127.0.0.1", port=5050, debug=False, use_reloader=False, threaded=True)
 
 
 if __name__ == "__main__":
