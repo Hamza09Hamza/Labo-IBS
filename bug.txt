@@ -1,4 +1,245 @@
-{'kind': 'order', 'sample_id': '461',
- 'instrument_specimen_id': 'A250901055-S108',
-  'specimen_type': '',
-   'raw': 'O|1|461|A250901055-S108||||||||||||Blood|||||||||||||||'}
+=== xs500i session ===
+Captured: 2026-07-19T16:21:06.733603
+Source IP: 169.254.172.135
+Analyzer: XS^00-22^12723^^^^CH642457
+Patient: (none)  (ID: (none))
+Sample ID: 2607100007
+
+-- FULL raw bytes received from the machine, unprocessed (includes STX/ETX/ENQ/EOT/checksums, everything, no filtering) --
+b'\x05\x021H|\\^&|||XS^00-22^12723^^^^CH642457||||||||E1394-97\r\x0382\r\n\x022P|1\r\x033F\r\n\x023C|1\r\x0333\r\n\x024O|1||^^     2607100007^M|^^^^WBC\\^^^^RBC\\^^^^HGB\\^^^^HCT\\^^^^MCV\\^^^^MCH\\^^^^MCHC\\^^^^PLT\\^^^^NEUT%\\^^^^LYMPH%\\^^^^MONO%\\^^^^EO%\\^^^^BASO%\\^^^^NEUT#\\^^^^LYMPH#\\^^^^MONO#\\^^^^EO#\\^^^^BASO#\\^^^^RDW-SD\\^^^^RDW-CV\\^^^^PDW\\^^^^MPV\\^^^^P-LCR\\^^^^PCT|||||||N||||||||||||||F\r\x0381\r\n\x025C|1\r\x0335\r\n\x026R|1|^^^^WBC^1|7.51|10*3/uL||N||||||20260719162000\r\x0307\r\n\x027R|2|^^^^RBC^1|4.72|10*6/uL||N||||||20260719162000\r\x0307\r\n\x020R|3|^^^^HGB^1|14.2|g/dL||N||||||20260719162000\r\x038A\r\n\x021R|4|^^^^HCT^1|41.6|%||N||||||20260719162000\r\x037D\r\n\x022R|5|^^^^MCV^1|88.1|fL||N||||||20260719162000\r\x0319\r\n\x023R|6|^^^^MCH^1|30.1|pg||N||||||20260719162000\r\x0325\r\n\x024R|7|^^^^MCHC^1|34.1|g/dL||N||||||20260719162000\r\x03DD\r\n\x025R|8|^^^^PLT^1|315|10*3/uL||N||||||20260719162000\r\x03EF\r\n\x026R|9|^^^^NEUT%^1|80.8|%||H||||||20260719162000\r\x0308\r\n\x027R|10|^^^^LYMPH%^1|9.9|%||L||||||20260719162000\r\x0355\r\n\x020R|11|^^^^MONO%^1|9.2|%||N||||||20260719162000\r\x03F9\r\n\x021R|12|^^^^EO%^1|0.0|%||N||||||20260719162000\r\x034B\r\n\x022R|13|^^^^BASO%^1|0.1|%||N||||||20260719162000\r\x03DF\r\n\x023R|14|^^^^NEUT#^1|6.07|10*3/uL||N||||||20260719162000\r\x03BB\r\n\x024R|15|^^^^LYMPH#^1|0.74|10*3/uL||N||||||20260719162000\r\x0309\r\n\x025R|16|^^^^MONO#^1|0.69|10*3/uL||N||||||20260719162000\r\x03BE\r\n\x026R|17|^^^^EO#^1|0.00|10*3/uL||N||||||20260719162000\r\x030C\r\n\x027R|18|^^^^BASO#^1|0.01|10*3/uL||N||||||20260719162000\r\x03A0\r\n\x020R|19|^^^^RDW-SD^1|40.9|fL||N||||||20260719162000\r\x0313\r\n\x021R|20|^^^^RDW-CV^1|12.9|%||N||||||20260719162000\r\x0380\r\n\x022R|21|^^^^PDW^1|13.0|fL||N||||||20260719162000\r\x033F\r\n\x023R|22|^^^^MPV^1|11.3|fL||N||||||20260719162000\r\x034A\r\n\x024R|23|^^^^P-LCR^1|35.0|%||N||||||20260719162000\r\x032D\r\n\x025R|24|^^^^PCT^1|0.35|%||N||||||20260719162000\r\x03B8\r\n\x026R|25|^^^^Lymphopenia||||A||||||20260719162000\r\x03D2\r\n\x027R|26|^^^^Blasts?|0|||||||||20260719162000\r\x03E5\r\n\x020R|27|^^^^Immature_Gran?|10|||||||||20260719162000\r\x03D2\r\n\x021R|28|^^^^Left_Shift?|10|||||||||20260719162000\r\x0391\r\n\x022R|29|^^^^NRBC?|20|||||||||20260719162000\r\x03D1\r\n\x023R|30|^^^^Atypical_Lympho?|0|||||||||20260719162000\r\x0382\r\n\x024R|31|^^^^Abn_Lympho?|20|||||||||20260719162000\r\x0390\r\n\x025R|32|^^^^RBC_Agglutination?|70|||||||||20260719162000\r\x033A\r\n\x026R|33|^^^^Turbidity/HGB_Interference?|90|||||||||20260719162000\r\x03AB\r\n\x027R|34|^^^^Iron_Deficiency?|80|||||||||20260719162000\r\x039D\r\n\x020R|35|^^^^HGB_Defect?|80|||||||||20260719162000\r\x0328\r\n\x021R|36|^^^^Fragments?|0|||||||||20260719162000\r\x031E\r\n\x022R|37|^^^^PLT_Clumps?|0|||||||||20260719162000\r\x033C\r\n\x023R|38|^^^^Positive_Diff||||A||||||20260719162000\r\x0378\r\n\x024R|39|^^^^SCAT_DIFF|PNG&R&20260719&R&2026_07_19_16_20_2607100007_DIFF.PNG|||N||||||20260719162000\r\x037C\r\n\x025R|40|^^^^DIST_RBC|PNG&R&20260719&R&2026_07_19_16_20_2607100007_RBC.PNG|||N||||||20260719162000\r\x03FA\r\n\x026R|41|^^^^DIST_PLT|PNG&R&20260719&R&2026_07_19_16_20_2607100007_PLT.PNG|||N||||||20260719162000\r\x032E\r\n\x027L|1|N\r\x030A\r\n\x04'
+
+-- Same bytes, readable (control chars shown as \xNN, nothing hidden) --
+\x05\x021H|\^&|||XS^00-22^12723^^^^CH642457||||||||E1394-97
+\x0382
+
+\x022P|1
+\x033F
+
+\x023C|1
+\x0333
+
+\x024O|1||^^     2607100007^M|^^^^WBC\^^^^RBC\^^^^HGB\^^^^HCT\^^^^MCV\^^^^MCH\^^^^MCHC\^^^^PLT\^^^^NEUT%\^^^^LYMPH%\^^^^MONO%\^^^^EO%\^^^^BASO%\^^^^NEUT#\^^^^LYMPH#\^^^^MONO#\^^^^EO#\^^^^BASO#\^^^^RDW-SD\^^^^RDW-CV\^^^^PDW\^^^^MPV\^^^^P-LCR\^^^^PCT|||||||N||||||||||||||F
+\x0381
+
+\x025C|1
+\x0335
+
+\x026R|1|^^^^WBC^1|7.51|10*3/uL||N||||||20260719162000
+\x0307
+
+\x027R|2|^^^^RBC^1|4.72|10*6/uL||N||||||20260719162000
+\x0307
+
+\x020R|3|^^^^HGB^1|14.2|g/dL||N||||||20260719162000
+\x038A
+
+\x021R|4|^^^^HCT^1|41.6|%||N||||||20260719162000
+\x037D
+
+\x022R|5|^^^^MCV^1|88.1|fL||N||||||20260719162000
+\x0319
+
+\x023R|6|^^^^MCH^1|30.1|pg||N||||||20260719162000
+\x0325
+
+\x024R|7|^^^^MCHC^1|34.1|g/dL||N||||||20260719162000
+\x03DD
+
+\x025R|8|^^^^PLT^1|315|10*3/uL||N||||||20260719162000
+\x03EF
+
+\x026R|9|^^^^NEUT%^1|80.8|%||H||||||20260719162000
+\x0308
+
+\x027R|10|^^^^LYMPH%^1|9.9|%||L||||||20260719162000
+\x0355
+
+\x020R|11|^^^^MONO%^1|9.2|%||N||||||20260719162000
+\x03F9
+
+\x021R|12|^^^^EO%^1|0.0|%||N||||||20260719162000
+\x034B
+
+\x022R|13|^^^^BASO%^1|0.1|%||N||||||20260719162000
+\x03DF
+
+\x023R|14|^^^^NEUT#^1|6.07|10*3/uL||N||||||20260719162000
+\x03BB
+
+\x024R|15|^^^^LYMPH#^1|0.74|10*3/uL||N||||||20260719162000
+\x0309
+
+\x025R|16|^^^^MONO#^1|0.69|10*3/uL||N||||||20260719162000
+\x03BE
+
+\x026R|17|^^^^EO#^1|0.00|10*3/uL||N||||||20260719162000
+\x030C
+
+\x027R|18|^^^^BASO#^1|0.01|10*3/uL||N||||||20260719162000
+\x03A0
+
+\x020R|19|^^^^RDW-SD^1|40.9|fL||N||||||20260719162000
+\x0313
+
+\x021R|20|^^^^RDW-CV^1|12.9|%||N||||||20260719162000
+\x0380
+
+\x022R|21|^^^^PDW^1|13.0|fL||N||||||20260719162000
+\x033F
+
+\x023R|22|^^^^MPV^1|11.3|fL||N||||||20260719162000
+\x034A
+
+\x024R|23|^^^^P-LCR^1|35.0|%||N||||||20260719162000
+\x032D
+
+\x025R|24|^^^^PCT^1|0.35|%||N||||||20260719162000
+\x03B8
+
+\x026R|25|^^^^Lymphopenia||||A||||||20260719162000
+\x03D2
+
+\x027R|26|^^^^Blasts?|0|||||||||20260719162000
+\x03E5
+
+\x020R|27|^^^^Immature_Gran?|10|||||||||20260719162000
+\x03D2
+
+\x021R|28|^^^^Left_Shift?|10|||||||||20260719162000
+\x0391
+
+\x022R|29|^^^^NRBC?|20|||||||||20260719162000
+\x03D1
+
+\x023R|30|^^^^Atypical_Lympho?|0|||||||||20260719162000
+\x0382
+
+\x024R|31|^^^^Abn_Lympho?|20|||||||||20260719162000
+\x0390
+
+\x025R|32|^^^^RBC_Agglutination?|70|||||||||20260719162000
+\x033A
+
+\x026R|33|^^^^Turbidity/HGB_Interference?|90|||||||||20260719162000
+\x03AB
+
+\x027R|34|^^^^Iron_Deficiency?|80|||||||||20260719162000
+\x039D
+
+\x020R|35|^^^^HGB_Defect?|80|||||||||20260719162000
+\x0328
+
+\x021R|36|^^^^Fragments?|0|||||||||20260719162000
+\x031E
+
+\x022R|37|^^^^PLT_Clumps?|0|||||||||20260719162000
+\x033C
+
+\x023R|38|^^^^Positive_Diff||||A||||||20260719162000
+\x0378
+
+\x024R|39|^^^^SCAT_DIFF|PNG&R&20260719&R&2026_07_19_16_20_2607100007_DIFF.PNG|||N||||||20260719162000
+\x037C
+
+\x025R|40|^^^^DIST_RBC|PNG&R&20260719&R&2026_07_19_16_20_2607100007_RBC.PNG|||N||||||20260719162000
+\x03FA
+
+\x026R|41|^^^^DIST_PLT|PNG&R&20260719&R&2026_07_19_16_20_2607100007_PLT.PNG|||N||||||20260719162000
+\x032E
+
+\x027L|1|N
+\x030A
+
+\x04
+
+-- Raw records, split one per line (decoder's view after framing is stripped - cross-check against the FULL bytes above) --
+H|\^&|||XS^00-22^12723^^^^CH642457||||||||E1394-97
+P|1
+C|1
+O|1||^^     2607100007^M|^^^^WBC\^^^^RBC\^^^^HGB\^^^^HCT\^^^^MCV\^^^^MCH\^^^^MCHC\^^^^PLT\^^^^NEUT%\^^^^LYMPH%\^^^^MONO%\^^^^EO%\^^^^BASO%\^^^^NEUT#\^^^^LYMPH#\^^^^MONO#\^^^^EO#\^^^^BASO#\^^^^RDW-SD\^^^^RDW-CV\^^^^PDW\^^^^MPV\^^^^P-LCR\^^^^PCT|||||||N||||||||||||||F
+C|1
+R|1|^^^^WBC^1|7.51|10*3/uL||N||||||20260719162000
+R|2|^^^^RBC^1|4.72|10*6/uL||N||||||20260719162000
+R|3|^^^^HGB^1|14.2|g/dL||N||||||20260719162000
+R|4|^^^^HCT^1|41.6|%||N||||||20260719162000
+R|5|^^^^MCV^1|88.1|fL||N||||||20260719162000
+R|6|^^^^MCH^1|30.1|pg||N||||||20260719162000
+R|7|^^^^MCHC^1|34.1|g/dL||N||||||20260719162000
+R|8|^^^^PLT^1|315|10*3/uL||N||||||20260719162000
+R|9|^^^^NEUT%^1|80.8|%||H||||||20260719162000
+R|10|^^^^LYMPH%^1|9.9|%||L||||||20260719162000
+R|11|^^^^MONO%^1|9.2|%||N||||||20260719162000
+R|12|^^^^EO%^1|0.0|%||N||||||20260719162000
+R|13|^^^^BASO%^1|0.1|%||N||||||20260719162000
+R|14|^^^^NEUT#^1|6.07|10*3/uL||N||||||20260719162000
+R|15|^^^^LYMPH#^1|0.74|10*3/uL||N||||||20260719162000
+R|16|^^^^MONO#^1|0.69|10*3/uL||N||||||20260719162000
+R|17|^^^^EO#^1|0.00|10*3/uL||N||||||20260719162000
+R|18|^^^^BASO#^1|0.01|10*3/uL||N||||||20260719162000
+R|19|^^^^RDW-SD^1|40.9|fL||N||||||20260719162000
+R|20|^^^^RDW-CV^1|12.9|%||N||||||20260719162000
+R|21|^^^^PDW^1|13.0|fL||N||||||20260719162000
+R|22|^^^^MPV^1|11.3|fL||N||||||20260719162000
+R|23|^^^^P-LCR^1|35.0|%||N||||||20260719162000
+R|24|^^^^PCT^1|0.35|%||N||||||20260719162000
+R|25|^^^^Lymphopenia||||A||||||20260719162000
+R|26|^^^^Blasts?|0|||||||||20260719162000
+R|27|^^^^Immature_Gran?|10|||||||||20260719162000
+R|28|^^^^Left_Shift?|10|||||||||20260719162000
+R|29|^^^^NRBC?|20|||||||||20260719162000
+R|30|^^^^Atypical_Lympho?|0|||||||||20260719162000
+R|31|^^^^Abn_Lympho?|20|||||||||20260719162000
+R|32|^^^^RBC_Agglutination?|70|||||||||20260719162000
+R|33|^^^^Turbidity/HGB_Interference?|90|||||||||20260719162000
+R|34|^^^^Iron_Deficiency?|80|||||||||20260719162000
+R|35|^^^^HGB_Defect?|80|||||||||20260719162000
+R|36|^^^^Fragments?|0|||||||||20260719162000
+R|37|^^^^PLT_Clumps?|0|||||||||20260719162000
+R|38|^^^^Positive_Diff||||A||||||20260719162000
+R|39|^^^^SCAT_DIFF|PNG&R&20260719&R&2026_07_19_16_20_2607100007_DIFF.PNG|||N||||||20260719162000
+R|40|^^^^DIST_RBC|PNG&R&20260719&R&2026_07_19_16_20_2607100007_RBC.PNG|||N||||||20260719162000
+R|41|^^^^DIST_PLT|PNG&R&20260719&R&2026_07_19_16_20_2607100007_PLT.PNG|||N||||||20260719162000
+L|1|N
+
+-- Parsed results --
+WROTE result  sample='2607100007'   test=WBC        value=      7.51 unit=10^3/uL  | matched -> labo_param.id=81 (GB / Globules Blancs) [queued for batched clinic API send]
+WROTE result  sample='2607100007'   test=RBC        value=      4.72 unit=10^6/uL  | matched -> labo_param.id=80 (GR / Globules Rouges) [queued for batched clinic API send]
+WROTE result  sample='2607100007'   test=HGB        value=      14.2 unit=g/dL     | matched -> labo_param.id=98000 (h�moglob / H�moglobine) [queued for batched clinic API send]
+WROTE result  sample='2607100007'   test=HCT        value=      41.6 unit=%        | matched -> labo_param.id=97000 (Hemcte. / H�matocrite) [queued for batched clinic API send]
+WROTE result  sample='2607100007'   test=MCV        value=      88.1 unit=fL       | matched -> labo_param.id=99478 (VGM / VGM) [queued for batched clinic API send]
+WROTE result  sample='2607100007'   test=MCH        value=      30.1 unit=pg       | matched -> labo_param.id=99307 (TGMH / TGMH) [queued for batched clinic API send]
+WROTE result  sample='2607100007'   test=MCHC       value=      34.1 unit=g/dL     | matched -> labo_param.id=10100 (CCMH / CCMH) [queued for batched clinic API send]
+WROTE result  sample='2607100007'   test=PLT        value=       315 unit=10^3/uL  | matched -> labo_param.id=93 (pettes / Plaquettes) [queued for batched clinic API send]
+WROTE result  sample='2607100007'   test=NEUT%      value=      80.8 unit=%        | matched -> labo_param.id=99134 (Neu / Neutrophiles) [queued for batched clinic API send]
+WROTE result  sample='2607100007'   test=LYMPH%     value=       9.9 unit=%        | matched -> labo_param.id=99137 (Lympho / Lymphocytes) [queued for batched clinic API send]
+WROTE result  sample='2607100007'   test=MONO%      value=       9.2 unit=%        | matched -> labo_param.id=99136 (Mono / Monocytes) [queued for batched clinic API send]
+WROTE result  sample='2607100007'   test=EO%        value=       0.0 unit=%        | matched -> labo_param.id=99950 (eosino / Eosinophiles) [queued for batched clinic API send]
+WROTE result  sample='2607100007'   test=BASO%      value=       0.1 unit=%        | matched -> labo_param.id=99138 (Baso / Basophiles) [queued for batched clinic API send]
+WROTE result  sample='2607100007'   test=NEUT#      value=      6.07 unit=10^3/uL  | PENDING (no curated match, needs manual review, local only)
+WROTE result  sample='2607100007'   test=LYMPH#     value=      0.74 unit=10^3/uL  | PENDING (no curated match, needs manual review, local only)
+WROTE result  sample='2607100007'   test=MONO#      value=      0.69 unit=10^3/uL  | PENDING (no curated match, needs manual review, local only)
+WROTE result  sample='2607100007'   test=EO#        value=      0.00 unit=10^3/uL  | PENDING (no curated match, needs manual review, local only)
+WROTE result  sample='2607100007'   test=BASO#      value=      0.01 unit=10^3/uL  | PENDING (no curated match, needs manual review, local only)
+WROTE result  sample='2607100007'   test=RDW-SD     value=      40.9 unit=fL       | PENDING (no curated match, needs manual review, local only)
+WROTE result  sample='2607100007'   test=RDW-CV     value=      12.9 unit=%        | PENDING (no curated match, needs manual review, local only)
+WROTE result  sample='2607100007'   test=PDW        value=      13.0 unit=fL       | PENDING (no curated match, needs manual review, local only)
+WROTE result  sample='2607100007'   test=MPV        value=      11.3 unit=fL       | PENDING (no curated match, needs manual review, local only)
+WROTE result  sample='2607100007'   test=P-LCR      value=      35.0 unit=%        | PENDING (no curated match, needs manual review, local only)
+WROTE result  sample='2607100007'   test=PCT        value=      0.35 unit=%        | PENDING (no curated match, needs manual review, local only)
+WROTE result  sample='2607100007'   test=Lymphopenia value=           unit=         | PENDING (no curated match, needs manual review, local only)
+WROTE result  sample='2607100007'   test=Blasts?    value=         0 unit=         | PENDING (no curated match, needs manual review, local only)
+WROTE result  sample='2607100007'   test=Immature_Gran? value=        10 unit=         | PENDING (no curated match, needs manual review, local only)
+WROTE result  sample='2607100007'   test=Left_Shift? value=        10 unit=         | PENDING (no curated match, needs manual review, local only)
+WROTE result  sample='2607100007'   test=NRBC?      value=        20 unit=         | PENDING (no curated match, needs manual review, local only)
+WROTE result  sample='2607100007'   test=Atypical_Lympho? value=         0 unit=         | PENDING (no curated match, needs manual review, local only)
+WROTE result  sample='2607100007'   test=Abn_Lympho? value=        20 unit=         | PENDING (no curated match, needs manual review, local only)
+WROTE result  sample='2607100007'   test=RBC_Agglutination? value=        70 unit=         | PENDING (no curated match, needs manual review, local only)
+WROTE result  sample='2607100007'   test=Turbidity/HGB_Interference? value=        90 unit=         | PENDING (no curated match, needs manual review, local only)
+WROTE result  sample='2607100007'   test=Iron_Deficiency? value=        80 unit=         | PENDING (no curated match, needs manual review, local only)
+WROTE result  sample='2607100007'   test=HGB_Defect? value=        80 unit=         | PENDING (no curated match, needs manual review, local only)
+WROTE result  sample='2607100007'   test=Fragments? value=         0 unit=         | PENDING (no curated match, needs manual review, local only)
+WROTE result  sample='2607100007'   test=PLT_Clumps? value=         0 unit=         | PENDING (no curated match, needs manual review, local only)
+WROTE result  sample='2607100007'   test=Positive_Diff value=           unit=         | PENDING (no curated match, needs manual review, local only)
+WROTE result  sample='2607100007'   test=SCAT_DIFF  value=PNG&R&20260719&R&2026_07_19_16_20_2607100007_DIFF.PNG unit=         | PENDING (no curated match, needs manual review, local only)
+WROTE result  sample='2607100007'   test=DIST_RBC   value=PNG&R&20260719&R&2026_07_19_16_20_2607100007_RBC.PNG unit=         | PENDING (no curated match, needs manual review, local only)
+WROTE result  sample='2607100007'   test=DIST_PLT   value=PNG&R&20260719&R&2026_07_19_16_20_2607100007_PLT.PNG unit=         | PENDING (no curated match, needs manual review, local only)
