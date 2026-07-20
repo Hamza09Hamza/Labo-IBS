@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Labo Bridge — Mapping Console</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2L4 8v8c0 8.4 5.2 14.6 12 16 6.8-1.4 12-7.6 12-16V8L16 2z' fill='%230C8599'/%3E%3Cpath d='M11 16.5l3.2 3.2L21.5 12' stroke='white' stroke-width='2.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="bg-ambient">
+  <div class="mesh-hero"></div>
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+  <div class="blob blob-3"></div>
+</div>
+
+<div class="app">
+
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M16 2L4 8v8c0 8.4 5.2 14.6 12 16 6.8-1.4 12-7.6 12-16V8L16 2z" fill="url(#brandGrad)"/>
+          <path d="M11 16.5l3.2 3.2L21.5 12" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <defs>
+            <linearGradient id="brandGrad" x1="4" y1="2" x2="28" y2="30" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#22D3EE"/>
+              <stop offset="1" stop-color="#5E6AD2"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <div class="brand-title">Labo Bridge</div>
+        <div class="brand-subtitle">Mapping Console</div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <div class="nav-label">Console</div>
+      <div class="section-nav-item active" data-section="machines">
+        <div class="section-nav-icon">
+          <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.8"/><rect x="14" y="3" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.8"/><rect x="3" y="14" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.8"/><rect x="14" y="14" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.8"/></svg>
+        </div>
+        <span>Machines</span>
+      </div>
+      <div class="section-nav-item" data-section="mappings">
+        <div class="section-nav-icon">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M7 7h10M7 12h10M7 17h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="4" cy="7" r="1.3" fill="currentColor"/><circle cx="4" cy="12" r="1.3" fill="currentColor"/><circle cx="4" cy="17" r="1.3" fill="currentColor"/></svg>
+        </div>
+        <span>Mappings</span>
+      </div>
+      <div class="section-nav-item" data-section="api-settings">
+        <div class="section-nav-icon">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M4 12h4M16 12h4M12 4v4M12 16v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="1.8"/></svg>
+        </div>
+        <span>API Settings</span>
+      </div>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="status-pill" id="pgStatusPill">
+        <span class="status-dot"></span>
+        <span class="status-text">Checking DB…</span>
+      </div>
+      <div class="status-pill" id="apiStatusPill">
+        <span class="status-dot"></span>
+        <span class="status-text">Checking API…</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main class="main">
+
+    <!-- ---------- OVERVIEW VIEW ---------- -->
+    <section id="view-overview" class="view active">
+      <header class="page-header">
+        <div>
+          <h1>Analyzer Fleet</h1>
+          <p class="page-sub">Live capture status across every connected instrument.</p>
+        </div>
+        <div class="header-right">
+          <div class="header-stats" id="overviewStats"></div>
+          <button class="btn btn-primary" id="addAnalyzerBtn">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            Add Analyzer
+          </button>
+        </div>
+      </header>
+
+      <div class="machine-grid" id="machineGrid">
+        <!-- machine cards injected by JS -->
+      </div>
+    </section>
+
+    <!-- ---------- MAPPINGS VIEW ---------- -->
+    <section id="view-mappings" class="view">
+      <header class="page-header machine-header">
+        <button class="back-btn" id="backToMachines" aria-label="Back to Machines">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div class="machine-avatar" id="mappingsAvatar"></div>
+        <div class="machine-title-block">
+          <h1 id="mappingsTitle">Mappings</h1>
+          <p class="page-sub" id="mappingsSub">Search the clinic database and match machine test codes to a parameter or exam.</p>
+        </div>
+        <div class="machine-badges" id="mappingsBadges"></div>
+      </header>
+
+      <div class="machine-picker" id="mappingsMachinePicker">
+        <!-- machine pill buttons injected by JS -->
+      </div>
+
+      <div class="tabs" id="mappingsTabs">
+        <button class="tab active" data-tab="mapped">Mapped Parameters</button>
+        <button class="tab" data-tab="pending">Pending Codes</button>
+        <button class="tab" data-tab="samples">Recent Samples</button>
+      </div>
+
+      <div class="tab-panels">
+        <div class="tab-panel active" id="panel-mapped">
+          <div class="panel-toolbar">
+            <div class="search-box">
+              <svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              <input type="text" id="mappedSearch" placeholder="Filter by code, param, or exam…">
+            </div>
+            <button class="btn btn-primary" id="addMappingBtn">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              Add mapping
+            </button>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table" id="mappedTable">
+              <thead>
+                <tr>
+                  <th>Machine Code</th>
+                  <th>labo_param</th>
+                  <th>Exam</th>
+                  <th>Last Value</th>
+                  <th>Last Seen</th>
+                  <th class="col-actions"></th>
+                </tr>
+              </thead>
+              <tbody id="mappedTableBody"></tbody>
+            </table>
+          </div>
+          <div class="empty-state" id="mappedEmpty" hidden>
+            <svg viewBox="0 0 24 24" fill="none"><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/></svg>
+            <p>No mappings yet for this analyzer.</p>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="panel-pending">
+          <div class="panel-hint">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M12 9v4M12 17h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/></svg>
+            Codes the analyzer has actually transmitted but that have no curated mapping yet. Click "Add mapping" above to map one.
+          </div>
+          <div class="table-wrap">
+            <table class="data-table" id="pendingTable">
+              <thead>
+                <tr>
+                  <th>Test Code</th>
+                  <th>Sample Value</th>
+                  <th>Times Seen</th>
+                  <th>Last Seen</th>
+                  <th class="col-actions"></th>
+                </tr>
+              </thead>
+              <tbody id="pendingTableBody"></tbody>
+            </table>
+          </div>
+          <div class="empty-state" id="pendingEmpty" hidden>
+            <svg viewBox="0 0 24 24" fill="none"><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/></svg>
+            <p>Nothing pending — every received code is mapped.</p>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="panel-samples">
+          <div class="table-wrap">
+            <table class="data-table" id="samplesTable">
+              <thead>
+                <tr>
+                  <th>Sample ID</th>
+                  <th>Paillasse</th>
+                  <th>Patient</th>
+                  <th>Source IP</th>
+                  <th>Received</th>
+                </tr>
+              </thead>
+              <tbody id="samplesTableBody"></tbody>
+            </table>
+          </div>
+          <div class="empty-state" id="samplesEmpty" hidden>
+            <svg viewBox="0 0 24 24" fill="none"><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/></svg>
+            <p>No samples captured yet from this analyzer.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- API SETTINGS VIEW ---------- -->
+    <section id="view-api-settings" class="view">
+      <header class="page-header">
+        <div>
+          <h1>API Settings</h1>
+          <p class="page-sub">Configure the clinic "Labo Machine Result" API endpoint, token, and whether matched results are pushed live.</p>
+        </div>
+      </header>
+
+      <div class="settings-card">
+        <div class="field">
+          <label for="setEndpoint">Endpoint URL</label>
+          <input type="text" id="setEndpoint" placeholder="http://localhost:8080/labo/api/machine/result">
+          <p class="field-hint">Full URL the bridge POSTs matched results to.</p>
+        </div>
+        <div class="field">
+          <label for="setToken">API Token</label>
+          <input type="text" id="setToken" placeholder="X-API-TOKEN header value">
+        </div>
+
+        <div class="settings-toggle-row">
+          <div>
+            <div class="settings-toggle-title">Push matched results live</div>
+            <p class="field-hint">When on, matched results are sent to the endpoint above. When off, they're written to the local clinic Postgres staging table instead.</p>
+          </div>
+          <button class="toggle-switch" id="setUseApiToggle" role="switch" aria-checked="false">
+            <span class="toggle-knob"></span>
+          </button>
+        </div>
+
+        <div class="modal-alert" id="settingsAlert" hidden></div>
+
+        <div class="settings-actions">
+          <button class="btn btn-primary" id="saveSettingsBtn">Save settings</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ============ EDIT / ADD MAPPING MODAL ============ -->
+<div class="modal-scrim" id="modalScrim">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-header">
+      <h2 id="modalTitle">Edit Mapping</h2>
+      <button class="icon-btn" id="modalClose" aria-label="Close">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="field">
+        <label for="fCode">Machine test code</label>
+        <input type="text" id="fCode" placeholder="e.g. WBC" autocomplete="off">
+        <p class="field-hint">Exactly what the analyzer sends for this test.</p>
+      </div>
+
+      <div class="field">
+        <label for="fSearch">Match to a clinic parameter or exam</label>
+        <div class="combo">
+          <input type="text" id="fSearch" placeholder="Search by name, e.g. Globules Blancs or FNS…" autocomplete="off">
+          <div class="combo-results" id="searchResults"></div>
+        </div>
+        <p class="field-hint">Search finds both lab parameters (e.g. a single value like WBC) and full exams (for tests with no single value breakdown).</p>
+      </div>
+
+      <div class="match-picked" id="matchPicked" hidden>
+        <div class="match-picked-icon">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/></svg>
+        </div>
+        <div class="match-picked-body">
+          <div class="match-picked-name" id="matchPickedName">—</div>
+          <div class="match-picked-meta" id="matchPickedMeta">—</div>
+        </div>
+        <button class="icon-btn" id="matchPickedClear" title="Clear selection" type="button">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+
+      <div class="modal-alert" id="modalAlert" hidden></div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="deleteMappingBtn" hidden>Delete mapping</button>
+      <div class="modal-footer-right">
+        <button class="btn btn-ghost" id="modalCancel">Cancel</button>
+        <button class="btn btn-primary" id="modalSave">Save mapping</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MACHINE CONFIG MODAL ============ -->
+<div class="modal-scrim" id="configModalScrim">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="configModalTitle">
+    <div class="modal-header">
+      <h2 id="configModalTitle">Machine Settings</h2>
+      <button class="icon-btn" id="configModalClose" aria-label="Close">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="field">
+        <label for="cfgLabel">Display name</label>
+        <input type="text" id="cfgLabel" placeholder="e.g. Sysmex XN-330">
+      </div>
+
+      <div class="field">
+        <label for="cfgPort">Listen port</label>
+        <input type="number" id="cfgPort" placeholder="e.g. 6001">
+        <p class="field-hint" id="cfgPortHint">Takes effect immediately — no restart needed.</p>
+      </div>
+
+      <div class="modal-alert" id="configModalAlert" hidden></div>
+    </div>
+
+    <div class="modal-footer">
+      <div class="modal-footer-right">
+        <button class="btn btn-ghost" id="configModalCancel">Cancel</button>
+        <button class="btn btn-primary" id="configModalSave">Save changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ ADD ANALYZER MODAL ============ -->
+<div class="modal-scrim" id="addAnalyzerScrim">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="addAnalyzerTitle">
+    <div class="modal-header">
+      <h2 id="addAnalyzerTitle">Add Analyzer</h2>
+      <button class="icon-btn" id="addAnalyzerClose" aria-label="Close">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="field">
+        <label for="naLabel">Display name</label>
+        <input type="text" id="naLabel" placeholder="e.g. Cobas c111" autocomplete="off">
+      </div>
+
+      <div class="field">
+        <label for="naKey">Machine key</label>
+        <input type="text" id="naKey" placeholder="e.g. cobas_c111" autocomplete="off">
+        <p class="field-hint">Lowercase letters/numbers/underscore only. Used internally (config, DB rows) - can't be changed later.</p>
+      </div>
+
+      <div class="field">
+        <label for="naKind">Kind</label>
+        <input type="text" id="naKind" placeholder="e.g. Chemistry Analyzer" autocomplete="off">
+      </div>
+
+      <div class="field">
+        <label for="naDecoder">Protocol / decoder to reuse</label>
+        <select id="naDecoder"></select>
+        <p class="field-hint">New analyzers speak the same wire protocol as one of the existing ones - pick which one to reuse its decoder.</p>
+      </div>
+
+      <div class="field">
+        <label for="naPort">Listen port</label>
+        <input type="number" id="naPort" placeholder="e.g. 6006">
+      </div>
+
+      <div class="field">
+        <label for="naColor">Accent color</label>
+        <div class="color-field">
+          <input type="color" id="naColor" value="#0C8599">
+          <input type="text" id="naColorHex" value="#0C8599" autocomplete="off">
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="naPhoto">Photo (optional)</label>
+        <input type="file" id="naPhoto" accept="image/*">
+        <div class="photo-preview" id="naPhotoPreview" hidden><img id="naPhotoPreviewImg" alt=""></div>
+      </div>
+
+      <div class="modal-alert" id="addAnalyzerAlert" hidden></div>
+    </div>
+
+    <div class="modal-footer">
+      <div class="modal-footer-right">
+        <button class="btn btn-ghost" id="addAnalyzerCancel">Cancel</button>
+        <button class="btn btn-primary" id="addAnalyzerSave">Add Analyzer</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

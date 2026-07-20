@@ -11,14 +11,13 @@ changed without hunting through server.py/pg.py/api_client.py.
 # labo_bridge.labo_bridge_results staging table). Both code paths exist and
 # are ready - this is the only line that needs to change.
 #
-# Set True on 2026-07-19 for pre-production validation: the API isn't live
-# yet, so every POST will fail (connection refused), but api_client now logs
-# the exact JSON payload it builds before attempting the send - this lets us
-# visually check the request shape is correct ahead of the coworker's API
-# going live. Matched results will NOT land in the pg staging table while
-# this is True (they still stay captured in the local SQLite db either way -
-# only the "downstream push" step is affected). Flip back to False to resume
-# staging-table writes.
-USE_MACHINE_RESULT_API = True
+# Currently False: we work locally against Postgres only (labo_bridge schema),
+# not the coworker's API yet. Matched results go to pg.write_matched_result(),
+# unmatched go to pg.write_pending_result() - Postgres is the only store
+# either way (no SQLite fallback). When flipped True, matched results are
+# sent to the clinic API instead of the staging table; if the API call fails
+# they are NOT persisted anywhere (by design - the API is the source of truth
+# once live, not a downstream push from a local cache).
+USE_MACHINE_RESULT_API = False
 
 API_TIMEOUT_SECONDS = 5

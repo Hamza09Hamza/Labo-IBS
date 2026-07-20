@@ -21,7 +21,7 @@ from datetime import datetime
 
 from .protocols import astm, hl7_mllp
 from .decoders import xn330, ismart, selectra, cyanvision
-from . import storage, matcher, pg, api_client, config
+from . import matcher, pg, api_client, config, runtime_ports, live_status
 
 HOST = "0.0.0.0"
 
@@ -68,22 +68,21 @@ MACHINES = {
 
 def _ingest_result(session, sample_id, rec):
     """
-    Store a result locally and stage its match. If the match is confident
-    (curated), stage it for the downstream push:
-      - clinic API path (api_client.py): QUEUED onto session.api_batch and
-        flushed as ONE combined JSON array at the batch/message boundary
-        (_flush_api_batch) - never one POST call per result, per
-        API_LABO_MACHINE_RESULT.md's "body must be a JSON array" rule.
-      - clinic Postgres staging table path (pg.py, temporary): written
-        immediately, one row per result - plain SQL inserts don't need
-        batching the way the HTTP API does.
-    Controlled by config.USE_MACHINE_RESULT_API. Pending/unmatched results
-    never leave the local SQLite db either way. Shared by both protocol paths.
+    Match a result and persist it straight to Postgres - no local SQLite,
+    Postgres is the only store (see pg.py):
+      - confidently matched (curated) -> labo_bridge.labo_bridge_results,
+        and ALSO queued for the clinic API batch if config.USE_MACHINE_RESULT_API
+        is on (api_client.py, sent as one combined JSON array per batch per
+        API_LABO_MACHINE_RESULT.md's "body must be a JSON array" rule)
+      - not matched -> labo_bridge.pending_params, the mapping backlog (one
+        row per unmapped test code, not per result - see pg.py) surfaced in
+        the admin UI's Mappings section for a human to map
+    If Postgres is unreachable, the write is skipped (pg.py warns) - results
+    genuinely aren't captured anywhere else while it's down; this is a
+    deliberate tradeoff now that Postgres is the sole persistence layer.
     """
-    machine, conn_db, quiet = session.machine, session.db, session.quiet
-    storage.store_result(conn_db, machine, sample_id, rec)
+    machine, quiet = session.machine, session.quiet
     m = matcher.match(machine, rec.get("test_code", ""))
-    storage.store_match(conn_db, machine, sample_id, rec, m)
 
     if m["method"] == "curated":
         # param_id is None for non-composed exams - service_tarification_id
@@ -108,9 +107,11 @@ def _ingest_result(session, sample_id, rec):
             sent_ok = pg.write_matched_result(machine, sample_id, session.specimen,
                                               rec.get("test_code", ""), m, rec)
             tag = (f"matched -> {target} ({m['abbrev']} / {m['name']}) "
-                   f"{'[written to clinic PG staging table]' if sent_ok else '[clinic PG staging table write skipped, see warning above]'}")
+                   f"{'[written to Postgres]' if sent_ok else '[Postgres write skipped, see warning above]'}")
     else:
-        tag = "PENDING (no curated match, needs manual review, local only)"
+        sent_ok = pg.write_pending_param(machine, rec)
+        tag = (f"PENDING (no curated match, needs manual review) "
+               f"{'[written to Postgres]' if sent_ok else '[Postgres write skipped, see warning above]'}")
 
     line = (f"WROTE result  sample={sample_id!r:14} "
             f"test={rec.get('test_code',''):10s} value={rec.get('value',''):>10s} "
@@ -173,10 +174,9 @@ def _write_session_file(session):
 class _Session:
     """Tracks header/patient/order state across records within a connection."""
 
-    def __init__(self, machine, source_ip, conn_db, quiet):
+    def __init__(self, machine, source_ip, quiet):
         self.machine = machine
         self.source_ip = source_ip
-        self.db = conn_db
         self.quiet = quiet
         self.analyzer_model = ""
         self.patient_name = ""
@@ -207,9 +207,9 @@ class _Session:
             self.sample_id = ev.get("sample_id", "") or self.sample_id
             paillasse = ev.get("paillasse")
             self.specimen = {k: ev[k] for k in ("year", "month", "sequence", "paillasse") if k in ev}
-            storage.store_sample(self.db, self.machine, self.sample_id or "",
-                                 self.analyzer_model, self.patient_name,
-                                 self.patient_id, self.source_ip, paillasse)
+            pg.write_sample(self.machine, self.sample_id or "",
+                            self.analyzer_model, self.patient_name,
+                            self.patient_id, self.source_ip, paillasse)
             if not self.quiet:
                 bench = f" paillasse={paillasse}" if paillasse else ""
                 print(f"[{self.machine}] WROTE sample  sample={self.sample_id!r}{bench}")
@@ -217,16 +217,15 @@ class _Session:
             sid = self.sample_id or self.patient_id or ""
             if self.sample_id is None:
                 # result before any order - stage under best-known id
-                storage.store_sample(self.db, self.machine, sid,
-                                     self.analyzer_model, self.patient_name,
-                                     self.patient_id, self.source_ip)
+                pg.write_sample(self.machine, sid, self.analyzer_model,
+                                self.patient_name, self.patient_id, self.source_ip)
                 self.sample_id = sid
             _ingest_result(self, self.sample_id, ev)
             self.result_count += 1
 
 
-def _handle_astm(conn, addr, cfg, machine, conn_db, quiet):
-    session = _Session(machine, addr[0], conn_db, quiet)
+def _handle_astm(conn, addr, cfg, machine, quiet):
+    session = _Session(machine, addr[0], quiet)
     buffer = b""
     if cfg.get("initial_ack"):
         conn.sendall(astm.B_ACK)
@@ -271,7 +270,7 @@ def _handle_astm(conn, addr, cfg, machine, conn_db, quiet):
                 buffer = buffer[1:]
 
 
-def _handle_hl7(conn, addr, cfg, machine, conn_db, quiet):
+def _handle_hl7(conn, addr, cfg, machine, quiet):
     buffer = b""
     while True:
         try:
@@ -284,7 +283,7 @@ def _handle_hl7(conn, addr, cfg, machine, conn_db, quiet):
 
         for message, remainder in hl7_mllp.iter_messages(buffer):
             buffer = remainder
-            session = _Session(machine, addr[0], conn_db, quiet)
+            session = _Session(machine, addr[0], quiet)
             # Reconstruct the exact bytes as received, including the MLLP
             # envelope (VT/FS/CR) that iter_messages strips off for parsing.
             session.raw_bytes = hl7_mllp.B_VT + message + hl7_mllp.B_FS + bytes([hl7_mllp.CR])
@@ -302,39 +301,93 @@ def _handle_hl7(conn, addr, cfg, machine, conn_db, quiet):
             conn.sendall(hl7_mllp.build_ack(control_id or "0"))
 
 
-def _serve_one_machine(machine: str, quiet: bool, stop_event: threading.Event):
-    """Bind this machine's dedicated port and accept connections forever."""
-    cfg = MACHINES[machine]
-    port = cfg["port"]
-    conn_db = storage.connect()
-
+def _bind_socket(machine: str, port: int) -> socket.socket:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind((HOST, port))
     sock.listen(5)
-    sock.settimeout(1.0)  # so we can notice stop_event without blocking forever
+    sock.settimeout(1.0)  # so the accept loop can notice stop_event/port changes
+    return sock
+
+
+def _serve_one_machine(machine: str, quiet: bool, stop_event: threading.Event):
+    """
+    Bind this machine's dedicated port and accept connections forever.
+    Also checks runtime_ports on every loop tick (~1s) so the admin UI can
+    change the port live - closes the old socket and rebinds to the new one
+    without needing to restart this process. A machine actively mid-connection
+    finishes that connection on the old socket before the rebind is noticed
+    (checked between connections, not mid-transfer).
+    """
+    cfg = MACHINES[machine]
+    port = runtime_ports.get_port_for(machine, cfg["port"])
+
+    sock = _bind_socket(machine, port)
     print(f"[{machine}] listening on {HOST}:{port} ({cfg['protocol'].upper()}). "
-          f"DB: {storage.DB_PATH}")
+          f"Storage: Postgres (labo_bridge schema)")
+    live_status.set_listening(machine, datetime.now().isoformat(timespec="seconds"))
 
     handler = _handle_hl7 if cfg["protocol"] == "hl7" else _handle_astm
     try:
         while not stop_event.is_set():
+            desired_port = runtime_ports.get_port_for(machine, cfg["port"])
+            if desired_port != port:
+                print(f"[{machine}] port changed {port} -> {desired_port}, rebinding...")
+                sock.close()
+                try:
+                    sock = _bind_socket(machine, desired_port)
+                    port = desired_port
+                    print(f"[{machine}] now listening on {HOST}:{port}.")
+                except OSError as e:
+                    print(f"[{machine}] failed to bind port {desired_port} ({e}); "
+                          f"staying on {port}.")
+                    sock = _bind_socket(machine, port)
+                live_status.set_listening(machine, datetime.now().isoformat(timespec="seconds"))
+                continue
+
             try:
                 conn, addr = sock.accept()
             except socket.timeout:
                 continue
-            print(f"[{machine}] connected by {addr[0]}:{addr[1]} at "
-                  f"{datetime.now().isoformat(timespec='seconds')}")
+            now_iso = datetime.now().isoformat(timespec="seconds")
+            print(f"[{machine}] connected by {addr[0]}:{addr[1]} at {now_iso}")
+            live_status.set_connected(machine, now_iso, addr[0])
             try:
-                handler(conn, addr, cfg, machine, conn_db, quiet)
+                handler(conn, addr, cfg, machine, quiet)
             except Exception as e:
                 print(f"[{machine}] error handling connection: {e}")
             finally:
                 conn.close()
             print(f"[{machine}] ready for next connection.")
+            live_status.set_listening(machine, datetime.now().isoformat(timespec="seconds"))
     finally:
         sock.close()
-        conn_db.close()
+
+
+# Threads started by run_all(), keyed by machine - kept so register_machine()
+# can add a listener for a brand-new analyzer without restarting the process
+# (mirrors the port-rebind mechanism: change live state, no restart needed).
+_running_threads = {}
+_running_stop_event = None
+_running_quiet = False
+
+
+def register_machine(machine: str, cfg: dict) -> None:
+    """
+    Add a new machine to MACHINES and start its listener thread immediately,
+    if run_all() is already running in this process. Called by the admin
+    UI's Add Analyzer flow right after machines_editor.add_machine() writes
+    the same entry into server.py's source file - this makes it live now,
+    the on-disk edit makes it survive the next restart.
+    """
+    MACHINES[machine] = cfg
+    if _running_stop_event is None:
+        return  # run_all() isn't running in this process (e.g. admin-only mode)
+    t = threading.Thread(target=_serve_one_machine,
+                         args=(machine, _running_quiet, _running_stop_event),
+                         name=f"listener-{machine}", daemon=True)
+    t.start()
+    _running_threads[machine] = t
 
 
 def run(machine: str, quiet: bool = False):
@@ -355,25 +408,29 @@ def run_all(quiet: bool = False):
     process. This is the normal deployment mode: every analyzer stays
     connected to this same server at once.
     """
+    global _running_stop_event, _running_quiet
     stop_event = threading.Event()
-    threads = []
+    _running_stop_event = stop_event
+    _running_quiet = quiet
     for machine in MACHINES:
         t = threading.Thread(target=_serve_one_machine, args=(machine, quiet, stop_event),
                              name=f"listener-{machine}", daemon=True)
         t.start()
-        threads.append(t)
+        _running_threads[machine] = t
 
-    print(f"\nAll {len(threads)} analyzer listeners running. Ports: " +
+    print(f"\nAll {len(_running_threads)} analyzer listeners running. Ports: " +
           ", ".join(f"{m}={cfg['port']}" for m, cfg in MACHINES.items()))
     print("Press Ctrl+C to stop.\n")
 
     try:
         while True:
-            for t in threads:
+            # snapshot as a list - register_machine() may add new threads
+            # (and thus mutate _running_threads) while we're iterating
+            for t in list(_running_threads.values()):
                 t.join(timeout=0.5)
     except KeyboardInterrupt:
         print("\nStopping all listeners...")
         stop_event.set()
-        for t in threads:
+        for t in list(_running_threads.values()):
             t.join(timeout=2)
         print("Stopped.")
