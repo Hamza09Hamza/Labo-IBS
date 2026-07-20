@@ -1,0 +1,428 @@
+{
+  "machines": {
+    "xn330": {
+      "label": "XN-330",
+      "protocol": "astm",
+      "decoder": "xn330",
+      "initial_ack": false,
+      "port": 6001,
+      "image": "/images/analyzers/xn330.png",
+      "image_source": "https://www.sysmex.com/en-us/lab-solutions/hematology/offices-clinics/xn-330",
+      "note": "Sysmex hematology analyzer (CBC/FNS panel)."
+    },
+    "ismart": {
+      "label": "I-Smart 30 PRO",
+      "protocol": "astm",
+      "decoder": "ismart",
+      "initial_ack": true,
+      "port": 6002,
+      "image": "/images/analyzers/ismart.jpg",
+      "image_source": "https://i-sens.co.kr/point_of_care_testing/",
+      "note": "ISE electrolyte panel (Na+/K+/Cl-)."
+    },
+    "selectra": {
+      "label": "Selectra",
+      "protocol": "astm",
+      "decoder": "selectra",
+      "initial_ack": false,
+      "port": 6003,
+      "image": "/images/analyzers/selectra.png",
+      "image_source": "https://ingaplicada.com.mx/producto/analizador-automatizado-selectra-pro-m-elitech/",
+      "note": "ELITech/Selectra chemistry analyzer (LIS2-A stack)."
+    },
+    "cyanvision": {
+      "label": "CyanVision",
+      "protocol": "hl7",
+      "decoder": "cyanvision",
+      "initial_ack": false,
+      "port": 6004,
+      "image": "/images/analyzers/cyanvision.jpg",
+      "image_source": "https://diagnostics.be/product/cy014",
+      "note": "Immunoassay analyzer, HL7/MLLP."
+    },
+    "xs500i": {
+      "label": "XS-500i",
+      "protocol": "astm",
+      "decoder": "xn330",
+      "initial_ack": false,
+      "port": 6005,
+      "image": "/images/analyzers/xs500i.jpg",
+      "image_source": "https://lc-s.eu/instruments/sysmex-xs-500i-new/",
+      "note": "Sysmex XS-500i, clinic main hematology analyzer. Reuses xn330 decoder as a starting point (same ASTM field layout expected) - adjust if its real wire format differs once captured."
+    }
+  },
+  "mappings": {
+    "xn330": {
+      "WBC": {
+        "param_id": 81,
+        "service_tarification_id": 421,
+        "service_tarification_name": "FNS",
+        "abbrev": "GB",
+        "name": "Globules Blancs"
+      },
+      "RBC": {
+        "param_id": 80,
+        "service_tarification_id": 421,
+        "service_tarification_name": "FNS",
+        "abbrev": "GR",
+        "name": "Globules Rouges"
+      },
+      "HGB": {
+        "param_id": 98000,
+        "service_tarification_id": 421,
+        "service_tarification_name": "FNS",
+        "abbrev": "hémoglob",
+        "name": "Hémoglobine"
+      },
+      "HCT": {
+        "param_id": 97000,
+        "service_tarification_id": 421,
+        "service_tarification_name": "FNS",
+        "abbrev": "Hemcte.",
+        "name": "Hématocrite"
+      },
+      "PLT": {
+        "param_id": 93,
+        "service_tarification_id": 421,
+        "service_tarification_name": "FNS",
+        "abbrev": "pettes",
+        "name": "Plaquettes"
+      },
+      "MCV": {
+        "param_id": 99478,
+        "service_tarification_id": 421,
+        "service_tarification_name": "FNS",
+        "abbrev": "VGM",
+        "name": "VGM"
+      },
+      "MCH": {
+        "param_id": 99307,
+        "service_tarification_id": 421,
+        "service_tarification_name": "FNS",
+        "abbrev": "TGMH",
+        "name": "TGMH"
+      },
+      "MCHC": {
+        "param_id": 10100,
+        "service_tarification_id": 421,
+        "service_tarification_name": "FNS",
+        "abbrev": "CCMH",
+        "name": "CCMH"
+      },
+      "NEUT%": {
+        "param_id": 99134,
+        "service_tarification_id": 421,
+        "service_tarification_name": "FNS",
+        "abbrev": "Neu",
+        "name": "Neutrophiles"
+      },
+      "LYMPH%": {
+        "param_id": 99137,
+        "service_tarification_id": 421,
+        "service_tarification_name": "FNS",
+        "abbrev": "Lympho",
+        "name": "Lymphocytes"
+      },
+      "MONO%": {
+        "param_id": 99136,
+        "service_tarification_id": 421,
+        "service_tarification_name": "FNS",
+        "abbrev": "Mono",
+        "name": "Monocytes"
+      },
+      "EO%": {
+        "param_id": 99950,
+        "service_tarification_id": 421,
+        "service_tarification_name": "FNS",
+        "abbrev": "eosino",
+        "name": "Eosinophiles"
+      },
+      "BASO%": {
+        "param_id": 99138,
+        "service_tarification_id": 421,
+        "service_tarification_name": "FNS",
+        "abbrev": "Baso",
+        "name": "Basophiles"
+      }
+    },
+    "ismart": {
+      "Na+": {
+        "param_id": 99446,
+        "service_tarification_id": 452,
+        "service_tarification_name": "Ionogramme sanguin",
+        "abbrev": "NA",
+        "name": "Natrémie"
+      },
+      "K+": {
+        "param_id": 99422,
+        "service_tarification_id": 452,
+        "service_tarification_name": "Ionogramme sanguin",
+        "abbrev": "K",
+        "name": "Kaliémie"
+      },
+      "Cl-": {
+        "param_id": 99925,
+        "service_tarification_id": 452,
+        "service_tarification_name": "Ionogramme sanguin",
+        "abbrev": "Cl-",
+        "name": "Chloremie"
+      }
+    },
+    "selectra": {
+      "Uree uv sl": {
+        "param_id": null,
+        "service_tarification_id": 538,
+        "service_tarification_name": "Urémie",
+        "abbrev": "Uree",
+        "name": "Urémie"
+      },
+      "Cholesterol": {
+        "param_id": null,
+        "service_tarification_id": 373,
+        "service_tarification_name": "Cholestérol",
+        "abbrev": "Chol",
+        "name": "Cholestérol"
+      },
+      "SGOT": {
+        "param_id": 99952,
+        "service_tarification_id": 528,
+        "service_tarification_name": "Transaminases",
+        "abbrev": "SGOT",
+        "name": "SGOT"
+      },
+      "SGPT": {
+        "param_id": 99953,
+        "service_tarification_id": 528,
+        "service_tarification_name": "Transaminases",
+        "abbrev": "SGPT",
+        "name": "SGPT"
+      },
+      "Phosphatase Alc": {
+        "param_id": null,
+        "service_tarification_id": 481,
+        "service_tarification_name": "Phosphatases alcalines",
+        "abbrev": "PAL",
+        "name": "Phosphatases alcalines"
+      },
+      "Creatinine": {
+        "param_id": null,
+        "service_tarification_id": 392,
+        "service_tarification_name": "Créatinémie",
+        "abbrev": "Crea",
+        "name": "Créatinémie"
+      },
+      "GGT": {
+        "param_id": null,
+        "service_tarification_id": 429,
+        "service_tarification_name": "Gamma GT",
+        "abbrev": "GGT",
+        "name": "Gamma GT"
+      },
+      "Glucose pap sl": {
+        "param_id": null,
+        "service_tarification_id": 433,
+        "service_tarification_name": "Glycémie",
+        "abbrev": "Gluc",
+        "name": "Glycémie"
+      },
+      "Acide Urique": {
+        "param_id": null,
+        "service_tarification_id": 337,
+        "service_tarification_name": "Acide urique",
+        "abbrev": "AcUr",
+        "name": "Acide urique"
+      },
+      "Calcium": {
+        "param_id": 99736,
+        "service_tarification_id": 366,
+        "service_tarification_name": "Calcémie",
+        "abbrev": "Ca",
+        "name": "Calcémie"
+      },
+      "Phosphore": {
+        "param_id": null,
+        "service_tarification_id": 483,
+        "service_tarification_name": "Phosphorémie",
+        "abbrev": "Phos",
+        "name": "Phosphorémie"
+      },
+      "Triglycerides": {
+        "param_id": null,
+        "service_tarification_id": 530,
+        "service_tarification_name": "Triglycérides",
+        "abbrev": "TG",
+        "name": "Triglycérides"
+      },
+      "Cholesterol HDL": {
+        "param_id": null,
+        "service_tarification_id": 374,
+        "service_tarification_name": "Cholestérol HDL",
+        "abbrev": "HDL",
+        "name": "Cholestérol HDL"
+      },
+      "LDH-L SL": {
+        "param_id": null,
+        "service_tarification_id": 456,
+        "service_tarification_name": "LDH",
+        "abbrev": "LDH",
+        "name": "LDH"
+      },
+      "Proteines U": {
+        "param_id": 99561,
+        "service_tarification_id": 488,
+        "service_tarification_name": "Protéines des 24 heures",
+        "abbrev": "Prot U",
+        "name": "Taux (Protéines des 24h)"
+      },
+      "CRP IP V3": {
+        "param_id": null,
+        "service_tarification_id": 393,
+        "service_tarification_name": "CRP",
+        "abbrev": "CRP",
+        "name": "CRP"
+      },
+      "BILI TOTAL BIO": {
+        "param_id": 99954,
+        "service_tarification_id": 358,
+        "service_tarification_name": "Bilirubine",
+        "abbrev": "BiliT",
+        "name": "Bilirubine Totale"
+      },
+      "BILI DIRECT BIO": {
+        "param_id": 99955,
+        "service_tarification_id": 358,
+        "service_tarification_name": "Bilirubine",
+        "abbrev": "BiliD",
+        "name": "Bilirubine Directe"
+      },
+      "CK NAK": {
+        "param_id": null,
+        "service_tarification_id": 376,
+        "service_tarification_name": "CK - NAC",
+        "abbrev": "CK",
+        "name": "CK - NAC"
+      },
+      "CK-NAC": {
+        "param_id": null,
+        "service_tarification_id": 376,
+        "service_tarification_name": "CK - NAC",
+        "abbrev": "CK",
+        "name": "CK - NAC"
+      },
+      "Proteine totale": {
+        "param_id": null,
+        "service_tarification_id": 489,
+        "service_tarification_name": "Protide totaux",
+        "abbrev": "PT",
+        "name": "Protide totaux"
+      },
+      "Albumine": {
+        "param_id": null,
+        "service_tarification_id": 343,
+        "service_tarification_name": "Albuminémie",
+        "abbrev": "Alb",
+        "name": "Albuminémie"
+      }
+    },
+    "cyanvision": {},
+    "xs500i": {
+      "WBC": {
+        "param_id": 81,
+        "service_tarification_id": 421,
+        "service_tarification_name": "FNS",
+        "abbrev": "GB",
+        "name": "Globules Blancs"
+      },
+      "RBC": {
+        "param_id": 80,
+        "service_tarification_id": 421,
+        "service_tarification_name": "FNS",
+        "abbrev": "GR",
+        "name": "Globules Rouges"
+      },
+      "HGB": {
+        "param_id": 98000,
+        "service_tarification_id": 421,
+        "service_tarification_name": "FNS",
+        "abbrev": "hémoglob",
+        "name": "Hémoglobine"
+      },
+      "HCT": {
+        "param_id": 97000,
+        "service_tarification_id": 421,
+        "service_tarification_name": "FNS",
+        "abbrev": "Hemcte.",
+        "name": "Hématocrite"
+      },
+      "PLT": {
+        "param_id": 93,
+        "service_tarification_id": 421,
+        "service_tarification_name": "FNS",
+        "abbrev": "pettes",
+        "name": "Plaquettes"
+      },
+      "MCV": {
+        "param_id": 99478,
+        "service_tarification_id": 421,
+        "service_tarification_name": "FNS",
+        "abbrev": "VGM",
+        "name": "VGM"
+      },
+      "MCH": {
+        "param_id": 99307,
+        "service_tarification_id": 421,
+        "service_tarification_name": "FNS",
+        "abbrev": "TGMH",
+        "name": "TGMH"
+      },
+      "MCHC": {
+        "param_id": 10100,
+        "service_tarification_id": 421,
+        "service_tarification_name": "FNS",
+        "abbrev": "CCMH",
+        "name": "CCMH"
+      },
+      "NEUT%": {
+        "param_id": 99134,
+        "service_tarification_id": 421,
+        "service_tarification_name": "FNS",
+        "abbrev": "Neu",
+        "name": "Neutrophiles"
+      },
+      "LYMPH%": {
+        "param_id": 99137,
+        "service_tarification_id": 421,
+        "service_tarification_name": "FNS",
+        "abbrev": "Lympho",
+        "name": "Lymphocytes"
+      },
+      "MONO%": {
+        "param_id": 99136,
+        "service_tarification_id": 421,
+        "service_tarification_name": "FNS",
+        "abbrev": "Mono",
+        "name": "Monocytes"
+      },
+      "EO%": {
+        "param_id": 99950,
+        "service_tarification_id": 421,
+        "service_tarification_name": "FNS",
+        "abbrev": "eosino",
+        "name": "Eosinophiles"
+      },
+      "BASO%": {
+        "param_id": 99138,
+        "service_tarification_id": 421,
+        "service_tarification_name": "FNS",
+        "abbrev": "Baso",
+        "name": "Basophiles"
+      }
+    }
+  },
+  "api": {
+    "endpoint": "http://localhost:8080/labo/api/machine/result",
+    "token": "labo@@2025",
+    "enabled": true,
+    "timeout_seconds": 5
+  }
+}
