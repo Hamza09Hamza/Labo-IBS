@@ -263,8 +263,8 @@ function renderOverview() {
           <div class="card-live-badge ${liveClass}">
             <span class="dot"></span>${liveLabel}
           </div>
-          <button class="icon-btn card-config-btn" title="Machine settings" type="button">
-            <svg viewBox="0 0 24 24" fill="none"><path d="M4 12h4M16 12h4M12 4v4M12 16v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="1.8"/></svg>
+          <button class="icon-btn card-config-btn" title="Edit machine" type="button">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4L16.5 3.5z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
         </div>
         <div class="card-photo-frame-body">
