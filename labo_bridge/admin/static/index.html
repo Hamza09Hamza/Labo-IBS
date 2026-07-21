@@ -148,7 +148,7 @@
           <div class="panel-toolbar">
             <div class="search-box">
               <svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-              <input type="text" id="mappedSearch" placeholder="Filter by code, param, or exam…">
+              <input type="text" id="mappedSearch" placeholder="Filter by code, param/exam name, or ID…">
             </div>
             <button class="btn btn-primary" id="addMappingBtn">
               <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
@@ -295,7 +295,7 @@
       <div class="field">
         <label for="fSearch">Match to a clinic parameter or exam</label>
         <div class="combo">
-          <input type="text" id="fSearch" placeholder="Search by name, e.g. Globules Blancs or FNS…" autocomplete="off">
+          <input type="text" id="fSearch" placeholder="Search by name or ID, e.g. Globules Blancs, FNS, or 81…" autocomplete="off">
           <div class="combo-results" id="searchResults"></div>
         </div>
         <p class="field-hint">Search finds both lab parameters (e.g. a single value like WBC) and full exams (for tests with no single value breakdown).</p>
@@ -306,7 +306,10 @@
           <svg viewBox="0 0 24 24" fill="none"><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/></svg>
         </div>
         <div class="match-picked-body">
-          <div class="match-picked-name" id="matchPickedName">—</div>
+          <div class="match-picked-name-row">
+            <span class="match-picked-name" id="matchPickedName">—</span>
+            <span class="match-kind-badge" id="matchKindBadge">—</span>
+          </div>
           <div class="match-picked-meta" id="matchPickedMeta">—</div>
         </div>
         <button class="icon-btn" id="matchPickedClear" title="Clear selection" type="button">
@@ -403,15 +406,20 @@
         <input type="text" id="naLabel" placeholder="e.g. Cobas c111" autocomplete="off">
       </div>
 
-      <div class="field">
-        <label for="naKey">System ID (internal, not the clinic's machine ID)</label>
+      <div class="field field-collapsed">
+        <label for="naKey">System ID <span class="field-hint-inline">(auto-generated, only used internally - not the clinic machine ID below)</span></label>
         <input type="text" id="naKey" placeholder="e.g. cobas_c111" autocomplete="off">
-        <p class="field-hint">Lowercase letters/numbers/underscore only. This is our own internal identifier (used in URLs and config) - it's different from the "Clinic machine ID" you set later in Machine Settings, which is the clinic database's ID for this analyzer. Can't be changed after creation.</p>
       </div>
 
       <div class="field">
         <label for="naKind">Kind</label>
         <input type="text" id="naKind" placeholder="e.g. Chemistry Analyzer" autocomplete="off">
+      </div>
+
+      <div class="field">
+        <label for="naMachineId">Clinic machine ID (optional)</label>
+        <input type="number" id="naMachineId" placeholder="Leave blank if unknown yet" autocomplete="off">
+        <p class="field-hint">The clinic database's ID for this analyzer - sent as <code>machine_id</code> to the clinic API. Leave blank to send the machine name instead; you can set or change this later in Machine Settings.</p>
       </div>
 
       <div class="field">

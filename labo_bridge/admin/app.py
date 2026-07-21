@@ -11,11 +11,19 @@ ONLY persistence layer for this project (local SQLite was retired).
 """
 
 import importlib
+import logging
 import os
 import re
 import sys
 
 from flask import Flask, jsonify, request, send_from_directory
+
+# Werkzeug (Flask's dev server) logs every request by default - with the
+# admin UI's live 2-3s polling (machines/mappings/pending/samples/status),
+# that's a wall of "GET ... 200 -" lines drowning out anything useful in
+# the terminal. Only warnings/errors (failed requests, tracebacks) print now;
+# routine 200s from polling are silenced.
+logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)))
 
@@ -159,6 +167,7 @@ def api_add_machine():
     reuse_decoder_from = (request.form.get("reuse_decoder_from") or "").strip()
     port_raw = (request.form.get("port") or "").strip()
     color = (request.form.get("color") or "#0C8599").strip()
+    machine_id_raw = (request.form.get("machine_id") or "").strip()
 
     if not re.match(r"^[a-z][a-z0-9_]*$", machine):
         return jsonify({"error": "machine key must be lowercase letters/numbers/underscore, "
@@ -176,6 +185,12 @@ def api_add_machine():
         return jsonify({"error": "port must be a number"}), 400
     if not (1024 <= port <= 65535):
         return jsonify({"error": "port must be between 1024 and 65535"}), 400
+    machine_id = None
+    if machine_id_raw:
+        try:
+            machine_id = int(machine_id_raw)
+        except ValueError:
+            return jsonify({"error": "machine_id must be a number"}), 400
     in_use = [m for m, cfg in server_module.MACHINES.items()
              if runtime_ports.get_port_for(m, cfg["port"]) == port]
     if in_use:
@@ -214,7 +229,8 @@ def api_add_machine():
 
     pg_module.upsert_machine_config(machine, label=label, kind=kind or "Analyzer",
                                     protocol=protocol.upper(), port=port,
-                                    color=color, photo=photo_rel, photo_bg="transparent")
+                                    color=color, photo=photo_rel, photo_bg="transparent",
+                                    machine_id=machine_id if machine_id is not None else "__unset__")
     _reload_mappings()
 
     return jsonify({"ok": True, "machine": machine})
@@ -434,6 +450,11 @@ def api_param_search():
     conn = pg_module._get_conn()
     if conn is None:
         return jsonify({"error": "clinic Postgres DB unreachable"}), 503
+    # A purely numeric query also matches lp.id exactly (e.g. typing "99138"
+    # jumps straight to that param) - in addition to, not instead of, the
+    # usual name/abbreviation search, since a query could coincidentally be
+    # numeric-looking text too.
+    id_match = int(q) if q.isdigit() else None
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -442,10 +463,10 @@ def api_param_search():
             FROM labo.labo_param lp
             LEFT JOIN labo.labo_test_param ltp ON ltp.param_id = lp.id
             LEFT JOIN clinic_management.service_tarification st ON st.id = ltp.service_tarification_id
-            WHERE lp.name ILIKE %s OR lp.abbreviation ILIKE %s
-            ORDER BY lp.name LIMIT 25
+            WHERE lp.name ILIKE %s OR lp.abbreviation ILIKE %s OR lp.id = %s
+            ORDER BY (lp.id = %s) DESC, lp.name LIMIT 25
             """,
-            (f"%{q}%", f"%{q}%"),
+            (f"%{q}%", f"%{q}%", id_match, id_match),
         )
         cols = [c.name for c in cur.description]
         db_hits = [dict(zip(cols, row)) for row in cur.fetchall()]
@@ -460,15 +481,16 @@ def api_exam_search():
     conn = pg_module._get_conn()
     if conn is None:
         return jsonify({"error": "clinic Postgres DB unreachable"}), 503
+    id_match = int(q) if q.isdigit() else None
     with conn.cursor() as cur:
         cur.execute(
             """
             SELECT id, name, is_composed
             FROM clinic_management.service_tarification
-            WHERE name ILIKE %s AND deleted_at IS NULL
-            ORDER BY name LIMIT 25
+            WHERE (name ILIKE %s OR id = %s) AND deleted_at IS NULL
+            ORDER BY (id = %s) DESC, name LIMIT 25
             """,
-            (f"%{q}%",),
+            (f"%{q}%", id_match, id_match),
         )
         cols = [c.name for c in cur.description]
         rows = [dict(zip(cols, row)) for row in cur.fetchall()]

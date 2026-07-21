@@ -177,10 +177,25 @@ XS500I_MAP = {
     "BASO%": (99138, 421, "FNS", "Baso",     "Basophiles"),
 }
 
+# bioMerieux Mini VIDAS - immuno analyzer. Confirmed working connection and
+# framing (2026-07-21, see decoders/minividas.py). First real result captured
+# was Anti-HCV (test_code "HCV" per the machine's own "rt" field) - matched
+# to service_tarification_id=439 ("HCV", is_composed=false, 1199 historical
+# orders - a real, actively-used exam, not a stray duplicate). No
+# labo_test_param rows exist for exam 439, confirming it's non-composed:
+# the result is stored directly against appointment_tarification_id, so
+# param_id is None and service_tarification_id alone is the complete match
+# (same pattern as XN330_MAP's non-composed entries).
+MINIVIDAS_MAP = {
+    "HCV": (None, 439, "HCV", "Anti-HCV", "Anticorps anti HCV"),
+    "HIV": (None, 445, "HIV", "", "HIV"),
+}
+
 MAPS = {
     "xn330": XN330_MAP,
     "ismart": ISMART_MAP,
     "selectra": SELECTRA_MAP,
     "cyanvision": CYANVISION_MAP,
     "xs500i": XS500I_MAP,
+    "minividas": MINIVIDAS_MAP,
 }

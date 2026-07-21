@@ -133,6 +133,13 @@ h1, h2, h3 { font-family: var(--font-body); letter-spacing: -0.02em; }
 .blob-1 { width: 560px; height: 560px; background: var(--accent); top: -200px; left: -140px; animation: float1 24s ease-in-out infinite; }
 .blob-2 { width: 480px; height: 480px; background: var(--accent-2); top: -80px; right: -120px; animation: float2 30s ease-in-out infinite; }
 .blob-3 { width: 340px; height: 340px; background: var(--accent-3); top: 160px; left: 48%; animation: float3 34s ease-in-out infinite; opacity: 0.10; }
+/* Any modal's backdrop-filter blur has to recomposite every frame; combined
+   with these continuously-animating (and separately blurred) background
+   blobs, that's a blur-of-a-moving-blur recalculated on every scroll tick -
+   the real cause of modal scroll lag. Freezing the blobs while a modal is
+   open removes that extra load; they're purely decorative and covered by
+   the scrim anyway, so nothing is visually lost by pausing them. */
+body.modal-open .blob { animation-play-state: paused; }
 
 @keyframes float1 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(70px, 60px) scale(1.06); } }
 @keyframes float2 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-60px, 50px) scale(0.95); } }
@@ -470,7 +477,7 @@ h1, h2, h3 { font-family: var(--font-body); letter-spacing: -0.02em; }
 .machine-badges { display: flex; gap: 8px; flex-wrap: wrap; }
 .badge {
   font-size: 11.5px; font-family: var(--font-mono); font-weight: 600;
-  padding: 7px 12px; border-radius: 100px;
+  padding: 7px 12px; border-radius: 100px; white-space: nowrap;
   background: var(--bg-elevated); border: 1px solid var(--border); color: var(--fg-muted);
   box-shadow: var(--shadow-sm);
 }
@@ -589,11 +596,25 @@ h1, h2, h3 { font-family: var(--font-body); letter-spacing: -0.02em; }
   padding: 5px 10px; border-radius: 8px; display: inline-block;
 }
 .param-id { font-family: var(--font-mono); color: var(--fg); font-weight: 600; }
+.param-id-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 2px; }
 .param-name { color: var(--fg-muted); font-size: 12.5px; }
 .exam-tag {
   font-size: 12px; color: var(--accent-2); font-weight: 600;
   background: color-mix(in srgb, var(--accent-2) 10%, transparent);
   padding: 4px 10px; border-radius: 100px; display: inline-block;
+}
+.match-kind-badge {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 800;
+  letter-spacing: 0.03em; padding: 3px 8px; border-radius: 6px;
+  display: inline-block; cursor: help; line-height: 1.4; white-space: nowrap;
+}
+.match-kind-param {
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border: 1.5px solid color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.match-kind-exam {
+  color: var(--warning); background: color-mix(in srgb, var(--warning) 18%, transparent);
+  border: 1.5px solid color-mix(in srgb, var(--warning) 45%, transparent);
 }
 .value-mono { font-family: var(--font-mono); font-size: 13px; font-weight: 600; }
 .muted-cell { color: var(--fg-faint); font-style: italic; font-size: 12.5px; }
@@ -667,6 +688,23 @@ h1, h2, h3 { font-family: var(--font-body); letter-spacing: -0.02em; }
 
 /* Wider modal for the sample drill-down */
 .modal.modal-lg { max-width: 760px; }
+/* The results table gets its OWN small scroll region instead of the whole
+   modal growing tall and relying on a sticky header - a modal-length scroll
+   with a sticky header recalculating against everything scrolling under it
+   is much more expensive to render than a short, contained inner scrollbox,
+   and was the real source of lag when a sample had many matched results. */
+#stab-results .table-wrap { max-height: 360px; overflow-y: auto; contain: content; will-change: scroll-position; }
+#stab-results .data-table thead th { position: sticky; top: 0; z-index: 1; }
+/* Fixed layout so a long test/parameter name can never balloon its column
+   and starve the "Clinic API" status pill of room to render on one line -
+   confirmed issue (2026-07-21) with 70+ row Selectra results, where "Staged
+   only" wrapped mid-word once the Parameter column got squeezed. */
+#stab-results .data-table { table-layout: fixed; }
+#stab-results .data-table th:nth-child(1), #stab-results .data-table td:nth-child(1) { width: 12%; }
+#stab-results .data-table th:nth-child(2), #stab-results .data-table td:nth-child(2) { width: 34%; }
+#stab-results .data-table th:nth-child(3), #stab-results .data-table td:nth-child(3) { width: 18%; }
+#stab-results .data-table th:nth-child(4), #stab-results .data-table td:nth-child(4) { width: 18%; }
+#stab-results .data-table th:nth-child(5), #stab-results .data-table td:nth-child(5) { width: 18%; }
 
 /* Sample detail: metadata grid */
 .sample-meta {
@@ -703,6 +741,12 @@ h1, h2, h3 { font-family: var(--font-body); letter-spacing: -0.02em; }
   font-family: var(--font-mono); font-size: 12.5px; line-height: 1.55;
   color: var(--fg); overflow-x: auto; max-height: 420px; overflow-y: auto;
   white-space: pre;
+  /* Isolates this scroll region into its own compositor layer, separate
+     from the modal scrim's backdrop-filter blur above it - without this,
+     some browsers re-evaluate the blurred layer stack on every scroll
+     event inside ANY nested scrollable, even one that's already
+     height-constrained and shouldn't need to touch the backdrop at all. */
+  contain: content; will-change: scroll-position;
 }
 
 .field { display: flex; flex-direction: column; gap: 7px; position: relative; }
@@ -717,6 +761,8 @@ h1, h2, h3 { font-family: var(--font-body); letter-spacing: -0.02em; }
 .field input:focus { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-glow); }
 .field-hint { margin: 0; font-size: 11.5px; color: var(--fg-faint); font-family: var(--font-body); }
 .field-hint code { font-family: var(--font-mono); background: var(--surface-strong); padding: 1px 5px; border-radius: 4px; }
+.field-hint-inline { font-size: 11px; font-weight: 400; color: var(--fg-faint); font-family: var(--font-body); }
+.field-collapsed input { padding: 8px 12px; font-size: 12.5px; }
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .field-group { display: flex; flex-direction: column; gap: 10px; }
 
@@ -767,6 +813,7 @@ h1, h2, h3 { font-family: var(--font-body); letter-spacing: -0.02em; }
 }
 .combo-result-tag.param { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent-strong); }
 .combo-result-tag.exam { background: color-mix(in srgb, var(--accent-2) 14%, transparent); color: var(--accent-2); }
+.cr-id-badge { margin-left: 6px; margin-bottom: 4px; }
 .combo-result-message {
   cursor: default; color: var(--fg-faint); font-style: italic; text-align: center;
 }
@@ -777,6 +824,7 @@ h1, h2, h3 { font-family: var(--font-body); letter-spacing: -0.02em; }
   padding: 14px 16px; border-radius: 14px;
   background: var(--success-bg); border: 1px solid color-mix(in srgb, var(--success) 30%, transparent);
 }
+.match-picked[hidden] { display: none; }
 .match-picked-icon { color: var(--success); flex-shrink: 0; }
 .match-picked-icon svg { width: 22px; height: 22px; }
 .match-picked-body { flex: 1; min-width: 0; }
@@ -880,10 +928,17 @@ h1, h2, h3 { font-family: var(--font-body); letter-spacing: -0.02em; }
 .settings-actions { display: flex; justify-content: flex-end; }
 
 /* ---------- Scrollbar ---------- */
-::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 6px; }
-::-webkit-scrollbar-thumb:hover { background: var(--fg-faint); }
+/* margin on the track insets the scrollbar slightly from the container's
+   edge - without it, the straight scrollbar track collides visually with
+   rounded corners (modals, dropdowns) and reads as misaligned/pointing at
+   the top instead of sitting flush and centered within the rounded shape. */
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; margin: 6px 0; }
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong); border-radius: 100px;
+  background-clip: padding-box; border: 2px solid transparent;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--fg-faint); background-clip: padding-box; }
 
 /* ---------- Responsive ---------- */
 @media (max-width: 700px) {

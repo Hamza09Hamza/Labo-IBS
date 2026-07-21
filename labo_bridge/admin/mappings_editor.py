@@ -30,6 +30,7 @@ MAP_VAR_NAMES = {
     "selectra": "SELECTRA_MAP",
     "cyanvision": "CYANVISION_MAP",
     "xs500i": "XS500I_MAP",
+    "minividas": "MINIVIDAS_MAP",
 }
 
 _lock = threading.Lock()  # editing the file is a rare, single-operator action

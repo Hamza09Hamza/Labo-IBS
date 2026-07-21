@@ -233,6 +233,15 @@ def write_matched_result(machine, sample_id, specimen, test_code, match, rec,
     a local record or it's invisible everywhere in the UI. `api_sent`/
     `api_result_id` record whether/where it also went to the clinic, purely
     as history - they don't change matching logic.
+
+    Replaces (not appends to) any existing row for this exact
+    (machine, sample_id, test_code) - confirmed necessary via real Selectra
+    captures (2026-07-21): short numeric sample IDs get physically reused
+    for entirely separate, unrelated runs on different days, which used to
+    pile up as multiple contradictory rows for the "same" sample (e.g. 4
+    different Creatinine values for sample "589"). Keeping only the latest
+    matches what a user checking a sample actually expects to see - a
+    single current result per test, not an unlabeled mix of old and new.
     Returns True on success, False if the write was skipped (PG unreachable).
     """
     conn = _get_conn()
@@ -244,6 +253,11 @@ def write_matched_result(machine, sample_id, specimen, test_code, match, rec,
 
     try:
         with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM labo_bridge.labo_bridge_results "
+                "WHERE machine = %s AND sample_id = %s AND test_code = %s",
+                (machine, sample_id.strip(), test_code),
+            )
             cur.execute(
                 """
                 INSERT INTO labo_bridge.labo_bridge_results

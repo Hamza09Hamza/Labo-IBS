@@ -32,9 +32,21 @@ def decode_record(line: str) -> dict:
         specimen_id = fields[2] if len(fields) > 2 else ""
         instrument_specimen_id = fields[3] if len(fields) > 3 else ""
         sample_id = specimen_id or instrument_specimen_id
+        specimen_type = fields[14] if len(fields) > 14 else ""
+        # The machine runs its own electrode calibration/QC cycle automatically
+        # (before/after real patient tests) - confirmed via real capture
+        # (2026-07-21): these carry specimen_type "2PCal" (vs "Blood" for a
+        # real patient specimen) and their result codes are diagnostic
+        # (Slope/Drift1/Drift2/Measured1/Measured2), never real clinical
+        # values - kind="calibration" tells server.py to skip the whole
+        # session (no sample row, no pending/result rows) instead of
+        # cluttering Recent Samples and the mapping backlog with machine
+        # housekeeping data.
+        if specimen_type.strip().lower().endswith("cal"):
+            return {"kind": "calibration", "raw": line}
         return {"kind": "order", "sample_id": sample_id,
                 "instrument_specimen_id": instrument_specimen_id,
-                "specimen_type": fields[14] if len(fields) > 14 else "", "raw": line}
+                "specimen_type": specimen_type, "raw": line}
 
     if rtype == "R":
         parts = (fields[2] if len(fields) > 2 else "").split("^")

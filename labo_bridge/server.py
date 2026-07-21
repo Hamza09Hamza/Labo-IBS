@@ -20,10 +20,17 @@ import threading
 from datetime import datetime
 
 from .protocols import astm, hl7_mllp
-from .decoders import xn330, ismart, selectra, cyanvision
+from .decoders import xn330, ismart, selectra, cyanvision, minividas
 from . import matcher, pg, api_client, config, runtime_ports, live_status
 
 HOST = "0.0.0.0"
+
+# How long a connection can sit completely silent before it's treated as
+# gone (see the settimeout() call in _serve_one_machine). Analyzers pause
+# between results/batches but never for minutes at a stretch while still
+# genuinely connected, so this is generous enough to never cut off a real,
+# still-active session.
+CONNECTION_IDLE_TIMEOUT_SECONDS = 90
 
 # Every session (one ASTM batch / one HL7 message) gets its raw records and
 # parsed results saved here automatically - always, for every machine,
@@ -63,7 +70,20 @@ MACHINES = {
                    "initial_ack": False, "port": 6004},
     "xs500i":     {"protocol": "astm", "decode_record": xn330.decode_record,
                    "initial_ack": False, "port": 6005},
+    # bioMerieux Mini VIDAS, via an FCT-201-F serial-to-Ethernet adapter in
+    # TCP Client mode (dials out to us). Confirmed by real capture
+    # (2026-07-21) to use the same ENQ/ACK/STX/EOT handshake as ASTM, but a
+    # different frame body: RS (\x1e)-separated "<tag><value>" fields
+    # instead of '|'-delimited CR-terminated lines - see decoders/minividas.py
+    # for the full format. Needs its own connection handler (_handle_minividas)
+    # since astm.strip_frame/split_records assume CR/LF framing this doesn't use.
+    "minividas":  {"protocol": "minividas", "decode_frame": minividas.decode_frame,
+                   "initial_ack": False, "port": 6006},
 }
+
+# TEMPORARY TEST HOOK flag - see _handle_astm. Remove alongside it once the
+# Selectra host-send test is done.
+_selectra_test_sent = False
 
 
 def _get_machine_id(machine: str):
@@ -94,6 +114,40 @@ def _ingest_result(session, sample_id, rec):
     deliberate tradeoff now that Postgres is the sole persistence layer.
     """
     machine, quiet = session.machine, session.quiet
+
+    # ASTM's result-status field (R record's 8th field) marks "R" = repeat/
+    # retransmission of an already-reported result - e.g. re-sending the same
+    # patient's result a second time, whether deliberately (operator re-runs
+    # a report) or automatically (the analyzer resending after not getting a
+    # clean ACK). "F" (final) is the normal case; only "R" means "this exact
+    # result was already reported once" - skip it so sample detail doesn't
+    # show doubled results for the same test. Confirmed via real capture
+    # (2026-07-21, I-Smart 30 PRO): the same Na+/K+/Cl-/Ca2+ values, resent
+    # ~3 min later, differed ONLY in this field (F -> R).
+    if rec.get("status") == "R":
+        line = (f"SKIPPED result (status=R, already reported) "
+                f"sample={sample_id!r:14} test={rec.get('test_code',''):10s} "
+                f"value={rec.get('value',''):>10s}")
+        session.parsed_lines.append(line)
+        if not quiet:
+            print(f"[{machine}] {line}")
+        return
+
+    # The analyzer itself flags a measurement it doesn't trust with the
+    # literal value "REJECT" (a failed QC check, out-of-range absorbance,
+    # etc. - confirmed via real Selectra capture, 2026-07-21) rather than a
+    # number. That's not a usable clinical value, so it must never be filed
+    # into labo_bridge_results (which would make a rejected reading look
+    # like a real Créatinémie/SGOT/etc. result) or sent to the clinic API -
+    # skip it entirely, same as a retransmission.
+    if rec.get("value", "").strip().upper() == "REJECT":
+        line = (f"SKIPPED result (analyzer marked REJECT - failed QC) "
+                f"sample={sample_id!r:14} test={rec.get('test_code',''):10s}")
+        session.parsed_lines.append(line)
+        if not quiet:
+            print(f"[{machine}] {line}")
+        return
+
     m = matcher.match(machine, rec.get("test_code", ""))
 
     if m["method"] == "curated":
@@ -214,6 +268,13 @@ class _Session:
         self.raw_bytes = b""  # every byte received this batch, BEFORE any framing/decoding
         self.raw_lines = []  # every record's raw text, in order - see _write_session_file
         self.parsed_lines = []  # formatted result summary lines, see _write_session_file
+        # Set when a decoder reports kind="calibration" (currently only
+        # ismart.py, for the I-Smart 30 PRO's automatic electrode
+        # calibration/QC cycle) - once set, every "result" in the rest of
+        # this batch is skipped too (no pending_param, no labo_bridge_results
+        # row), since a calibration run's O record is always followed only
+        # by its own diagnostic R records, never a mix with a real sample.
+        self.is_calibration = False
 
     def handle_event(self, ev):
         kind = ev.get("kind")
@@ -229,7 +290,15 @@ class _Session:
             if not self.quiet:
                 print(f"[{self.machine}] PATIENT {self.patient_name or '(none)'} "
                       f"(ID: {self.patient_id or '(none)'})")
+        elif kind == "calibration":
+            self.is_calibration = True
+            if not self.quiet:
+                print(f"[{self.machine}] CALIBRATION run detected - skipping "
+                      f"(no sample/result written, this is the machine's own "
+                      f"electrode QC cycle, not a patient test)")
         elif kind == "order":
+            if self.is_calibration:
+                return
             self.sample_id = ev.get("sample_id", "") or self.sample_id
             paillasse = ev.get("paillasse")
             self.specimen = {k: ev[k] for k in ("year", "month", "sequence", "paillasse") if k in ev}
@@ -240,6 +309,8 @@ class _Session:
                 bench = f" paillasse={paillasse}" if paillasse else ""
                 print(f"[{self.machine}] WROTE sample  sample={self.sample_id!r}{bench}")
         elif kind == "result":
+            if self.is_calibration:
+                return
             sid = self.sample_id or self.patient_id or ""
             if self.sample_id is None:
                 # result before any order - stage under best-known id
@@ -256,10 +327,23 @@ def _handle_astm(conn, addr, cfg, machine, quiet):
     if cfg.get("initial_ack"):
         conn.sendall(astm.B_ACK)
 
+    # TEMPORARY TEST HOOK - remove once the Selectra host-send test is done.
+    # Sends one harmless ASTM-framed test message the first time Selectra
+    # connects after this process started, purely to see whether the
+    # Selectra reacts at all to bytes sent FROM labo_bridge (it currently
+    # only ever pushes data to us; this checks if the link is bidirectional).
+    global _selectra_test_sent
+    if machine == "selectra" and not _selectra_test_sent:
+        _selectra_test_sent = True
+        test_frame = astm.build_frame(1, "hi")
+        conn.sendall(test_frame)
+        print(f"[{machine}] TEST: sent host message {test_frame!r} - "
+              f"watching for any reply/reaction...")
+
     while True:
         try:
             data = conn.recv(4096)
-        except ConnectionResetError:
+        except (ConnectionResetError, socket.timeout):
             break
         if not data:
             break
@@ -296,12 +380,67 @@ def _handle_astm(conn, addr, cfg, machine, quiet):
                 buffer = buffer[1:]
 
 
+def _handle_minividas(conn, addr, cfg, machine, quiet):
+    """
+    Mini VIDAS connection handler - same ENQ/ACK/STX/EOT control-byte
+    handshake as _handle_astm, but frames end in \\x1d<2-char seq> (GS +
+    sequence tag) then ETX rather than CR + checksum + CR/LF, and the body
+    is RS (\\x1e)-separated tag/value fields rather than '|'-delimited
+    lines - so frame boundaries are found by ETX, not LF, and the body is
+    handed to minividas.decode_frame() (not split into per-line records).
+    """
+    session = _Session(machine, addr[0], quiet)
+    buffer = b""
+
+    while True:
+        try:
+            data = conn.recv(4096)
+        except (ConnectionResetError, socket.timeout):
+            break
+        if not data:
+            break
+        buffer += data
+        session.raw_bytes += data
+
+        while buffer:
+            b0 = buffer[0]
+            if b0 == astm.ENQ:
+                conn.sendall(astm.B_ACK)
+                buffer = buffer[1:]
+            elif b0 == astm.EOT:
+                buffer = buffer[1:]
+                _flush_api_batch(session)
+                _write_session_file(session)
+                session.raw_bytes = b""
+                session.raw_lines = []
+                session.parsed_lines = []
+                if not quiet:
+                    print(f"[{machine}] batch complete ({session.result_count} results written)")
+            elif b0 == astm.STX:
+                idx = buffer.find(bytes([astm.ETX]))
+                if idx == -1:
+                    break
+                frame = buffer[1:idx]  # drop leading STX, up to (excl.) ETX
+                buffer = buffer[idx + 1:]
+                conn.sendall(astm.B_ACK)
+                # frame ends "...\x1d<seq>" - drop the GS + trailing sequence
+                # tag, which isn't part of the field data itself.
+                if "\x1d" in frame.decode("utf-8", errors="replace"):
+                    body = frame.decode("utf-8", errors="replace").split("\x1d")[0]
+                else:
+                    body = frame.decode("utf-8", errors="replace")
+                for ev in cfg["decode_frame"](body):
+                    session.handle_event(ev)
+            else:
+                buffer = buffer[1:]
+
+
 def _handle_hl7(conn, addr, cfg, machine, quiet):
     buffer = b""
     while True:
         try:
             data = conn.recv(4096)
-        except ConnectionResetError:
+        except (ConnectionResetError, socket.timeout):
             break
         if not data:
             break
@@ -353,7 +492,12 @@ def _serve_one_machine(machine: str, quiet: bool, stop_event: threading.Event):
           f"Storage: Postgres (labo_bridge schema)")
     live_status.set_listening(machine, datetime.now().isoformat(timespec="seconds"))
 
-    handler = _handle_hl7 if cfg["protocol"] == "hl7" else _handle_astm
+    if cfg["protocol"] == "hl7":
+        handler = _handle_hl7
+    elif cfg["protocol"] == "minividas":
+        handler = _handle_minividas
+    else:
+        handler = _handle_astm
     try:
         while not stop_event.is_set():
             desired_port = runtime_ports.get_port_for(machine, cfg["port"])
@@ -375,6 +519,15 @@ def _serve_one_machine(machine: str, quiet: bool, stop_event: threading.Event):
                 conn, addr = sock.accept()
             except socket.timeout:
                 continue
+            # Without a read timeout, conn.recv() blocks forever if the peer
+            # vanishes without a clean TCP close (power loss, a flaky serial-
+            # to-Ethernet adapter, a machine that just stops sending) - the
+            # handler would never return, so live_status would stay stuck on
+            # "connected" indefinitely even though the machine is long gone.
+            # A generous timeout (analyzers go quiet between results/batches,
+            # but never for minutes) lets each recv() loop notice the machine
+            # is unresponsive and correctly fall back to "listening".
+            conn.settimeout(CONNECTION_IDLE_TIMEOUT_SECONDS)
             now_iso = datetime.now().isoformat(timespec="seconds")
             print(f"[{machine}] connected by {addr[0]}:{addr[1]} at {now_iso}")
             live_status.set_connected(machine, now_iso, addr[0])

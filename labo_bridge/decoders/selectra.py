@@ -31,9 +31,21 @@ def decode_record(line: str) -> dict:
                 "raw": line}
 
     if rtype == "O":
-        return {"kind": "order",
-                "sample_id": (fields[2] if len(fields) > 2 else "").strip(),
-                "specimen_type": fields[3] if len(fields) > 3 else "", "raw": line}
+        sample_id = (fields[2] if len(fields) > 2 else "").strip()
+        carrier = (fields[3] if len(fields) > 3 else "").strip()
+        # The Selectra runs its own QC/calibration cycle automatically -
+        # confirmed via real capture (2026-07-21): pure QC/blank/calibrator
+        # runs (ELITROL I, BLANK, AU CAL, CREAT CAL, ELICAL 2) have NO
+        # sample_id at all, only a named carrier in this field instead; a
+        # second pattern (STD AU, STD CAL, STD CREAT) DOES put something in
+        # the sample_id slot, but it's a standard-curve label, not a real
+        # sample, always prefixed "STD ". Neither is a real patient - flag
+        # both so server.py skips the whole run (no sample/result rows),
+        # same treatment as the I-Smart's calibration cycle.
+        if not sample_id or sample_id.upper().startswith("STD "):
+            return {"kind": "calibration", "raw": line}
+        return {"kind": "order", "sample_id": sample_id,
+                "specimen_type": fields[14] if len(fields) > 14 else "", "raw": line}
 
     if rtype == "R":
         parts = (fields[2] if len(fields) > 2 else "").split("^")

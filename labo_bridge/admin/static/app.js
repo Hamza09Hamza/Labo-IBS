@@ -1,5 +1,23 @@
 // Labo Bridge Admin — vanilla JS, no build step, single-operator local tool.
 
+// Toggles body.modal-open whenever ANY .modal-scrim gains/loses its "open"
+// class - pauses the decorative background blob animations while a modal is
+// up (see style.css), since a moving blurred blob under a blurred modal
+// scrim is expensive to recomposite every frame and was the real cause of
+// laggy scrolling inside modals. A MutationObserver means every existing
+// (and future) modal's open/close code needs zero changes - it just works
+// off whatever class state is already there.
+(function watchModalState() {
+  const sync = () => {
+    const anyOpen = !!document.querySelector(".modal-scrim.open");
+    document.body.classList.toggle("modal-open", anyOpen);
+  };
+  document.querySelectorAll(".modal-scrim").forEach((scrim) => {
+    new MutationObserver(sync).observe(scrim, { attributes: true, attributeFilter: ["class"] });
+  });
+  sync();
+})();
+
 const state = {
   machines: [],
   activeSection: "machines", // "machines" | "mappings" | "api-settings"
@@ -483,7 +501,9 @@ function renderMappedTable(filter = "") {
   const rows = state.mappings.filter((r) =>
     !f || r.code.toLowerCase().includes(f) ||
     (r.name || "").toLowerCase().includes(f) ||
-    (r.service_tarification_name || "").toLowerCase().includes(f)
+    (r.service_tarification_name || "").toLowerCase().includes(f) ||
+    (r.param_id !== null && String(r.param_id).includes(f)) ||
+    (r.service_tarification_id !== null && String(r.service_tarification_id).includes(f))
   );
   document.getElementById("mappedEmpty").hidden = rows.length > 0;
   tbody.innerHTML = "";
@@ -492,7 +512,9 @@ function renderMappedTable(filter = "") {
     tr.innerHTML = `
       <td><span class="code-pill">${escapeHtml(r.code)}</span></td>
       <td>
-        <div class="param-id">${r.param_id !== null ? "#" + r.param_id : "—"}</div>
+        <div class="param-id-row">${r.param_id !== null
+          ? `<span class="match-kind-badge match-kind-param" title="Matched by param_id">PARAM</span><span class="param-id">#${r.param_id}</span>`
+          : `<span class="match-kind-badge match-kind-exam" title="No single param - matched by exam (service_tarification_id) instead">EXAM</span><span class="param-id">#${r.service_tarification_id}</span>`}</div>
         <div class="param-name">${escapeHtml(r.abbrev || "")} ${r.name ? "· " + escapeHtml(r.name) : ""}</div>
       </td>
       <td><span class="exam-tag">${escapeHtml(r.service_tarification_name || "—")}</span></td>
@@ -548,9 +570,13 @@ function showPickedMatch(match) {
     matchPickedName.textContent = match.name || match.abbrev || `Param #${match.param_id}`;
     matchPickedMeta.textContent = `Lab parameter #${match.param_id}` +
       (match.service_tarification_name ? ` · part of ${match.service_tarification_name}` : "");
+    matchKindBadge.textContent = "param_id";
+    matchKindBadge.className = "match-kind-badge match-kind-param";
   } else {
     matchPickedName.textContent = match.service_tarification_name || "Exam";
     matchPickedMeta.textContent = `Exam #${match.service_tarification_id} · no single-value breakdown`;
+    matchKindBadge.textContent = "service_tarification_id";
+    matchKindBadge.className = "match-kind-badge match-kind-exam";
   }
   fSearch.value = "";
   searchResults.classList.remove("open");
@@ -581,6 +607,7 @@ function renderCodeResults(filter) {
       <div class="cr-meta">${escapeHtml(p.sample_value || "")} ${escapeHtml(p.sample_unit || "")} · seen ${p.seen_count}×</div>`;
     div.addEventListener("click", () => {
       fCode.value = p.test_code;
+      updateModalTitle();
       codeResults.classList.remove("open");
     });
     codeResults.appendChild(div);
@@ -593,17 +620,34 @@ function renderCodeResults(filter) {
 // opens (see openEditModal's setTimeout), which would otherwise pop the
 // dropdown open immediately before the user did anything.
 fCode.addEventListener("click", () => { if (!fCode.disabled) renderCodeResults(fCode.value); });
-fCode.addEventListener("input", () => renderCodeResults(fCode.value));
+fCode.addEventListener("input", () => { renderCodeResults(fCode.value); updateModalTitle(); });
 document.addEventListener("click", (e) => {
   if (!e.target.closest("#fCode") && !e.target.closest("#codeResults")) {
     codeResults.classList.remove("open");
   }
 });
 
+// "Map <code>" once a code is picked/typed, a plain "Add mapping" while the
+// field is still empty (e.g. brand-new mapping via "Add mapping", before
+// anything is typed) - avoids the ugly `Map ""` title that showed for that
+// case previously.
+function updateModalTitle() {
+  const code = fCode.value.trim();
+  document.getElementById("modalTitle").textContent = state.editingCode
+    ? `Edit "${state.editingCode}"`
+    : (code ? `Map "${code}"` : "Add mapping");
+}
+
 function openEditModal(entry, isNewFromPending = false) {
+  // Unconditionally clear any match picked in a PREVIOUS modal session first -
+  // showPickedMatch(null) below only runs when this entry itself has no
+  // match, but that's still one extra branch of trust; resetting here up
+  // front guarantees the green "matched" indicator can never carry over from
+  // whatever code was last edited, regardless of call site or timing.
+  showPickedMatch(null);
+
   state.editingCode = isNewFromPending ? null : entry.code;
-  document.getElementById("modalTitle").textContent =
-    state.editingCode ? `Edit "${entry.code}"` : `Map "${entry.code}"`;
+  updateModalTitle();
   fCode.value = entry.code || "";
   fCode.disabled = !!state.editingCode; // code is the key; don't rename in place
   codeResults.classList.remove("open");
@@ -691,6 +735,7 @@ function runClinicSearch() {
       const div = document.createElement("div");
       div.className = "combo-result";
       div.innerHTML = `<span class="combo-result-tag param">Parameter</span>
+        <span class="match-kind-badge match-kind-param cr-id-badge" title="param_id">param_id #${r.id}</span>
         <div class="cr-name">${escapeHtml(r.name)}</div>
         <div class="cr-meta">${escapeHtml(r.abbreviation || "")} ${r.um ? "· " + escapeHtml(r.um) : ""} ${r.service_tarification_name ? "· " + escapeHtml(r.service_tarification_name) : ""}</div>`;
       div.addEventListener("click", () => showPickedMatch({
@@ -707,6 +752,7 @@ function runClinicSearch() {
       const div = document.createElement("div");
       div.className = "combo-result";
       div.innerHTML = `<span class="combo-result-tag exam">Exam</span>
+        <span class="match-kind-badge match-kind-exam cr-id-badge" title="service_tarification_id">service_tarification_id #${r.id}</span>
         <div class="cr-name">${escapeHtml(r.name)}</div>
         <div class="cr-meta">${r.is_composed ? "Has individual parameters — search for the specific one above instead" : "Single result, no parameter breakdown"}</div>`;
       div.addEventListener("click", () => showPickedMatch({
@@ -979,6 +1025,7 @@ const addAnalyzerScrim = document.getElementById("addAnalyzerScrim");
 const naLabel = document.getElementById("naLabel");
 const naKey = document.getElementById("naKey");
 const naKind = document.getElementById("naKind");
+const naMachineId = document.getElementById("naMachineId");
 const naDecoder = document.getElementById("naDecoder");
 const naPort = document.getElementById("naPort");
 const naColor = document.getElementById("naColor");
@@ -1007,6 +1054,7 @@ function openAddAnalyzerModal() {
   naLabel.value = "";
   naKey.value = "";
   naKind.value = "";
+  naMachineId.value = "";
   naPort.value = "";
   naColor.value = "#0C8599";
   naColorHex.value = "#0C8599";
@@ -1082,6 +1130,12 @@ document.getElementById("addAnalyzerSave").addEventListener("click", async () =>
     addAnalyzerAlert.textContent = "Port must be a number between 1024 and 65535.";
     return;
   }
+  const machineIdRaw = naMachineId.value.trim();
+  if (machineIdRaw && Number.isNaN(parseInt(machineIdRaw, 10))) {
+    addAnalyzerAlert.hidden = false;
+    addAnalyzerAlert.textContent = "Clinic machine ID must be a number, or left blank.";
+    return;
+  }
 
   const form = new FormData();
   form.append("machine", machine);
@@ -1090,6 +1144,7 @@ document.getElementById("addAnalyzerSave").addEventListener("click", async () =>
   form.append("reuse_decoder_from", naDecoder.value);
   form.append("port", String(portNum));
   form.append("color", naColorHex.value);
+  if (machineIdRaw) form.append("machine_id", String(parseInt(machineIdRaw, 10)));
   if (naPhoto.files[0]) form.append("photo", naPhoto.files[0]);
 
   const saveBtn = document.getElementById("addAnalyzerSave");
@@ -1149,7 +1204,9 @@ async function openSampleModal(machine, sampleId) {
         : `<span class="badge">Staged only</span>`;
       tr.innerHTML = `
         <td><span class="code-pill">${escapeHtml(r.test_code)}</span></td>
-        <td><div class="param-id">#${r.param_id ?? "—"}</div><div class="param-name">${escapeHtml(r.param_abbrev || "")} ${r.param_name ? "· " + escapeHtml(r.param_name) : ""}</div></td>
+        <td><div class="param-id-row">${r.param_id !== null && r.param_id !== undefined
+          ? `<span class="match-kind-badge match-kind-param" title="Matched by param_id">PARAM</span><span class="param-id">#${r.param_id}</span>`
+          : `<span class="match-kind-badge match-kind-exam" title="No single param - matched by exam (service_tarification_id) instead">EXAM</span><span class="param-id">#${r.service_tarification_id}</span>`}</div><div class="param-name">${escapeHtml(r.param_abbrev || "")} ${r.param_name ? "· " + escapeHtml(r.param_name) : ""}</div></td>
         <td class="value-mono">${escapeHtml(r.result_value)} ${escapeHtml(r.unit || "")}</td>
         <td class="timestamp-cell">${timeAgo(r.received_at)}</td>
         <td>${apiStatus}</td>
