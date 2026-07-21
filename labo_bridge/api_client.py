@@ -80,7 +80,7 @@ def build_item(sample_id, result_value, unit=None, param_id=None,
     return item
 
 
-def send_batch(machine: str, queued: list) -> None:
+def send_batch(machine: str, queued: list) -> list:
     """
     Send every result queued during one session (one ASTM batch / one HL7
     message) as a SINGLE JSON array in ONE POST call - the API requires a
@@ -100,9 +100,19 @@ def send_batch(machine: str, queued: list) -> None:
     Reports a per-item outcome when the API returns a matching "results"
     breakdown, otherwise one combined outcome for the whole batch (e.g. on a
     connection error, where no per-item breakdown exists).
+
+    Returns a list of dicts, one per queued item, each
+    {"sample_id", "test_code", "api_sent": bool, "api_result_id": int|None} -
+    server.py uses this to update the local labo_bridge_results row it
+    already wrote for every matched result, so the admin UI (sample detail,
+    mapped-table "last value") can show what actually happened to a result
+    sent via the API, not just what's visible in this terminal log.
     """
     if not queued:
-        return
+        return []
+
+    outcomes = [{"sample_id": e["sample_id"], "test_code": e["test_code"],
+                "api_sent": False, "api_result_id": None} for e in queued]
 
     items = [entry["item"] for entry in queued]
     print(f"[api] >> POST {ENDPOINT}  ({len(items)} result(s) in one array)\n"
@@ -111,18 +121,27 @@ def send_batch(machine: str, queued: list) -> None:
 
     if not result["ok"]:
         labels = ", ".join(f"{machine}/{e['sample_id']}/{e['test_code']}" for e in queued)
+        # Show the API's OWN response body, not just "HTTP Error 400" - the
+        # clinic returns the real reason there (e.g. duplicate result, unknown
+        # sample, tube mismatch), which is what you actually need to act on.
         print(f"[api] << send failed for batch [{labels}]: "
               f"{result['error']} (status={result['status']})")
-        return
+        if result.get("body"):
+            print(f"[api]    reason from clinic API: {json.dumps(result['body'], ensure_ascii=False, indent=2)}"
+                  if not isinstance(result['body'], str) else f"[api]    reason from clinic API: {result['body']}")
+        return outcomes
 
     body = result["body"]
     per_item = body.get("results") if isinstance(body, dict) else None
     if per_item and len(per_item) == len(queued):
-        for entry, r in zip(queued, per_item):
+        for entry, r, outcome in zip(queued, per_item, outcomes):
             label = f"{machine}/{entry['sample_id']}/{entry['test_code']}"
             if r.get("success"):
                 print(f"[api] << accepted {label} (labo_result_id={r.get('laboResultId')})")
+                outcome["api_sent"] = True
+                outcome["api_result_id"] = r.get("laboResultId")
             else:
                 print(f"[api] << REJECTED {label}: {r.get('message', r)}")
     else:
         print(f"[api] << batch response: {body}")
+    return outcomes

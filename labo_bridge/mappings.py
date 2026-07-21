@@ -151,17 +151,31 @@ SELECTRA_MAP = {
 CYANVISION_MAP = {}
 
 # Sysmex XS-500i - the clinic's main hematology analyzer (being
-# supplemented/replaced by the xn330, both stay in active use). Never
-# connected to this bridge before, so this map is a STARTING ASSUMPTION, not
-# yet independently verified against a real XS-500i capture: it copies
-# XN330_MAP as-is because (a) both are Sysmex hematology analyzers, and
-# (b) the FNS exam's own technique tag in the DB is literally "SYSMEX XS
-# 500i" (see the docstring above / mappings' original derivation), so this
-# machine is if anything the MORE authoritative source for these params,
-# not less. Still: re-confirm test codes against a real capture (results/
-# xs500i_<timestamp>.txt) before trusting this for patient data - older
-# Sysmex models can differ in field layout from the xn330.
-XS500I_MAP = dict(XN330_MAP)
+# supplemented/replaced by the xn330, both stay in active use). Started as a
+# copy of XN330_MAP (same 13 CBC codes, both Sysmex hematology analyzers, and
+# the FNS exam's own technique tag in the DB is literally "SYSMEX XS 500i").
+# CONFIRMED against real XS-500i captures (2026-07-20/21, results/
+# xs500i_<timestamp>.txt): test codes match xn330's exactly (WBC, RBC, HGB,
+# etc.), values matched correctly and were accepted by the clinic API.
+# Kept as its own independent dict literal (not `dict(XN330_MAP)`) from here
+# on, so this machine's mappings can be edited/extended on their own without
+# also changing xn330's - they started identical but aren't guaranteed to
+# stay that way (e.g. if one machine's decoder needs a code fix later).
+XS500I_MAP = {
+    "WBC":   (81,    421, "FNS", "GB",       "Globules Blancs"),
+    "RBC":   (80,    421, "FNS", "GR",       "Globules Rouges"),
+    "HGB":   (98000, 421, "FNS", "hémoglob", "Hémoglobine"),
+    "HCT":   (97000, 421, "FNS", "Hemcte.",  "Hématocrite"),
+    "PLT":   (93,    421, "FNS", "pettes",   "Plaquettes"),
+    "MCV":   (99478, 421, "FNS", "VGM",      "VGM"),
+    "MCH":   (99307, 421, "FNS", "TGMH",     "TGMH"),
+    "MCHC":  (10100, 421, "FNS", "CCMH",     "CCMH"),
+    "NEUT%": (99134, 421, "FNS", "Neu",      "Neutrophiles"),
+    "LYMPH%":(99137, 421, "FNS", "Lympho",   "Lymphocytes"),
+    "MONO%": (99136, 421, "FNS", "Mono",     "Monocytes"),
+    "EO%":   (99950, 421, "FNS", "eosino",   "Eosinophiles"),
+    "BASO%": (99138, 421, "FNS", "Baso",     "Basophiles"),
+}
 
 MAPS = {
     "xn330": XN330_MAP,

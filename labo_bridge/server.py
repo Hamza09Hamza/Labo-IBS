@@ -101,6 +101,13 @@ def _ingest_result(session, sample_id, rec):
         # alone is the complete match in that case (see mappings.py).
         target = (f"labo_param.id={m['param_id']}" if m["param_id"]
                   else f"service_tarification.id={m['service_tarification_id']}")
+        # ALWAYS write locally, whether or not the API path is on - this is
+        # the only way the admin UI (sample detail, mapped-table "last
+        # value") can see a result that was sent live to the clinic API;
+        # api_sent gets flipped to True by _flush_api_batch once the API
+        # actually confirms it, so this starts False when queued for send.
+        sent_ok = pg.write_matched_result(machine, sample_id, session.specimen,
+                                          rec.get("test_code", ""), m, rec)
         if config.USE_MACHINE_RESULT_API:
             item = api_client.build_item(
                 sample_id=sample_id.strip(),
@@ -117,8 +124,6 @@ def _ingest_result(session, sample_id, rec):
             tag = (f"matched -> {target} ({m['abbrev']} / {m['name']}) "
                    f"[queued for batched clinic API send]")
         else:
-            sent_ok = pg.write_matched_result(machine, sample_id, session.specimen,
-                                              rec.get("test_code", ""), m, rec)
             tag = (f"matched -> {target} ({m['abbrev']} / {m['name']}) "
                    f"{'[written to Postgres]' if sent_ok else '[Postgres write skipped, see warning above]'}")
     else:
@@ -139,9 +144,17 @@ def _flush_api_batch(session):
     Send every result queued this batch/message as ONE JSON array - called
     at the natural batch boundary (ASTM EOT, or end of one HL7 message).
     No-op if nothing was queued (API path off, or nothing matched).
+
+    After the send, update the local labo_bridge_results rows (already
+    written by _ingest_result before queueing) with whether the clinic API
+    actually accepted each one - purely local bookkeeping so the admin UI
+    can show it; does not affect or delay the send itself.
     """
     if session.api_batch:
-        api_client.send_batch(session.machine, session.api_batch)
+        outcomes = api_client.send_batch(session.machine, session.api_batch)
+        for o in outcomes:
+            if o["api_sent"]:
+                pg.mark_api_sent(session.machine, o["sample_id"], o["test_code"], o["api_result_id"])
         session.api_batch = []
 
 

@@ -38,6 +38,26 @@ async function apiDelete(url) {
   return data;
 }
 
+async function apiPutForm(url, formData) {
+  const res = await fetch(url, { method: "PUT", body: formData });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `PUT ${url} -> ${res.status}`);
+  return data;
+}
+
+// Fill a table body with shimmering placeholder rows while its real data is
+// loading - only meant for a genuine first load (see call site), never
+// during a background poll refresh, or it would flicker every few seconds.
+function skeletonizeTable(tbodyId, cols, rows = 5) {
+  const tbody = document.getElementById(tbodyId);
+  if (!tbody) return;
+  tbody.innerHTML = Array.from({ length: rows }, () =>
+    `<tr class="skel-table-row">${
+      Array.from({ length: cols }, () => `<td><div class="skel"></div></td>`).join("")
+    }</tr>`
+  ).join("");
+}
+
 // ---------------------------------------------------------------------------
 // Toast
 // ---------------------------------------------------------------------------
@@ -106,6 +126,18 @@ function escapeHtml(s) {
 // Status pills
 // ---------------------------------------------------------------------------
 
+// Tracks the last known state of each status pill so loadStatus can pulse
+// ONLY when something actually flips (DB drops/recovers, API mode toggled),
+// never on every 15s poll tick regardless of change.
+let prevStatus = { postgres_ok: null, use_machine_result_api: null };
+
+function _applyPillPulse(el, changedFlag) {
+  if (!changedFlag) return;
+  el.classList.remove("pill-pulse"); // restart the animation if it's re-triggered quickly
+  void el.offsetWidth; // force reflow so removing+re-adding the class actually replays it
+  el.classList.add("pill-pulse");
+}
+
 async function loadStatus() {
   try {
     const s = await apiGet("/api/status");
@@ -113,11 +145,16 @@ async function loadStatus() {
     pgPill.className = `status-pill ${s.postgres_ok ? "ok" : "err"}`;
     pgPill.querySelector(".status-text").textContent =
       s.postgres_ok ? "Clinic DB connected" : "Clinic DB unreachable";
+    _applyPillPulse(pgPill, prevStatus.postgres_ok !== null && prevStatus.postgres_ok !== s.postgres_ok);
 
     const apiPill = document.getElementById("apiStatusPill");
     apiPill.className = `status-pill ${s.use_machine_result_api ? "warn" : "ok"}`;
     apiPill.querySelector(".status-text").textContent =
       s.use_machine_result_api ? "API mode: live push" : "API mode: staging only";
+    _applyPillPulse(apiPill, prevStatus.use_machine_result_api !== null
+      && prevStatus.use_machine_result_api !== s.use_machine_result_api);
+
+    prevStatus = { postgres_ok: s.postgres_ok, use_machine_result_api: s.use_machine_result_api };
   } catch (e) {
     console.error(e);
   }
@@ -163,8 +200,17 @@ document.querySelectorAll(".section-nav-item").forEach((el) => {
 // machine list; clicking a card jumps straight into Mappings for it)
 // ---------------------------------------------------------------------------
 
+// machine -> {mapped_codes, pending_count, sample_count} from the PREVIOUS
+// poll, so renderOverview can flash exactly the numbers that actually
+// changed since last time (not the whole card) - a live-updating dashboard
+// should visibly say "this changed", not just silently swap the digits.
+let prevMachineStats = {};
+
 async function loadMachines() {
-  state.machines = await apiGet("/api/machines");
+  const fresh = await apiGet("/api/machines");
+  prevMachineStats = Object.fromEntries(state.machines.map((m) =>
+    [m.machine, { mapped_codes: m.mapped_codes, pending_count: m.pending_count, sample_count: m.sample_count }]));
+  state.machines = fresh;
   if (state.activeSection === "machines") {
     renderOverview();
   }
@@ -173,16 +219,26 @@ async function loadMachines() {
   }
 }
 
+// Returns " flash-update" if this field genuinely changed since the last
+// poll (never on first render, when prev is undefined - a brand new card
+// shouldn't flash, only a value that's actually different from before).
+function changed(prev, key, next) {
+  return (prev && prev[key] !== next) ? " flash-update" : "";
+}
+
 function renderOverview() {
   const totalSamples = state.machines.reduce((a, m) => a + m.sample_count, 0);
-  const totalMatched = state.machines.reduce((a, m) => a + m.matched_count, 0);
+  // "Matched" = count of curated mappings (mapped_codes), same number shown on
+  // the Mappings screen - NOT the raw count of result rows. "Pending" = codes
+  // seen with no mapping yet (pending_params), same as the Mappings Pending tab.
+  const totalMapped = state.machines.reduce((a, m) => a + m.mapped_codes, 0);
   const totalPending = state.machines.reduce((a, m) => a + m.pending_count, 0);
   const connectedNow = state.machines.filter((m) => m.live_state === "connected").length;
 
   document.getElementById("overviewStats").innerHTML = `
     <div class="stat-chip"><div class="stat-value">${connectedNow}/${state.machines.length}</div><div class="stat-label">Connected</div></div>
     <div class="stat-chip"><div class="stat-value">${totalSamples}</div><div class="stat-label">Samples</div></div>
-    <div class="stat-chip"><div class="stat-value">${totalMatched}</div><div class="stat-label">Matched</div></div>
+    <div class="stat-chip"><div class="stat-value">${totalMapped}</div><div class="stat-label">Mapped</div></div>
     <div class="stat-chip"><div class="stat-value">${totalPending}</div><div class="stat-label">Pending</div></div>
   `;
 
@@ -203,29 +259,33 @@ function renderOverview() {
     const cardBgClass = m.photo_bg === "card" ? " has-photo-card" : "";
     card.innerHTML = `
       <div class="card-photo-frame${cardBgClass}">
-        <div class="card-live-badge ${liveClass}">
-          <span class="dot"></span>${liveLabel}
+        <div class="card-photo-frame-top">
+          <div class="card-live-badge ${liveClass}">
+            <span class="dot"></span>${liveLabel}
+          </div>
+          <button class="icon-btn card-config-btn" title="Machine settings" type="button">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M4 12h4M16 12h4M12 4v4M12 16v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="1.8"/></svg>
+          </button>
         </div>
-        <button class="icon-btn card-config-btn" title="Machine settings" type="button">
-          <svg viewBox="0 0 24 24" fill="none"><path d="M4 12h4M16 12h4M12 4v4M12 16v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="1.8"/></svg>
-        </button>
-        ${m.photo
-          ? `<img class="card-photo" src="/${m.photo}" alt="${escapeHtml(m.label)}" loading="lazy">`
-          : `<div class="card-avatar">${escapeHtml(initials(m.label))}</div>`}
+        <div class="card-photo-frame-body">
+          ${m.photo
+            ? `<img class="card-photo" src="/${m.photo}" alt="${escapeHtml(m.label)}" loading="lazy">`
+            : `<div class="card-avatar">${escapeHtml(initials(m.label))}</div>`}
+        </div>
       </div>
       <h3 class="card-title">${escapeHtml(m.label)}</h3>
       <p class="card-kind">${escapeHtml(m.kind)}</p>
       <div class="card-metrics">
-        <div class="card-metric" title="Results received from this analyzer that hit a curated mapping (${m.mapped_codes} code(s) mapped for this machine) — counts every result ever recorded, not distinct codes">
-          <div class="card-metric-value matched">${m.matched_count}</div>
-          <div class="card-metric-label">Matched</div>
+        <div class="card-metric" title="Test codes from this analyzer that have a curated mapping to a clinic parameter/exam — the same count shown on the Mappings screen">
+          <div class="card-metric-value matched${changed(prevMachineStats[m.machine], "mapped_codes", m.mapped_codes)}">${m.mapped_codes}</div>
+          <div class="card-metric-label">Mapped</div>
         </div>
-        <div class="card-metric" title="Results received with no curated mapping yet — staged for review in Mappings">
-          <div class="card-metric-value pending">${m.pending_count}</div>
+        <div class="card-metric" title="Distinct test codes seen from this analyzer with no curated mapping yet — the same list shown on the Mappings 'Pending Codes' tab">
+          <div class="card-metric-value pending${changed(prevMachineStats[m.machine], "pending_count", m.pending_count)}">${m.pending_count}</div>
           <div class="card-metric-label">Pending</div>
         </div>
         <div class="card-metric" title="Distinct samples/orders received from this analyzer">
-          <div class="card-metric-value">${m.sample_count}</div>
+          <div class="card-metric-value${changed(prevMachineStats[m.machine], "sample_count", m.sample_count)}">${m.sample_count}</div>
           <div class="card-metric-label">Samples</div>
         </div>
       </div>
@@ -292,6 +352,7 @@ async function selectMappingsMachine(machine) {
   const meta = state.machines.find((m) => m.machine === machine) || {};
   const avatarEl = document.getElementById("mappingsAvatar");
   avatarEl.style.setProperty("--m-color", meta.color || "");
+  avatarEl.classList.toggle("machine-avatar-bare", !!meta.photo);
   avatarEl.innerHTML = avatarHtml(meta, "machine-avatar");
   document.getElementById("mappingsTitle").textContent = meta.label || machine;
   document.getElementById("mappingsSub").textContent =
@@ -301,6 +362,14 @@ async function selectMappingsMachine(machine) {
     <span class="badge">port ${meta.port}</span>
     <span class="badge">${meta.editable ? "editable map" : "aliased map (read-only)"}</span>
   `;
+
+  // Skeleton rows only here (switching to a machine), never during the
+  // background live-poll refresh (which calls loadMapped/loadPending/
+  // loadSamples directly) - otherwise the tables would shimmer/flicker
+  // every few seconds instead of just updating quietly in place.
+  skeletonizeTable("mappedTableBody", 6, 5);
+  skeletonizeTable("pendingTableBody", 5, 5);
+  skeletonizeTable("samplesTableBody", 6, 6);
 
   // Promise.allSettled (not .all): one panel failing to load must not blank
   // out the other two - each of the 3 tables loads and reports independently.
@@ -359,21 +428,54 @@ async function loadSamples(machine) {
   const rows = await apiGet(`/api/machines/${machine}/samples`);
   if (machine !== state.mappingsMachine) return; // superseded by a newer selection
   state.samples = rows;
+  renderSamplesTable(document.getElementById("samplesSearch").value);
+}
+
+// Sample IDs already rendered at least once, per machine - lets
+// renderSamplesTable tell a genuinely NEW row (just arrived via live poll)
+// apart from one that was already showing, so only actual arrivals slide in.
+const seenSampleIds = {};
+
+function renderSamplesTable(filter = "") {
   const tbody = document.getElementById("samplesTableBody");
-  document.getElementById("samplesEmpty").hidden = state.samples.length > 0;
+  const f = filter.trim().toLowerCase();
+  const rows = state.samples.filter((s) =>
+    !f || (s.sample_id || "").toLowerCase().includes(f) ||
+    (s.patient_name || "").toLowerCase().includes(f)
+  );
+  document.getElementById("samplesEmpty").hidden = rows.length > 0;
+
+  const machine = state.mappingsMachine;
+  const seen = seenSampleIds[machine] || (seenSampleIds[machine] = new Set());
+  const isFirstRenderForMachine = seen.size === 0;
+
   tbody.innerHTML = "";
-  state.samples.forEach((s) => {
+  rows.forEach((s) => {
+    const id = s.sample_id.trim();
+    const isNew = !isFirstRenderForMachine && !seen.has(id);
+    seen.add(id);
+
     const tr = document.createElement("tr");
+    if (isNew) tr.className = "row-enter";
     tr.innerHTML = `
-      <td><span class="code-pill">${escapeHtml(s.sample_id.trim())}</span></td>
+      <td><span class="code-pill">${escapeHtml(id)}</span></td>
       <td>${escapeHtml(s.paillasse || "—")}</td>
       <td>${escapeHtml((s.patient_name || "").trim() || "—")}</td>
       <td class="value-mono">${escapeHtml(s.source_ip || "—")}</td>
       <td class="timestamp-cell">${timeAgo(s.received_at)}</td>
+      <td class="col-actions">
+        <button class="btn btn-ghost view-sample-btn">View</button>
+      </td>
     `;
+    tr.querySelector(".view-sample-btn").addEventListener("click", () =>
+      openSampleModal(state.mappingsMachine, id));
     tbody.appendChild(tr);
   });
 }
+
+document.getElementById("samplesSearch").addEventListener("input", (e) => {
+  renderSamplesTable(e.target.value);
+});
 
 function renderMappedTable(filter = "") {
   const tbody = document.getElementById("mappedTableBody");
@@ -421,6 +523,7 @@ document.getElementById("mappedSearch").addEventListener("input", (e) => {
 
 const scrim = document.getElementById("modalScrim");
 const fCode = document.getElementById("fCode");
+const codeResults = document.getElementById("codeResults");
 const fSearch = document.getElementById("fSearch");
 const searchResults = document.getElementById("searchResults");
 const matchPicked = document.getElementById("matchPicked");
@@ -455,12 +558,55 @@ function showPickedMatch(match) {
 
 document.getElementById("matchPickedClear").addEventListener("click", () => showPickedMatch(null));
 
+// ---- machine-code picker: same styled dropdown as the clinic search below,
+// instead of a native <datalist> (unstyled, browser-default look) - just a
+// client-side filter over state.pending, already loaded, no API call needed. ----
+function renderCodeResults(filter) {
+  const f = filter.trim().toLowerCase();
+  const rows = (state.pending || []).filter((p) => !f || p.test_code.toLowerCase().includes(f));
+
+  if (rows.length === 0) {
+    codeResults.innerHTML = `<div class="combo-result combo-result-message">${
+      f ? `No pending codes match "${escapeHtml(filter)}".` : "No pending codes for this analyzer."
+    }</div>`;
+    codeResults.classList.add("open");
+    return;
+  }
+
+  codeResults.innerHTML = "";
+  rows.forEach((p) => {
+    const div = document.createElement("div");
+    div.className = "combo-result";
+    div.innerHTML = `<div class="cr-name">${escapeHtml(p.test_code)}</div>
+      <div class="cr-meta">${escapeHtml(p.sample_value || "")} ${escapeHtml(p.sample_unit || "")} · seen ${p.seen_count}×</div>`;
+    div.addEventListener("click", () => {
+      fCode.value = p.test_code;
+      codeResults.classList.remove("open");
+    });
+    codeResults.appendChild(div);
+  });
+  codeResults.classList.add("open");
+}
+
+// Only on an actual click/tap into the field, or while typing - NOT on
+// focus(), since the modal programmatically focuses this field when it
+// opens (see openEditModal's setTimeout), which would otherwise pop the
+// dropdown open immediately before the user did anything.
+fCode.addEventListener("click", () => { if (!fCode.disabled) renderCodeResults(fCode.value); });
+fCode.addEventListener("input", () => renderCodeResults(fCode.value));
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("#fCode") && !e.target.closest("#codeResults")) {
+    codeResults.classList.remove("open");
+  }
+});
+
 function openEditModal(entry, isNewFromPending = false) {
   state.editingCode = isNewFromPending ? null : entry.code;
   document.getElementById("modalTitle").textContent =
     state.editingCode ? `Edit "${entry.code}"` : `Map "${entry.code}"`;
   fCode.value = entry.code || "";
   fCode.disabled = !!state.editingCode; // code is the key; don't rename in place
+  codeResults.classList.remove("open");
 
   if (entry.param_id || entry.service_tarification_id) {
     showPickedMatch({
@@ -505,14 +651,19 @@ function renderSearchMessage(text) {
   searchResults.classList.add("open");
 }
 
-fSearch.addEventListener("input", () => {
+function runClinicSearch() {
   clearTimeout(searchTimer);
   const q = fSearch.value.trim();
-  if (q.length < 2) { searchResults.classList.remove("open"); return; }
+  if (q.length < 1) {
+    renderSearchMessage("Start typing a parameter or exam name…");
+    return;
+  }
 
   renderSearchMessage("Searching…");
   const mySeq = ++searchSeq;
 
+  // Short debounce so results feel instant as you type (fires from the very
+  // first character now, not the second).
   searchTimer = setTimeout(async () => {
     const [paramsResult, examsResult] = await Promise.allSettled([
       apiGet(`/api/param-search?q=${encodeURIComponent(q)}`),
@@ -568,8 +719,16 @@ fSearch.addEventListener("input", () => {
     });
 
     searchResults.classList.add("open");
-  }, 280);
-});
+  }, 120);
+}
+
+fSearch.addEventListener("input", runClinicSearch);
+// Show the dropdown on an actual click into the field (re-showing existing
+// results if there's already a query typed, or a hint if empty) - NOT on
+// focus(), since the modal programmatically focuses this field when it
+// opens for editing (see openEditModal), which would otherwise pop it open
+// before the user did anything.
+fSearch.addEventListener("click", runClinicSearch);
 
 document.addEventListener("click", (e) => {
   if (!e.target.closest(".combo")) {
@@ -683,8 +842,20 @@ const configScrim = document.getElementById("configModalScrim");
 const cfgLabel = document.getElementById("cfgLabel");
 const cfgPort = document.getElementById("cfgPort");
 const cfgMachineId = document.getElementById("cfgMachineId");
+const cfgKind = document.getElementById("cfgKind");
+const cfgColor = document.getElementById("cfgColor");
+const cfgColorHex = document.getElementById("cfgColorHex");
+const cfgPhoto = document.getElementById("cfgPhoto");
+const cfgPhotoPreview = document.getElementById("cfgPhotoPreview");
+const cfgPhotoPreviewImg = document.getElementById("cfgPhotoPreviewImg");
 const configModalAlert = document.getElementById("configModalAlert");
 let configEditingMachine = null;
+// Snapshot of the values the modal opened with, so save can send ONLY what
+// actually changed. Critical for port: resending an unchanged port makes the
+// backend re-apply a runtime override and rebind the listener's socket, which
+// drops a live analyzer connection - so a machine-id-only save must NOT touch
+// the port.
+let configOriginal = { label: "", port: null, machineId: null, kind: "", color: "" };
 
 function openConfigModal(m) {
   configEditingMachine = m.machine;
@@ -692,6 +863,23 @@ function openConfigModal(m) {
   cfgLabel.value = m.label || "";
   cfgPort.value = m.port || "";
   cfgMachineId.value = m.machine_id ?? "";
+  cfgKind.value = m.kind || "";
+  cfgColor.value = m.color || "#0C8599";
+  cfgColorHex.value = m.color || "#0C8599";
+  cfgPhoto.value = "";
+  if (m.photo) {
+    cfgPhotoPreviewImg.src = `/${m.photo}`;
+    cfgPhotoPreview.hidden = false;
+  } else {
+    cfgPhotoPreview.hidden = true;
+  }
+  configOriginal = {
+    label: m.label || "",
+    port: m.port ?? null,
+    machineId: m.machine_id ?? null,
+    kind: m.kind || "",
+    color: m.color || "#0C8599",
+  };
   configModalAlert.hidden = true;
   configScrim.classList.add("open");
   setTimeout(() => cfgLabel.focus(), 80);
@@ -708,10 +896,27 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && configScrim.classList.contains("open")) closeConfigModal();
 });
 
+cfgColor.addEventListener("input", () => { cfgColorHex.value = cfgColor.value; });
+cfgColorHex.addEventListener("input", () => {
+  if (/^#[0-9a-fA-F]{6}$/.test(cfgColorHex.value)) cfgColor.value = cfgColorHex.value;
+});
+cfgPhoto.addEventListener("change", () => {
+  const file = cfgPhoto.files[0];
+  if (!file) return; // keep showing the existing photo preview
+  const reader = new FileReader();
+  reader.onload = () => {
+    cfgPhotoPreviewImg.src = reader.result;
+    cfgPhotoPreview.hidden = false;
+  };
+  reader.readAsDataURL(file);
+});
+
 document.getElementById("configModalSave").addEventListener("click", async () => {
   const label = cfgLabel.value.trim();
   const portValue = cfgPort.value.trim();
   const machineIdValue = cfgMachineId.value.trim();
+  const kind = cfgKind.value.trim();
+  const color = cfgColorHex.value.trim();
   if (!label) {
     configModalAlert.hidden = false;
     configModalAlert.textContent = "Display name cannot be empty.";
@@ -730,10 +935,32 @@ document.getElementById("configModalSave").addEventListener("click", async () =>
     return;
   }
 
-  try {
-    await apiPut(`/api/machines/${configEditingMachine}/config`, { label, port, machine_id: machineId });
+  // Send ONLY what changed. Especially: don't resend an unchanged port, or
+  // the backend re-applies the runtime override and rebinds the listener
+  // socket, dropping any live analyzer connection - which is exactly what
+  // made saving a machine id "break everything" while a machine was connected.
+  const form = new FormData();
+  let hasChange = false;
+  if (label !== configOriginal.label) { form.append("label", label); hasChange = true; }
+  if (port !== configOriginal.port) { form.append("port", port === null ? "" : String(port)); hasChange = true; }
+  if (machineId !== configOriginal.machineId) { form.append("machine_id", machineId === null ? "" : String(machineId)); hasChange = true; }
+  if (kind !== configOriginal.kind) { form.append("kind", kind); hasChange = true; }
+  if (color !== configOriginal.color) { form.append("color", color); hasChange = true; }
+  if (cfgPhoto.files[0]) { form.append("photo", cfgPhoto.files[0]); hasChange = true; }
+
+  if (!hasChange) {
     closeConfigModal();
-    toast(`Settings saved for "${label}". Port changes apply immediately.`, "success");
+    toast("No changes to save.", "success");
+    return;
+  }
+
+  try {
+    await apiPutForm(`/api/machines/${configEditingMachine}/config`, form);
+    closeConfigModal();
+    const portChanged = form.has("port");
+    toast(portChanged
+      ? `Settings saved for "${label}". Port change applied immediately.`
+      : `Settings saved for "${label}".`, "success");
     await loadMachines();
     if (state.activeSection === "mappings" && state.mappingsMachine === configEditingMachine) {
       selectMappingsMachine(configEditingMachine);
@@ -883,6 +1110,84 @@ document.getElementById("addAnalyzerSave").addEventListener("click", async () =>
 });
 
 // ---------------------------------------------------------------------------
+// Sample detail modal (drill-down: matched values + the clinic API JSON)
+// ---------------------------------------------------------------------------
+
+const sampleScrim = document.getElementById("sampleModalScrim");
+
+async function openSampleModal(machine, sampleId) {
+  document.getElementById("sampleModalTitle").textContent = `Sample ${sampleId}`;
+  document.getElementById("sampleMeta").innerHTML = `<span class="muted-cell">Loading…</span>`;
+  document.getElementById("sampleResultsBody").innerHTML = "";
+  document.getElementById("sampleJson").textContent = "—";
+  sampleScrim.classList.add("open");
+  // reset to first tab each open
+  document.querySelectorAll(".sample-tab").forEach((t) => t.classList.toggle("active", t.dataset.stab === "results"));
+  document.querySelectorAll(".sample-tab-panel").forEach((p) => p.classList.toggle("active", p.id === "stab-results"));
+
+  try {
+    const data = await apiGet(`/api/samples/${machine}/${encodeURIComponent(sampleId)}`);
+    const s = data.sample || {};
+    document.getElementById("sampleMeta").innerHTML = `
+      <div class="meta-item"><div class="meta-label">Sample ID</div><div class="meta-value">${escapeHtml(sampleId)}</div></div>
+      <div class="meta-item"><div class="meta-label">Paillasse</div><div class="meta-value">${escapeHtml(s.paillasse || "—")}</div></div>
+      <div class="meta-item"><div class="meta-label">Patient</div><div class="meta-value">${escapeHtml((s.patient_name || "").trim() || "—")}</div></div>
+      <div class="meta-item"><div class="meta-label">Analyzer</div><div class="meta-value">${escapeHtml(s.analyzer_model || "—")}</div></div>
+      <div class="meta-item"><div class="meta-label">Source IP</div><div class="meta-value">${escapeHtml(s.source_ip || "—")}</div></div>
+      <div class="meta-item"><div class="meta-label">Received</div><div class="meta-value">${s.received_at ? new Date(s.received_at.replace(" ", "T")).toLocaleString() : "—"}</div></div>
+      <div class="meta-item"><div class="meta-label">Matched results</div><div class="meta-value">${(data.matched || []).length}</div></div>
+    `;
+
+    const tbody = document.getElementById("sampleResultsBody");
+    const matched = data.matched || [];
+    document.getElementById("sampleResultsEmpty").hidden = matched.length > 0;
+    tbody.innerHTML = "";
+    matched.forEach((r) => {
+      const tr = document.createElement("tr");
+      const apiStatus = r.api_sent
+        ? `<span class="badge badge-success">Sent${r.api_result_id ? " · #" + r.api_result_id : ""}</span>`
+        : `<span class="badge">Staged only</span>`;
+      tr.innerHTML = `
+        <td><span class="code-pill">${escapeHtml(r.test_code)}</span></td>
+        <td><div class="param-id">#${r.param_id ?? "—"}</div><div class="param-name">${escapeHtml(r.param_abbrev || "")} ${r.param_name ? "· " + escapeHtml(r.param_name) : ""}</div></td>
+        <td class="value-mono">${escapeHtml(r.result_value)} ${escapeHtml(r.unit || "")}</td>
+        <td class="timestamp-cell">${timeAgo(r.received_at)}</td>
+        <td>${apiStatus}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    // The clinic-API JSON shape: one item per matched result.
+    const jsonPayload = matched.map((r) => {
+      const item = { sample_id: sampleId, result_value: r.result_value };
+      if (r.unit) item.unit = r.unit;
+      if (r.param_id != null) item.param_id = r.param_id;
+      else if (r.service_tarification_id != null) item.service_tarification_id = r.service_tarification_id;
+      return item;
+    });
+    document.getElementById("sampleJson").textContent = JSON.stringify(jsonPayload, null, 2);
+  } catch (e) {
+    document.getElementById("sampleMeta").innerHTML =
+      `<span class="muted-cell">Failed to load sample — ${escapeHtml(e.message || "request failed")}.</span>`;
+  }
+}
+
+function closeSampleModal() { sampleScrim.classList.remove("open"); }
+document.getElementById("sampleModalClose").addEventListener("click", closeSampleModal);
+sampleScrim.addEventListener("click", (e) => { if (e.target === sampleScrim) closeSampleModal(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && sampleScrim.classList.contains("open")) closeSampleModal();
+});
+document.querySelectorAll(".sample-tab").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".sample-tab").forEach((t) => t.classList.remove("active"));
+    document.querySelectorAll(".sample-tab-panel").forEach((p) => p.classList.remove("active"));
+    tab.classList.add("active");
+    document.getElementById(`stab-${tab.dataset.stab}`).classList.add("active");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
 
@@ -895,4 +1200,16 @@ document.getElementById("addAnalyzerSave").addEventListener("click", async () =>
   setInterval(() => {
     if (state.activeSection === "machines") loadMachines();
   }, 2000);
+  // Live-refresh the Mappings section too, so Recent Samples / Pending /
+  // Mapped update on their own as results stream in - no manual refresh.
+  // Skipped while a modal is open (don't yank data out from under an edit)
+  // and the mapped-table filter box keeps its text (loadMapped re-applies
+  // the current filter value, it doesn't clear it).
+  setInterval(() => {
+    if (state.activeSection !== "mappings" || !state.mappingsMachine) return;
+    if (scrim.classList.contains("open") || configScrim.classList.contains("open")
+        || sampleScrim.classList.contains("open")) return;
+    const m = state.mappingsMachine;
+    loadMapped(m); loadPending(m); loadSamples(m); loadMachines();
+  }, 3000);
 })();

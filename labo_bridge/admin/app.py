@@ -76,14 +76,30 @@ def _pg_rows_as_dicts(sql, params=()):
 # Static frontend
 # ---------------------------------------------------------------------------
 
+def _no_cache(resp):
+    """
+    Force the browser to always re-fetch static files (never serve a stale
+    cached app.js/style.css/index.html). Without this, the dev server answers
+    conditional requests with 304 Not Modified and the browser keeps running
+    an OLD cached copy of the JS even after the file on disk changed - which
+    caused a whole class of "the fix isn't taking effect" confusion, including
+    a stale app.js re-registering the poll loop many times over and flooding
+    the server with requests.
+    """
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
+
+
 @app.route("/")
 def index():
-    return send_from_directory(STATIC_DIR, "index.html")
+    return _no_cache(send_from_directory(STATIC_DIR, "index.html"))
 
 
 @app.route("/<path:filename>")
 def static_files(filename):
-    return send_from_directory(STATIC_DIR, filename)
+    return _no_cache(send_from_directory(STATIC_DIR, filename))
 
 
 # ---------------------------------------------------------------------------
@@ -378,6 +394,14 @@ def api_sample_detail(machine, sample_id):
     # Only matched results are sample-scoped. pending_params tracks unmapped
     # CODES, not results tied to any one sample - there's nothing per-sample
     # to show for pending (see pg.py's module docstring).
+    sample_rows = _pg_rows_as_dicts(
+        "SELECT * FROM labo_bridge.samples WHERE machine = %s AND sample_id = %s LIMIT 1",
+        (machine, sample_id),
+    )
+    sample = sample_rows[0] if sample_rows else None
+    if sample and sample.get("received_at") is not None:
+        sample["received_at"] = sample["received_at"].isoformat()
+
     matched = _pg_rows_as_dicts(
         "SELECT * FROM labo_bridge.labo_bridge_results "
         "WHERE machine = %s AND sample_id = %s ORDER BY id",
@@ -386,41 +410,29 @@ def api_sample_detail(machine, sample_id):
     for r in matched:
         if r.get("received_at") is not None:
             r["received_at"] = r["received_at"].isoformat()
-    return jsonify({"matched": matched})
+    return jsonify({"sample": sample, "matched": matched})
 
 
 # ---------------------------------------------------------------------------
-# labo_param / exam search - used by the mapping edit modal. Also searches
-# our OWN curated mappings by machine test code, so e.g. typing "WBC" finds
-# the already-known match instead of only searching clinic DB French names.
+# labo_param / exam search - used by the mapping edit modal's "match to a
+# clinic parameter" field. Clinic-DB-only by design: a mapping is [our
+# unmatched code] -> [their clinic param/exam] - the machine-code side is
+# picked from OUR pending list (see the fCode datalist in app.js), so this
+# search only needs to answer "what does the clinic call this", not also
+# re-surface codes we've already mapped (that would blur the two sides of
+# the match together).
 # ---------------------------------------------------------------------------
 
 @app.route("/api/param-search")
 def api_param_search():
     q = request.args.get("q", "").strip()
-    if len(q) < 2:
+    if len(q) < 1:
         return jsonify([])
 
-    # Search our curated mappings first (by machine test code, e.g. "WBC"),
-    # since the clinic DB has no idea what the analyzer's own codes mean.
-    code_hits = []
-    ql = q.lower()
-    for machine, code_map in mappings_module.MAPS.items():
-        for code, (param_id, st_id, st_name, abbrev, name) in code_map.items():
-            if param_id is not None and ql in code.lower():
-                code_hits.append({
-                    "id": param_id, "abbreviation": abbrev, "name": name,
-                    "um": None, "service_tarification_id": st_id,
-                    "service_tarification_name": st_name,
-                    "matched_machine_code": code, "matched_machine": machine,
-                })
-
     if pg_module is None:
-        return jsonify(code_hits)
+        return jsonify({"error": "clinic Postgres DB unreachable"}), 503
     conn = pg_module._get_conn()
     if conn is None:
-        if code_hits:
-            return jsonify(code_hits)
         return jsonify({"error": "clinic Postgres DB unreachable"}), 503
     with conn.cursor() as cur:
         cur.execute(
@@ -437,16 +449,13 @@ def api_param_search():
         )
         cols = [c.name for c in cur.description]
         db_hits = [dict(zip(cols, row)) for row in cur.fetchall()]
-
-    seen_ids = {h["id"] for h in code_hits}
-    combined = code_hits + [h for h in db_hits if h["id"] not in seen_ids]
-    return jsonify(combined)
+    return jsonify(db_hits)
 
 
 @app.route("/api/exam-search")
 def api_exam_search():
     q = request.args.get("q", "").strip()
-    if len(q) < 2 or pg_module is None:
+    if len(q) < 1 or pg_module is None:
         return jsonify([])
     conn = pg_module._get_conn()
     if conn is None:
@@ -526,18 +535,33 @@ def api_put_machine_config(machine):
         return jsonify({"error": f"unknown machine {machine!r}"}), 404
     if pg_module is None:
         return jsonify({"error": "clinic Postgres DB unreachable"}), 503
-    body = request.get_json(force=True)
 
-    label = body.get("label")
-    port = body.get("port")
-    machine_id = body.get("machine_id", "__unset__")  # sentinel: key absent means "don't touch"
+    # multipart/form-data when a photo file is attached, JSON otherwise - the
+    # frontend always sends multipart now so one code path handles both.
+    if request.content_type and request.content_type.startswith("multipart/"):
+        data = request.form
+    else:
+        data = request.get_json(force=True) or {}
 
-    if label is not None:
+    def _get(key):
+        # Distinguish "key absent" (don't touch) from "key present but empty"
+        # (clear it) - request.form/get_json both return None for missing.
+        return data.get(key) if key in data else "__absent__"
+
+    label = _get("label")
+    port = _get("port")
+    kind = _get("kind")
+    color = _get("color")
+    machine_id = _get("machine_id")
+
+    if label not in (None, "__absent__"):
         label = label.strip()
         if not label:
             return jsonify({"error": "label cannot be empty"}), 400
+    elif label == "__absent__":
+        label = None
 
-    if port is not None:
+    if port not in (None, "", "__absent__"):
         try:
             port = int(port)
         except (TypeError, ValueError):
@@ -549,8 +573,15 @@ def api_put_machine_config(machine):
         if in_use:
             return jsonify({"error": f"port {port} is already used by {in_use[0]}"}), 400
         runtime_ports.set_override(machine, port)
+    else:
+        port = None
 
-    if machine_id != "__unset__":
+    if kind == "__absent__":
+        kind = None
+    if color == "__absent__":
+        color = None
+
+    if machine_id != "__absent__":
         if machine_id is not None and machine_id != "":
             try:
                 machine_id = int(machine_id)
@@ -558,14 +589,28 @@ def api_put_machine_config(machine):
                 return jsonify({"error": "machine_id must be a number"}), 400
         else:
             machine_id = None
+    else:
+        machine_id = "__unset__"
 
-    if label is not None or machine_id != "__unset__":
-        ok = pg_module.upsert_machine_config(machine, label=label, machine_id=machine_id)
+    photo_rel = None
+    photo_file = request.files.get("photo") if hasattr(request, "files") else None
+    if photo_file and photo_file.filename:
+        ext = os.path.splitext(photo_file.filename)[1].lower()
+        if ext not in ALLOWED_PHOTO_EXTS:
+            return jsonify({"error": f"photo must be one of: {sorted(ALLOWED_PHOTO_EXTS)}"}), 400
+        os.makedirs(MACHINES_DIR, exist_ok=True)
+        photo_file.save(os.path.join(MACHINES_DIR, f"{machine}{ext}"))
+        photo_rel = f"machines/{machine}{ext}"
+
+    if any(v is not None for v in (label, kind, color, photo_rel)) or machine_id != "__unset__":
+        ok = pg_module.upsert_machine_config(machine, label=label, kind=kind, color=color,
+                                             photo=photo_rel, machine_id=machine_id)
         if not ok:
             return jsonify({"error": "failed to save - clinic Postgres DB unreachable"}), 503
 
     meta = pg_module.get_machine_config(machine) or {}
-    return jsonify({"ok": True, "label": meta.get("label"),
+    return jsonify({"ok": True, "label": meta.get("label"), "kind": meta.get("kind"),
+                    "color": meta.get("color"), "photo": meta.get("photo"),
                     "port": runtime_ports.get_port_for(machine, server_module.MACHINES[machine]["port"]),
                     "machine_id": meta.get("machine_id")})
 

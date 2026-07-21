@@ -18,6 +18,6 @@ changed without hunting through server.py/pg.py/api_client.py.
 # sent to the clinic API instead of the staging table; if the API call fails
 # they are NOT persisted anywhere (by design - the API is the source of truth
 # once live, not a downstream push from a local cache).
-USE_MACHINE_RESULT_API = True
+USE_MACHINE_RESULT_API = False
 
 API_TIMEOUT_SECONDS = 5

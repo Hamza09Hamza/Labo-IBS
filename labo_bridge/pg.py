@@ -219,12 +219,20 @@ def write_pending_param(machine, rec):
         return False
 
 
-def write_matched_result(machine, sample_id, specimen, test_code, match, rec):
+def write_matched_result(machine, sample_id, specimen, test_code, match, rec,
+                         api_sent=False, api_result_id=None):
     """
     Insert one confidently-matched result into labo_bridge.labo_bridge_results.
     `specimen` is the dict from xn330.parse_specimen_id() (year/month/sequence),
     or {} if not applicable/unparseable. `match` is matcher.match()'s return
     value - caller must only call this when match['param_id'] is not None.
+
+    Always called regardless of USE_MACHINE_RESULT_API - this table is the
+    ONLY place the admin UI (sample detail, mapped-table "last value") can
+    see matched results, so a result sent live to the clinic API still needs
+    a local record or it's invisible everywhere in the UI. `api_sent`/
+    `api_result_id` record whether/where it also went to the clinic, purely
+    as history - they don't change matching logic.
     Returns True on success, False if the write was skipped (PG unreachable).
     """
     conn = _get_conn()
@@ -242,8 +250,9 @@ def write_matched_result(machine, sample_id, specimen, test_code, match, rec):
                     (machine, sample_id, specimen_year, specimen_month,
                      specimen_sequence, paillasse, paillasse_name, test_code,
                      param_id, param_abbrev, param_name, result_value, unit,
-                     flag, service_tarification_id, service_tarification_name)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                     flag, service_tarification_id, service_tarification_name,
+                     api_sent, api_result_id)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 """,
                 (machine, sample_id.strip(), specimen.get("year"),
                  specimen.get("month"), specimen.get("sequence"),
@@ -251,11 +260,45 @@ def write_matched_result(machine, sample_id, specimen, test_code, match, rec):
                  match["abbrev"], match["name"], rec.get("value", ""),
                  rec.get("unit", ""), rec.get("flag", ""),
                  match.get("service_tarification_id"),
-                 match.get("service_tarification_name")),
+                 match.get("service_tarification_name"),
+                 api_sent, api_result_id),
             )
         return True
     except Exception as e:
         print(f"[pg] WARNING: failed to write matched result "
+              f"{machine}/{sample_id}/{test_code}: {e}")
+        return False
+
+
+def mark_api_sent(machine, sample_id, test_code, api_result_id):
+    """
+    Update the local labo_bridge_results row already written for this result
+    with the outcome of sending it to the clinic API (see server.py's
+    _flush_api_batch, called right after api_client.send_batch returns).
+    Only marks the MOST RECENT matching row (ORDER BY id DESC LIMIT 1) -
+    the same code can legitimately appear more than once for a sample across
+    retransmissions, and only the row from THIS send should be marked.
+    """
+    conn = _get_conn()
+    if conn is None:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE labo_bridge.labo_bridge_results
+                SET api_sent = TRUE, api_result_id = %s
+                WHERE id = (
+                    SELECT id FROM labo_bridge.labo_bridge_results
+                    WHERE machine = %s AND sample_id = %s AND test_code = %s
+                    ORDER BY id DESC LIMIT 1
+                )
+                """,
+                (api_result_id, machine, sample_id.strip(), test_code),
+            )
+        return True
+    except Exception as e:
+        print(f"[pg] WARNING: failed to mark api_sent for "
               f"{machine}/{sample_id}/{test_code}: {e}")
         return False
 
