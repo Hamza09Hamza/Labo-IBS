@@ -206,11 +206,13 @@ MINIVIDAS_MAP = {
     "HCV":  (None, 439, "HCV",                   "Anti-HCV", "Anticorps anti HCV"),
     "HIV":  (None, 445, "HIV",                   "",         "HIV"),
 
-    # Thyroid
+    # Thyroid. FT3/FT4N added via the admin UI (2026-07-22) using the codes
+    # actually seen there, superseding the "T3"/"T4" guess this map first had
+    # (which came from the photo's Code column, not a confirmed real code).
     "TSH":  (None, 535, "TSH",                   "TSH",  "TSH"),
     "TSH3": (None, 535, "TSH",                   "TSH",  "TSH"),
-    "T3":   (None, 425, "FT3",                   "FT3",  "FT3"),
-    "T4":   (None, 426, "FT4",                   "FT4",  "FT4"),
+    "FT3":  (None, 425, "FT3",                   "FT3",  "FT3"),
+    "FT4N": (None, 426, "FT4",                   "FT4",  "FT4"),
 
     # Reproduction / Fertility
     "HCG":  (None, 548, "BHCG",                  "BHCG", "BHCG"),
