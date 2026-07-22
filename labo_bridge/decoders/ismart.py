@@ -32,17 +32,21 @@ def decode_record(line: str) -> dict:
         specimen_id = fields[2] if len(fields) > 2 else ""
         instrument_specimen_id = fields[3] if len(fields) > 3 else ""
         sample_id = specimen_id or instrument_specimen_id
-        specimen_type = fields[14] if len(fields) > 14 else ""
+        # Specimen type's field position isn't stable across sessions on this
+        # machine - a "2PCal" capture (2026-07-21) had it at index 14, a
+        # "1PCal" capture (2026-07-22) had it at index 15. Rather than trust
+        # one fixed index, scan all fields for anything ending in "cal".
+        specimen_type = next((f for f in fields if f.strip().lower().endswith("cal")), "")
         # The machine runs its own electrode calibration/QC cycle automatically
-        # (before/after real patient tests) - confirmed via real capture
-        # (2026-07-21): these carry specimen_type "2PCal" (vs "Blood" for a
+        # (before/after real patient tests) - confirmed via real captures:
+        # these carry a specimen_type like "2PCal"/"1PCal" (vs "Blood" for a
         # real patient specimen) and their result codes are diagnostic
         # (Slope/Drift1/Drift2/Measured1/Measured2), never real clinical
         # values - kind="calibration" tells server.py to skip the whole
         # session (no sample row, no pending/result rows) instead of
         # cluttering Recent Samples and the mapping backlog with machine
         # housekeeping data.
-        if specimen_type.strip().lower().endswith("cal"):
+        if specimen_type:
             return {"kind": "calibration", "raw": line}
         return {"kind": "order", "sample_id": sample_id,
                 "instrument_specimen_id": instrument_specimen_id,
