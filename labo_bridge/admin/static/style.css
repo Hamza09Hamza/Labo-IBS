@@ -536,6 +536,13 @@ body.modal-open .blob { animation-play-state: paused; }
   cursor: pointer; white-space: nowrap;
   transition: transform 150ms var(--spring), background var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
+/* .btn's own display:inline-flex has equal specificity to (and, being an
+   author rule, wins over) the browser's built-in [hidden]{display:none} -
+   same class of bug as the earlier .empty-state[hidden] fix this session.
+   Without this, deleteMappingBtn's `hidden` attribute was set correctly in
+   JS but silently ignored, showing "Delete mapping" on brand-new/pending
+   mappings where it should never appear. */
+.btn[hidden] { display: none; }
 .btn svg { width: 16px; height: 16px; }
 .btn:active { transform: scale(0.96); }
 .btn-primary {
@@ -671,8 +678,14 @@ body.modal-open .blob { animation-play-state: paused; }
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
   box-shadow: 0 50px 100px -20px rgba(11,46,51,0.35), 0 0 0 1px rgba(255,255,255,0.4) inset;
-  transform: scale(0.94) translateY(14px);
-  transition: transform 320ms var(--spring);
+  /* transform-origin biased toward the top: content that opens a modal
+     (a table row, a card) always sits above/around where the modal ends
+     up centered, so growing from the top edge reads as "emerging from the
+     content" without needing to measure the actual clicked element's
+     position (no getBoundingClientRect(), zero added cost per open). */
+  transform-origin: 50% 15%;
+  transform: scale(0.92) translateY(18px);
+  transition: transform 340ms var(--spring);
 }
 :root[data-theme="dark"] .modal { box-shadow: 0 50px 100px -20px rgba(0,0,0,0.7); }
 .modal-scrim.open .modal { transform: scale(1) translateY(0); }
@@ -698,13 +711,22 @@ body.modal-open .blob { animation-play-state: paused; }
 /* Fixed layout so a long test/parameter name can never balloon its column
    and starve the "Clinic API" status pill of room to render on one line -
    confirmed issue (2026-07-21) with 70+ row Selectra results, where "Staged
-   only" wrapped mid-word once the Parameter column got squeezed. */
+   only" wrapped mid-word once the Parameter column got squeezed. Every cell
+   also gets overflow containment: table-layout:fixed only constrains the
+   TD box itself - an inner pill with no overflow handling (e.g. a long test
+   code like "Phosphatase Alc") can still visually render past that box's
+   edge into the next column, which is what happened when Code was set too
+   narrow (12%) for real Selectra test-code lengths. */
 #stab-results .data-table { table-layout: fixed; }
-#stab-results .data-table th:nth-child(1), #stab-results .data-table td:nth-child(1) { width: 12%; }
-#stab-results .data-table th:nth-child(2), #stab-results .data-table td:nth-child(2) { width: 34%; }
-#stab-results .data-table th:nth-child(3), #stab-results .data-table td:nth-child(3) { width: 18%; }
-#stab-results .data-table th:nth-child(4), #stab-results .data-table td:nth-child(4) { width: 18%; }
-#stab-results .data-table th:nth-child(5), #stab-results .data-table td:nth-child(5) { width: 18%; }
+#stab-results .data-table td { overflow: hidden; }
+#stab-results .data-table th:nth-child(1), #stab-results .data-table td:nth-child(1) { width: 20%; }
+#stab-results .data-table th:nth-child(2), #stab-results .data-table td:nth-child(2) { width: 28%; }
+#stab-results .data-table th:nth-child(3), #stab-results .data-table td:nth-child(3) { width: 16%; }
+#stab-results .data-table th:nth-child(4), #stab-results .data-table td:nth-child(4) { width: 16%; }
+#stab-results .data-table th:nth-child(5), #stab-results .data-table td:nth-child(5) { width: 20%; }
+#stab-results .data-table .code-pill, #stab-results .data-table .param-name {
+  white-space: normal; word-break: break-word;
+}
 
 /* Sample detail: metadata grid */
 .sample-meta {
@@ -788,6 +810,7 @@ body.modal-open .blob { animation-play-state: paused; }
   border: 1.5px solid var(--border); background: var(--surface-strong);
   overflow: hidden; display: flex; align-items: center; justify-content: center;
 }
+.photo-preview[hidden] { display: none; }
 .photo-preview img { width: 100%; height: 100%; object-fit: contain; }
 
 .combo { position: relative; }

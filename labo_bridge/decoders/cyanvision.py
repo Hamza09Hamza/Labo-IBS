@@ -17,8 +17,18 @@ def decode_segment(fields: list) -> dict:
                 "analyzer_model": fields[2] if len(fields) > 2 else "", "raw": "|".join(fields)}
 
     if seg_type == "PID":
+        patient_id = fields[2] if len(fields) > 2 else ""
+        # The CyanVision runs its own QC/drift check automatically - confirmed
+        # via real capture (2026-07-22): these carry patient_id "Drift"
+        # (vs a real numeric sample ID like "569" for an actual patient run).
+        # Same treatment as the I-Smart's calibration cycle and the
+        # Selectra's QC/standard runs - flag it so server.py skips the whole
+        # message (no sample/result written) instead of cluttering Recent
+        # Samples and the mapping backlog with machine housekeeping data.
+        if patient_id.strip().lower() == "drift":
+            return {"kind": "calibration", "raw": "|".join(fields)}
         return {"kind": "patient",
-                "patient_id": fields[2] if len(fields) > 2 else "",
+                "patient_id": patient_id,
                 "patient_name": fields[5] if len(fields) > 5 else "",
                 "raw": "|".join(fields)}
 

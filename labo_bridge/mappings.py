@@ -145,10 +145,15 @@ SELECTRA_MAP = {
     "Albumine":        (None,  343, "Albuminémie",              "Alb",   "Albuminémie"),        # standalone exam, not the Albuminémie sub-param nested in Calcémie(366)
 }
 
-# Chemistry/immuno machines with no verified mappings yet.
-# CyanVision: only QC/calibration ("Drift") messages captured so far, no
-# real patient result - nothing to map until real patient data is seen.
-CYANVISION_MAP = {}
+# CyanVision - HL7 chemistry analyzer. First real (non-QC) result captured
+# was GPT (2026-07-19, OBX|1|NM|1921|GPT|16|U/L|3 - 32|...) - GPT is the
+# same enzyme measurement as SGPT/ALT, confirmed by matching to the exact
+# same labo_param.id (99953, abbreviation "SGPT") already used for
+# Selectra's own SGPT mapping. param_id=99953 belongs to exactly one exam
+# (service_tarification_id=528, "Transaminases", composed) - no ambiguity.
+CYANVISION_MAP = {
+    "GPT": (99953, 528, "Transaminases", "SGPT", "SGPT"),
+}
 
 # Sysmex XS-500i - the clinic's main hematology analyzer (being
 # supplemented/replaced by the xn330, both stay in active use). Started as a

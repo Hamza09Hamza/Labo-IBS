@@ -81,11 +81,17 @@ function skeletonizeTable(tbodyId, cols, rows = 5) {
 // ---------------------------------------------------------------------------
 
 let toastTimer = null;
-function toast(message, kind = "success") {
+// accentColor is optional (e.g. a machine's own --m-color) - when given,
+// the toast's dot uses that color instead of the generic kind-based color,
+// so a "new sample" toast reads as "which machine" at a glance without
+// having to read the text first. Every other toast call site (mapping
+// saved, API settings, etc.) doesn't pass one and looks exactly as before.
+function toast(message, kind = "success", accentColor = null) {
   const el = document.getElementById("toast");
   el.textContent = "";
   const dot = document.createElement("span");
   dot.className = "toast-dot";
+  if (accentColor) dot.style.background = accentColor;
   el.appendChild(dot);
   const text = document.createElement("span");
   text.textContent = message;
@@ -223,11 +229,52 @@ document.querySelectorAll(".section-nav-item").forEach((el) => {
 // changed since last time (not the whole card) - a live-updating dashboard
 // should visibly say "this changed", not just silently swap the digits.
 let prevMachineStats = {};
+// True once the very first /api/machines response has landed - guards the
+// new-sample toast below so it only ever fires for a REAL arrival after
+// that point, never on page load (when every machine's count is "new"
+// compared to the empty {} prevMachineStats starts as).
+let machinesLoadedOnce = false;
 
 async function loadMachines() {
   const fresh = await apiGet("/api/machines");
+  const prevForToast = prevMachineStats;
   prevMachineStats = Object.fromEntries(state.machines.map((m) =>
     [m.machine, { mapped_codes: m.mapped_codes, pending_count: m.pending_count, sample_count: m.sample_count }]));
+
+  // New-sample toast - fires from wherever you're looking (Machines page,
+  // Mappings for a different machine, anywhere), not just while already
+  // viewing the specific machine's Samples tab, since that's exactly the
+  // case where you'd otherwise have no idea something just arrived.
+  // #toast is a single element (not a stack) - calling toast() more than
+  // once per tick would silently overwrite the earlier call before its
+  // 3.6s timer even shows it, so multiple arrivals in the same poll (e.g.
+  // two machines both finishing a run around the same moment) are combined
+  // into ONE message instead of only ever showing the last one.
+  if (machinesLoadedOnce) {
+    const arrivals = [];
+    fresh.forEach((m) => {
+      const prev = prevForToast[m.machine];
+      if (prev && m.sample_count > prev.sample_count) {
+        arrivals.push({ label: m.label || m.machine, color: m.color, delta: m.sample_count - prev.sample_count });
+      }
+    });
+    // Cap how many machine names get spelled out in one toast - past 3, a
+    // full comma-joined list (e.g. all 6 machines finishing runs around the
+    // same moment) stops being readable in a single toast line, so fall
+    // back to a plain count instead of an ever-growing name list. The
+    // per-machine accent color on the toast dot only makes sense for the
+    // single-machine case - a multi-machine toast has no one color to show.
+    if (arrivals.length === 1) {
+      const a = arrivals[0];
+      toast(a.delta > 1 ? `${a.delta} new samples from ${a.label}` : `New sample from ${a.label}`, "success", a.color);
+    } else if (arrivals.length > 1 && arrivals.length <= 3) {
+      toast(`New samples from ${arrivals.map((a) => a.label).join(", ")}`, "success");
+    } else if (arrivals.length > 3) {
+      toast(`New samples from ${arrivals.length} machines`, "success");
+    }
+  }
+  machinesLoadedOnce = true;
+
   state.machines = fresh;
   if (state.activeSection === "machines") {
     renderOverview();
@@ -261,8 +308,28 @@ function renderOverview() {
   `;
 
   const grid = document.getElementById("machineGrid");
-  grid.innerHTML = "";
+  // The static skeleton placeholders in index.html (shown before the first
+  // /api/machines response) have no data-machine attribute, so the reuse
+  // logic below would only ever "see" one of them (all sharing the same
+  // undefined key) - the other 2 would silently orphan in the DOM forever,
+  // still shimmering next to the real cards. Clear them out explicitly the
+  // first time real data arrives, before doing anything else.
+  grid.querySelectorAll(".skeleton-card").forEach((el) => el.remove());
+  // Reuse existing card DOM nodes across polls instead of wiping and
+  // rebuilding the whole grid every ~2-3s (setInterval-driven) - destroying
+  // and recreating the element the mouse is resting on made the browser
+  // treat it as a brand-new, never-hovered element on every single poll
+  // tick, restarting the :hover transition from scratch each time (looked
+  // like the hover "animation kept redoing itself, like it has a time
+  // limit" - the "time limit" was literally the poll interval). Keyed by
+  // machine so a card's identity (and thus its live :hover state) survives
+  // a data refresh; only genuinely added/removed machines touch the DOM.
+  const existingCards = new Map();
+  grid.querySelectorAll(".machine-card").forEach((el) => existingCards.set(el.dataset.machine, el));
+  const seenMachines = new Set();
+
   state.machines.forEach((m) => {
+    seenMachines.add(m.machine);
     // live_state comes straight from the listener thread itself:
     // "connected" = an analyzer is connected to this port right now,
     // "listening" = the port is open and waiting, "unknown" = the listener
@@ -271,7 +338,12 @@ function renderOverview() {
                      : m.live_state === "listening" ? "listening" : "unknown";
     const liveLabel = m.live_state === "connected" ? "Connected"
                      : m.live_state === "listening" ? "Listening" : "Unknown";
-    const card = document.createElement("div");
+    let card = existingCards.get(m.machine);
+    const isNew = !card;
+    if (isNew) {
+      card = document.createElement("div");
+      card.dataset.machine = m.machine;
+    }
     card.className = "machine-card";
     card.style.setProperty("--m-color", m.color || "");
     const cardBgClass = m.photo_bg === "card" ? " has-photo-card" : "";
@@ -312,15 +384,29 @@ function renderOverview() {
         <span>port ${m.port}</span>
       </div>
     `;
+    if (isNew) {
+      // Only attach these once, on first creation - card is now reused
+      // across polls (not recreated), so re-adding listeners here on every
+      // refresh would stack duplicate handlers instead of doing nothing.
+      card.addEventListener("click", () => {
+        state.mappingsMachine = card.dataset.machine;
+        showSection("mappings");
+      });
+      grid.appendChild(card);
+    }
+    // .card-config-btn IS replaced every render (innerHTML reset above), so
+    // its listener needs re-attaching every time - cheap, and correctly
+    // captures this render's fresh `m` (label/color/etc.) for the modal.
     card.querySelector(".card-config-btn").addEventListener("click", (e) => {
       e.stopPropagation();
       openConfigModal(m);
     });
-    card.addEventListener("click", () => {
-      state.mappingsMachine = m.machine;
-      showSection("mappings");
-    });
-    grid.appendChild(card);
+  });
+
+  // Remove cards for machines that no longer exist (rare - only if a
+  // machine were ever removed at runtime; harmless no-op otherwise).
+  existingCards.forEach((el, machine) => {
+    if (!seenMachines.has(machine)) el.remove();
   });
 }
 
@@ -513,8 +599,8 @@ function renderMappedTable(filter = "") {
       <td><span class="code-pill">${escapeHtml(r.code)}</span></td>
       <td>
         <div class="param-id-row">${r.param_id !== null
-          ? `<span class="match-kind-badge match-kind-param" title="Matched by param_id">PARAM</span><span class="param-id">#${r.param_id}</span>`
-          : `<span class="match-kind-badge match-kind-exam" title="No single param - matched by exam (service_tarification_id) instead">EXAM</span><span class="param-id">#${r.service_tarification_id}</span>`}</div>
+          ? `<span class="match-kind-badge match-kind-param" title="Matched by param_id">param_id</span><span class="param-id">#${r.param_id}</span>`
+          : `<span class="match-kind-badge match-kind-exam" title="No single param - matched by exam (service_tarification_id) instead">service_tarification_id</span><span class="param-id">#${r.service_tarification_id}</span>`}</div>
         <div class="param-name">${escapeHtml(r.abbrev || "")} ${r.name ? "· " + escapeHtml(r.name) : ""}</div>
       </td>
       <td><span class="exam-tag">${escapeHtml(r.service_tarification_name || "—")}</span></td>
@@ -647,8 +733,13 @@ function openEditModal(entry, isNewFromPending = false) {
   showPickedMatch(null);
 
   state.editingCode = isNewFromPending ? null : entry.code;
-  updateModalTitle();
+  // fCode.value must be set BEFORE updateModalTitle() runs - it reads
+  // fCode.value directly, so calling it first read whatever was left over
+  // from the PREVIOUS modal session (e.g. still showed "Map BASO%" right
+  // after opening a fresh pending code, even though the field itself
+  // already showed the new code correctly underneath).
   fCode.value = entry.code || "";
+  updateModalTitle();
   fCode.disabled = !!state.editingCode; // code is the key; don't rename in place
   codeResults.classList.remove("open");
 
@@ -794,6 +885,30 @@ document.getElementById("modalSave").addEventListener("click", async () => {
     modalAlert.hidden = false;
     modalAlert.textContent = "Search and pick a parameter or exam to match this code to.";
     return;
+  }
+
+  // Warn (don't hard-block) if this exact param/exam is already mapped to a
+  // DIFFERENT code on this same machine - legitimate cross-machine reuse
+  // (e.g. XN-330 and XS-500i both mapping their own "WBC" to the same
+  // param) is common and fine, but two DIFFERENT codes on the SAME machine
+  // both pointing at one param is almost always a mistake (both would then
+  // silently write into the same clinic param slot) - confirm() matches
+  // the same pattern already used for Delete mapping's destructive action.
+  const duplicate = (state.mappings || []).find((r) => {
+    if (r.code === code) return false; // editing the same entry - not a conflict with itself
+    if (pickedMatch.param_id) return r.param_id === pickedMatch.param_id;
+    return !r.param_id && r.service_tarification_id === pickedMatch.service_tarification_id;
+  });
+  if (duplicate) {
+    const target = pickedMatch.param_id
+      ? `param_id #${pickedMatch.param_id}`
+      : `service_tarification_id #${pickedMatch.service_tarification_id}`;
+    const proceed = confirm(
+      `"${duplicate.code}" is already mapped to this same ${target} on this machine.\n\n` +
+      `Mapping "${code}" to it too means both codes will write into the same clinic slot - ` +
+      `only do this if they're genuinely the same measurement.\n\nSave anyway?`
+    );
+    if (!proceed) return;
   }
 
   try {
@@ -1205,8 +1320,8 @@ async function openSampleModal(machine, sampleId) {
       tr.innerHTML = `
         <td><span class="code-pill">${escapeHtml(r.test_code)}</span></td>
         <td><div class="param-id-row">${r.param_id !== null && r.param_id !== undefined
-          ? `<span class="match-kind-badge match-kind-param" title="Matched by param_id">PARAM</span><span class="param-id">#${r.param_id}</span>`
-          : `<span class="match-kind-badge match-kind-exam" title="No single param - matched by exam (service_tarification_id) instead">EXAM</span><span class="param-id">#${r.service_tarification_id}</span>`}</div><div class="param-name">${escapeHtml(r.param_abbrev || "")} ${r.param_name ? "· " + escapeHtml(r.param_name) : ""}</div></td>
+          ? `<span class="match-kind-badge match-kind-param" title="Matched by param_id">param_id</span><span class="param-id">#${r.param_id}</span>`
+          : `<span class="match-kind-badge match-kind-exam" title="No single param - matched by exam (service_tarification_id) instead">service_tarification_id</span><span class="param-id">#${r.service_tarification_id}</span>`}</div><div class="param-name">${escapeHtml(r.param_abbrev || "")} ${r.param_name ? "· " + escapeHtml(r.param_name) : ""}</div></td>
         <td class="value-mono">${escapeHtml(r.result_value)} ${escapeHtml(r.unit || "")}</td>
         <td class="timestamp-cell">${timeAgo(r.received_at)}</td>
         <td>${apiStatus}</td>
@@ -1269,4 +1384,11 @@ document.querySelectorAll(".sample-tab").forEach((tab) => {
     const m = state.mappingsMachine;
     loadMapped(m); loadPending(m); loadSamples(m); loadMachines();
   }, 3000);
+  // The two intervals above already call loadMachines() while on the
+  // Machines or Mappings pages - this covers the one remaining section
+  // (API Settings) so the new-sample toast can still fire from there too;
+  // slower interval since nothing on that page needs the data itself.
+  setInterval(() => {
+    if (state.activeSection === "api-settings") loadMachines();
+  }, 5000);
 })();

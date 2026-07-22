@@ -32,6 +32,7 @@ from labo_bridge import runtime_ports, live_status
 from labo_bridge.admin import mappings_editor as me
 from labo_bridge.admin import config_editor as ce
 from labo_bridge.admin import machines_editor as mce
+from labo_bridge.admin import photo_processing
 
 try:
     import psycopg2
@@ -205,8 +206,15 @@ def api_add_machine():
         if ext not in ALLOWED_PHOTO_EXTS:
             return jsonify({"error": f"photo must be one of: {sorted(ALLOWED_PHOTO_EXTS)}"}), 400
         os.makedirs(MACHINES_DIR, exist_ok=True)
-        photo_file.save(os.path.join(MACHINES_DIR, f"{machine}{ext}"))
-        photo_rel = f"machines/{machine}{ext}"
+        # Background-removed automatically before saving (see
+        # photo_processing.py) so every uploaded photo matches the clean,
+        # transparent look of the existing machine cards, whatever format/
+        # background it came in with - always saved as .png since that's
+        # the only format that can actually hold the new alpha channel.
+        processed = photo_processing.remove_background(photo_file.read())
+        with open(os.path.join(MACHINES_DIR, f"{machine}.png"), "wb") as f:
+            f.write(processed)
+        photo_rel = f"machines/{machine}.png"
 
     try:
         mce.add_machine(machine, protocol, reuse_decoder_from, port)
@@ -621,8 +629,12 @@ def api_put_machine_config(machine):
         if ext not in ALLOWED_PHOTO_EXTS:
             return jsonify({"error": f"photo must be one of: {sorted(ALLOWED_PHOTO_EXTS)}"}), 400
         os.makedirs(MACHINES_DIR, exist_ok=True)
-        photo_file.save(os.path.join(MACHINES_DIR, f"{machine}{ext}"))
-        photo_rel = f"machines/{machine}{ext}"
+        # Same automatic background removal as Add Analyzer - see
+        # photo_processing.py and its comment there.
+        processed = photo_processing.remove_background(photo_file.read())
+        with open(os.path.join(MACHINES_DIR, f"{machine}.png"), "wb") as f:
+            f.write(processed)
+        photo_rel = f"machines/{machine}.png"
 
     if any(v is not None for v in (label, kind, color, photo_rel)) or machine_id != "__unset__":
         ok = pg_module.upsert_machine_config(machine, label=label, kind=kind, color=color,

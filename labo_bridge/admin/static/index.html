@@ -112,7 +112,14 @@
       </header>
 
       <div class="machine-grid" id="machineGrid">
-        <!-- shown only until the first /api/machines response arrives -->
+        <!-- shown only until the first /api/machines response arrives (see
+             app.js's renderOverview, which removes all of these on that
+             first real render) - count kept matching the real machine count
+             (6, as of 2026-07-21) purely so the loading state itself looks
+             right; not load-bearing since the cleanup above is unconditional. -->
+        <div class="machine-card skeleton-card"><div class="skel skel-photo"></div><div class="skel skel-line" style="width:60%"></div><div class="skel skel-line" style="width:40%;height:10px"></div><div class="skel skel-metrics"></div></div>
+        <div class="machine-card skeleton-card"><div class="skel skel-photo"></div><div class="skel skel-line" style="width:60%"></div><div class="skel skel-line" style="width:40%;height:10px"></div><div class="skel skel-metrics"></div></div>
+        <div class="machine-card skeleton-card"><div class="skel skel-photo"></div><div class="skel skel-line" style="width:60%"></div><div class="skel skel-line" style="width:40%;height:10px"></div><div class="skel skel-metrics"></div></div>
         <div class="machine-card skeleton-card"><div class="skel skel-photo"></div><div class="skel skel-line" style="width:60%"></div><div class="skel skel-line" style="width:40%;height:10px"></div><div class="skel skel-metrics"></div></div>
         <div class="machine-card skeleton-card"><div class="skel skel-photo"></div><div class="skel skel-line" style="width:60%"></div><div class="skel skel-line" style="width:40%;height:10px"></div><div class="skel skel-metrics"></div></div>
         <div class="machine-card skeleton-card"><div class="skel skel-photo"></div><div class="skel skel-line" style="width:60%"></div><div class="skel skel-line" style="width:40%;height:10px"></div><div class="skel skel-metrics"></div></div>
@@ -160,7 +167,7 @@
               <thead>
                 <tr>
                   <th>Machine Code</th>
-                  <th>labo_param</th>
+                  <th>Matched To</th>
                   <th>Exam</th>
                   <th>Last Value</th>
                   <th>Last Seen</th>
@@ -481,7 +488,7 @@
         <div class="table-wrap">
           <table class="data-table">
             <thead>
-              <tr><th>Code</th><th>Parameter</th><th>Value</th><th>Received</th><th>Clinic API</th></tr>
+              <tr><th>Code</th><th>Matched To</th><th>Value</th><th>Received</th><th>Clinic API</th></tr>
             </thead>
             <tbody id="sampleResultsBody"></tbody>
           </table>
