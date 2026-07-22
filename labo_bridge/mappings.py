@@ -191,9 +191,68 @@ XS500I_MAP = {
 # the result is stored directly against appointment_tarification_id, so
 # param_id is None and service_tarification_id alone is the complete match
 # (same pattern as XN330_MAP's non-composed entries).
+#
+# Below: bulk of the panel, matched 2026-07-22 from the machine's own printed
+# parameter/code reference card (photographed, not a real capture) against
+# clinic_management.service_tarification by name. Same non-composed pattern
+# as HCV above (no labo_test_param rows for any of these ids, so param_id is
+# None and service_tarification_id is the complete match). Only added where
+# exactly one clean, unambiguous name match existed - anything with multiple
+# same-named rows across specialities (Myoglobine, Troponine T vs I, HAV IgM)
+# or one generic row serving several distinct VIDAS methodologies (HIV
+# P24/DUO Quick/DUO Ultra) was deliberately left OUT of this map so it stays
+# in pending_params for manual review instead of risking a wrong guess.
 MINIVIDAS_MAP = {
-    "HCV": (None, 439, "HCV", "Anti-HCV", "Anticorps anti HCV"),
-    "HIV": (None, 445, "HIV", "", "HIV"),
+    "HCV":  (None, 439, "HCV",                   "Anti-HCV", "Anticorps anti HCV"),
+    "HIV":  (None, 445, "HIV",                   "",         "HIV"),
+
+    # Thyroid
+    "TSH":  (None, 535, "TSH",                   "TSH",  "TSH"),
+    "TSH3": (None, 535, "TSH",                   "TSH",  "TSH"),
+    "T3":   (None, 425, "FT3",                   "FT3",  "FT3"),
+    "T4":   (None, 426, "FT4",                   "FT4",  "FT4"),
+
+    # Reproduction / Fertility
+    "HCG":  (None, 548, "BHCG",                  "BHCG", "BHCG"),
+    "LH":   (None, 457, "LH",                    "LH",   "LH"),
+    "FSH":  (None, 424, "FSH",                   "FSH",  "FSH"),
+    "PRL":  (None, 486, "Prolactine",             "PRL",  "Prolactine"),
+    "E2II": (None, 472, "Oestradiol",             "E2",   "Oestradiol"),
+
+    # Tumor Markers
+    "AFP":  (None, 340, "AFP",                   "AFP",  "AFP"),
+    "125":  (None, 363, "CA 125",                 "CA125","CA 125"),
+    "199":  (None, 365, "CA 19-9",                "CA19-9","CA 19-9"),
+    "153":  (None, 364, "CA 15-3",                "CA15-3","CA 15-3"),
+    "TPSA": (None, 491, "PSAT",                   "PSAT", "PSA Total"),
+    "FPSA": (None, 490, "PSAL",                   "PSAL", "PSA Libre"),
+
+    # Immuno-Hemostasis-Cardiovascular
+    "PBNP": (None, 471, "NT probnp",              "NTproBNP", "NT-proBNP"),
+
+    # Others
+    "FER":  (None, 419, "Ferritine",              "Ferr", "Ferritine"),
+    "CORS": (None, 388, "Cortisol",               "Cort", "Cortisol"),
+
+    # Serology
+    "CMVG": (None, 380, "CMV IgG",                "CMVG", "CMV IgG"),
+    "CMVM": (None, 381, "CMV IgM",                "CMVM", "CMV IgM"),
+    "CMVU": (None, 354, "Avidite CMV",             "CMVU", "Avidité CMV"),
+    "LYT":  (None, 461, "LYME",                   "LYME", "Lyme"),
+    "MSG":  (None, 498, "Rougeole",                "MSG",  "Rougeole"),
+    "MPG":  (None, 473, "oreillons",               "MPG",  "Oreillons"),
+    "VZG":  (None, 539, "Varicelle-Zona",          "VZG",  "Varicelle-Zona"),
+
+    # Hepatitis / AIDS
+    "HBS":  (None, 342, "AG HBS",                 "AgHBs", "Antigène HBs"),
+    "HBST": (None, 342, "AG HBS",                 "AgHBs", "Antigène HBs"),
+    "HBE":  (None, 341, "Ag HBe",                 "AgHBe", "Antigène HBe"),
+
+    # Antigen detection
+    "CHL":  (None, 331, "AC Chlamydia",            "CHL",  "Anticorps Chlamydia"),
+
+    # Sepsis
+    "PCT":  (None, 484, "Procalcitonine",          "PCT",  "Procalcitonine"),
 }
 
 MAPS = {
