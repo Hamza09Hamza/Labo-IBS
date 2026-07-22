@@ -101,6 +101,24 @@ function toast(message, kind = "success", accentColor = null) {
   toastTimer = setTimeout(() => { el.classList.remove("show"); }, 3600);
 }
 
+async function pingMachine(machine, label) {
+  toast(`Pinging ${label}...`, "success");
+  try {
+    const response = await fetch(`/api/machines/${machine}/ping`);
+    const res = await response.json();
+    if (!res.ok) {
+      toast(res.error || `Couldn't ping ${label}`, "error");
+      return;
+    }
+    toast(
+      res.reachable ? `${label} is reachable (${res.ip})` : `${label} did NOT respond (${res.ip})`,
+      res.reachable ? "success" : "error"
+    );
+  } catch (e) {
+    toast(`Ping failed: ${e.message}`, "error");
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Formatting helpers
 // ---------------------------------------------------------------------------
@@ -353,6 +371,9 @@ function renderOverview() {
           <div class="card-live-badge ${liveClass}">
             <span class="dot"></span>${liveLabel}
           </div>
+          <button class="icon-btn card-ping-btn" title="Ping this machine's last known IP" type="button">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M12 22s8-7.2 8-13a8 8 0 10-16 0c0 5.8 8 13 8 13z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="9" r="2.5" stroke="currentColor" stroke-width="1.8"/></svg>
+          </button>
           <button class="icon-btn card-config-btn" title="Edit machine" type="button">
             <svg viewBox="0 0 24 24" fill="none"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4L16.5 3.5z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
@@ -400,6 +421,10 @@ function renderOverview() {
     card.querySelector(".card-config-btn").addEventListener("click", (e) => {
       e.stopPropagation();
       openConfigModal(m);
+    });
+    card.querySelector(".card-ping-btn").addEventListener("click", (e) => {
+      e.stopPropagation();
+      pingMachine(card.dataset.machine, m.label);
     });
   });
 

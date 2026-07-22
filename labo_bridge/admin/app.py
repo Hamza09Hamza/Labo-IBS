@@ -14,6 +14,7 @@ import importlib
 import logging
 import os
 import re
+import subprocess
 import sys
 
 from flask import Flask, jsonify, request, send_from_directory
@@ -292,6 +293,46 @@ def api_machines():
             "live_source_ip": live["source_ip"],
         })
     return jsonify(out)
+
+
+@app.route("/api/machines/<machine>/ping")
+def api_ping_machine(machine):
+    """
+    Real ICMP ping to whatever IP this machine last connected FROM. Exists
+    because "listening" vs "connected" only reflects whether a TCP session
+    is open right now - several analyzers only open one when they have data
+    to send, so "listening" alone doesn't tell you if the machine is even
+    powered on and reachable on the network between transmissions.
+    """
+    if machine not in server_module.MACHINES:
+        return jsonify({"error": f"unknown machine {machine!r}"}), 404
+
+    live = live_status.get(machine)
+    ip = live.get("source_ip")
+    if not ip:
+        cols, rows = _pg_query(
+            "SELECT source_ip FROM labo_bridge.samples WHERE machine = %s "
+            "AND source_ip IS NOT NULL AND source_ip <> '' "
+            "ORDER BY received_at DESC LIMIT 1",
+            (machine,),
+        )
+        ip = rows[0][0] if rows else None
+
+    if not ip:
+        return jsonify({"ok": False, "error": "no known IP for this machine yet "
+                         "(it has never sent us anything)"}), 404
+
+    try:
+        result = subprocess.run(
+            ["ping", "-n", "2", "-w", "1000", ip],
+            capture_output=True, text=True, timeout=6,
+        )
+        reachable = result.returncode == 0
+        return jsonify({"ok": True, "ip": ip, "reachable": reachable,
+                         "output": result.stdout.strip()})
+    except subprocess.TimeoutExpired:
+        return jsonify({"ok": True, "ip": ip, "reachable": False,
+                         "output": "ping timed out"})
 
 
 # ---------------------------------------------------------------------------
