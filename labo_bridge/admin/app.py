@@ -28,7 +28,7 @@ logging.getLogger("werkzeug").setLevel(logging.WARNING)
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)))
 
 from labo_bridge import mappings as mappings_module, server as server_module
-from labo_bridge import runtime_ports, live_status
+from labo_bridge import runtime_ports, live_status, pg
 from labo_bridge.admin import mappings_editor as me
 from labo_bridge.admin import config_editor as ce
 from labo_bridge.admin import machines_editor as mce
@@ -353,6 +353,7 @@ def api_upsert_mapping(machine, code):
         )
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
+    pg.clear_pending_param(machine, code)
     _reload_mappings()
     return jsonify({"ok": True})
 
