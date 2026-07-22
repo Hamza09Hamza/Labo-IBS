@@ -214,12 +214,13 @@ def _flush_api_batch(session):
 
 def _write_session_file(session):
     """
-    Save this session's raw records (exactly as received, in order) and
-    parsed results to results/<machine>_<timestamp>.txt - called at the same
-    batch boundary as _flush_api_batch. Always written, whether or not
-    anything matched or the API path is on, so nothing is ever only visible
-    in a terminal someone forgot to capture.
+    Disabled on deployed/production servers: writing one file per session
+    (every sample, every calibration cycle, every retransmission) grows
+    results/ unboundedly under real continuous machine traffic. Re-enable
+    (delete this early return) only for local debugging of a specific
+    machine's raw wire format.
     """
+    return
     os.makedirs(RESULTS_DIR, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     fname = os.path.join(RESULTS_DIR, f"{session.machine}_{ts}.txt")
