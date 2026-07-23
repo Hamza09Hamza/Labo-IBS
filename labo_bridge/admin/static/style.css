@@ -775,6 +775,7 @@ body.modal-open .blob { animation-play-state: paused; }
 }
 
 .field { display: flex; flex-direction: column; gap: 7px; position: relative; }
+.field[hidden] { display: none; }
 .field label { font-size: 12.5px; font-weight: 700; color: var(--fg-muted); }
 .field input {
   background: var(--surface); border: 1.5px solid var(--border);

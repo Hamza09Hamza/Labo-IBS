@@ -1193,6 +1193,16 @@ document.getElementById("configModalSave").addEventListener("click", async () =>
     return;
   }
 
+  if (port !== configOriginal.port) {
+    const proceed = confirm(
+      `Changing the listen port takes effect immediately and drops any ` +
+      `connection this machine currently has open - if it's mid-transmission ` +
+      `right now, that transmission is lost.\n\n` +
+      `Change port to ${port ?? "(none)"}?`
+    );
+    if (!proceed) return;
+  }
+
   try {
     await apiPutForm(`/api/machines/${configEditingMachine}/config`, form);
     closeConfigModal();

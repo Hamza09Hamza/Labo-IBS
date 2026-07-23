@@ -423,7 +423,14 @@
         <input type="text" id="naLabel" placeholder="e.g. Cobas c111" autocomplete="off">
       </div>
 
-      <div class="field field-collapsed">
+      <!-- Hidden from the form on purpose - still fully functional
+           (auto-derived from Display name, still the real "machine" key
+           used everywhere internally), just not something most people
+           adding an analyzer ever need to see or think about. Remove the
+           `hidden` attribute if it ever needs exposing again (e.g. two
+           machines would auto-derive the same key and one needs to be
+           told apart manually). -->
+      <div class="field field-collapsed" hidden>
         <label for="naKey">System ID <span class="field-hint-inline">(auto-generated, only used internally - not the clinic machine ID below)</span></label>
         <input type="text" id="naKey" placeholder="e.g. cobas_c111" autocomplete="off">
       </div>
