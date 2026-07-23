@@ -170,13 +170,19 @@ function timeAgo(iso) {
 // Exact date/time - "18h ago" alone gets ambiguous fast once you're
 // checking back later or across a day boundary, so timeAgo() shows this
 // for everything past "just now" instead of a relative m/h/d count.
+// Fixed dd/mm/yyyy HH:mm format on purpose (not toLocaleString) - a
+// locale-dependent format could silently swap day/month depending on the
+// browser/OS, which is exactly the kind of ambiguity this replaced.
 function fullTimestamp(iso) {
   if (!iso) return "never recorded";
   const then = new Date(iso.replace(" ", "T"));
-  return then.toLocaleString(undefined, {
-    year: "numeric", month: "short", day: "numeric",
-    hour: "2-digit", minute: "2-digit", second: "2-digit",
-  });
+  const pad = (n) => String(n).padStart(2, "0");
+  const dd = pad(then.getDate());
+  const mm = pad(then.getMonth() + 1);
+  const yyyy = then.getFullYear();
+  const hh = pad(then.getHours());
+  const min = pad(then.getMinutes());
+  return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
 }
 
 function initials(label) {
