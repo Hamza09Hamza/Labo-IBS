@@ -172,6 +172,18 @@ function timeAgo(iso) {
   return then.toLocaleDateString();
 }
 
+// Full exact date/time for the title="" tooltip on any timeAgo() cell -
+// "18h ago" alone gets ambiguous fast once you're checking back later or
+// across a day boundary; hovering shows exactly when it really happened.
+function fullTimestamp(iso) {
+  if (!iso) return "never recorded";
+  const then = new Date(iso.replace(" ", "T"));
+  return then.toLocaleString(undefined, {
+    year: "numeric", month: "short", day: "numeric",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+}
+
 function initials(label) {
   const cleaned = label.replace(/[^A-Za-z0-9 ]/g, "");
   const parts = cleaned.split(" ").filter(Boolean);
@@ -574,7 +586,7 @@ async function loadPending(machine) {
       <td><span class="code-pill">${escapeHtml(r.test_code)}</span></td>
       <td><span class="value-mono">${escapeHtml(r.sample_value)} ${escapeHtml(r.sample_unit || "")}</span></td>
       <td>${r.seen_count}×</td>
-      <td class="timestamp-cell">${timeAgo(r.last_seen)}</td>
+      <td class="timestamp-cell" title="${escapeHtml(fullTimestamp(r.last_seen))}">${timeAgo(r.last_seen)}</td>
       <td class="col-actions">
         <button class="btn btn-ghost map-pending-btn" ${state.editable ? "" : "disabled"}>Map it</button>
       </td>
@@ -626,7 +638,7 @@ function renderSamplesTable(filter = "") {
       <td>${escapeHtml(s.paillasse || "—")}</td>
       <td>${escapeHtml((s.patient_name || "").trim() || "—")}</td>
       <td class="value-mono">${escapeHtml(s.source_ip || "—")}</td>
-      <td class="timestamp-cell">${timeAgo(s.received_at)}</td>
+      <td class="timestamp-cell" title="${escapeHtml(fullTimestamp(s.received_at))}">${timeAgo(s.received_at)}</td>
       <td class="col-actions">
         <button class="btn btn-ghost view-sample-btn">View</button>
       </td>
@@ -667,7 +679,7 @@ function renderMappedTable(filter = "") {
       <td>${r.last_value !== null
         ? `<span class="value-mono">${escapeHtml(r.last_value)} ${escapeHtml(r.last_unit || "")}</span>`
         : '<span class="muted-cell">no data yet</span>'}</td>
-      <td class="timestamp-cell">${timeAgo(r.last_seen)}</td>
+      <td class="timestamp-cell" title="${escapeHtml(fullTimestamp(r.last_seen))}">${timeAgo(r.last_seen)}</td>
       <td class="col-actions">
         <div class="row-actions">
           <button class="icon-btn edit-btn" title="Edit" ${state.editable ? "" : "disabled"}>
@@ -1389,7 +1401,7 @@ async function openSampleModal(machine, sampleId) {
           ? `<span class="match-kind-badge match-kind-param" title="Matched by param_id">param_id</span><span class="param-id">#${r.param_id}</span>`
           : `<span class="match-kind-badge match-kind-exam" title="No single param - matched by exam (service_tarification_id) instead">service_tarification_id</span><span class="param-id">#${r.service_tarification_id}</span>`}</div><div class="param-name">${escapeHtml(r.param_abbrev || "")} ${r.param_name ? "· " + escapeHtml(r.param_name) : ""}</div></td>
         <td class="value-mono">${escapeHtml(r.result_value)} ${escapeHtml(r.unit || "")}</td>
-        <td class="timestamp-cell">${timeAgo(r.received_at)}</td>
+        <td class="timestamp-cell" title="${escapeHtml(fullTimestamp(r.received_at))}">${timeAgo(r.received_at)}</td>
         <td>${apiStatus}</td>
       `;
       tbody.appendChild(tr);
