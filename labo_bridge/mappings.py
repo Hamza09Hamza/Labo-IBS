@@ -269,6 +269,11 @@ MINIVIDAS_MAP = {
 
     # Sepsis
     "PCT":  (None, 484, "Procalcitonine",          "PCT",  "Procalcitonine"),
+
+    # Not on either printed reference card - seen from a real capture
+    # instead (2026-07-23): rn="25-OH Vitamin D TOTAL", mt=rsl confirms a
+    # genuine result frame, not calibration.
+    "VITD": (None, 542, "Vitamine D",               "VitD", "Vitamine D"),
 }
 
 MAPS = {
