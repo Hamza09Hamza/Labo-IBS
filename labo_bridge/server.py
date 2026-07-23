@@ -148,6 +148,23 @@ def _ingest_result(session, sample_id, rec):
             print(f"[{machine}] {line}")
         return
 
+    # I-Smart's Ca2+ electrode module was physically removed/disabled
+    # (per the clinic, 2026-07-23) - every real patient sample now reports
+    # this channel as a literal "-" (no reading) instead of a number.
+    # Scoped narrowly (this machine + this test_code + this exact value,
+    # not a blanket "any dash means skip") since that's the only evidence
+    # we have; if the module is ever reinstalled, a real numeric result
+    # will pass straight through this check untouched and surface in
+    # Pending like any newly-seen code, ready to be mapped normally.
+    if (machine == "ismart" and rec.get("test_code") == "Ca2+"
+            and rec.get("value", "").strip() == "-"):
+        line = (f"SKIPPED result (Ca2+ module disabled - no reading) "
+                f"sample={sample_id!r:14}")
+        session.parsed_lines.append(line)
+        if not quiet:
+            print(f"[{machine}] {line}")
+        return
+
     m = matcher.match(machine, rec.get("test_code", ""))
 
     if m["method"] == "curated":
