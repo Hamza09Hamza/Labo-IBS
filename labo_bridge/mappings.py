@@ -154,7 +154,10 @@ SELECTRA_MAP = {
 # Selectra's own SGPT mapping. param_id=99953 belongs to exactly one exam
 # (service_tarification_id=528, "Transaminases", composed) - no ambiguity.
 CYANVISION_MAP = {
-    "GPT": (99953, 528, "Transaminases", "SGPT", "SGPT"),
+    "GPT":  (99953, 528, "Transaminases",          "SGPT", "SGPT"),
+    "IRON": (None,  418, "Fer sérique",             "Fer",  "Fer sérique"),
+    "ALP":  (None,  481, "Phosphatases alcalines",  "PAL",  "Phosphatases alcalines"),  # same clinic exam as Selectra's "Phosphatase Alc"
+    "CRE":  (None,  392, "Créatinémie",             "Crea", "Créatinémie"),  # same clinic exam as Selectra's "Creatinine"
 }
 
 # Sysmex XS-500i - the clinic's main hematology analyzer (being

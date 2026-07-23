@@ -39,6 +39,17 @@ def decode_segment(fields: list) -> dict:
 
     if seg_type == "OBX":
         test = fields[4] if len(fields) > 4 else (fields[3] if len(fields) > 3 else "")
+        # Second calibration-code family found (2026-07-23): D-LIN578, a
+        # linearity/wavelength check (578nm), same shape as D-DRIFT (mAbs
+        # unit, sample_id "4" not a real specimen ID, timestamp over a year
+        # stale) but with a DIFFERENT patient_id than "Drift" - so the PID-
+        # based filter above wouldn't have caught this one. No currently
+        # mapped code on any machine starts with "D-" (checked before
+        # adding this), and the manufacturer's own naming for these
+        # internal checks all share that prefix, so filtering on it here
+        # is safe rather than waiting for a second confirmed capture.
+        if test.strip().upper().startswith("D-"):
+            return {"kind": "calibration", "raw": "|".join(fields)}
         return {"kind": "result",
                 "test_code": test, "test_name": test,
                 "value": fields[5] if len(fields) > 5 else "",
