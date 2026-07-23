@@ -127,12 +127,14 @@ SELECTRA_MAP = {
     "Glucose pap sl":  (None,  433, "Glycémie",                 "Gluc",  "Glycémie"),
     "Acide Urique":    (None,  337, "Acide urique",             "AcUr",  "Acide urique"),
     "Calcium":         (99736, 366, "Calcémie",                 "Ca",    "Calcémie"),
+    "CALCUIM":         (99736, 366, "Calcémie",                 "Ca",    "Calcémie"),  # analyzer's own method name is misspelled ("Calcuim") - real capture 2026-07-23, same test as "Calcium" above
     "Phosphore":       (None,  483, "Phosphorémie",             "Phos",  "Phosphorémie"),
     "Triglycerides":   (None,  530, "Triglycérides",            "TG",    "Triglycérides"),
     "Cholesterol HDL": (None,  374, "Cholestérol HDL",          "HDL",   "Cholestérol HDL"),
     "LDH-L SL":        (None,  456, "LDH",                      "LDH",   "LDH"),
     "Proteines U":     (99561, 488, "Protéines des 24 heures",  "Prot U","Taux (Protéines des 24h)"),
     "CRP IP V3":       (None,  393, "CRP",                      "CRP",   "CRP"),
+    "CRP IP v3":       (None,  393, "CRP",                      "CRP",   "CRP"),  # same test, lowercase "v3" seen on the wire (real capture 2026-07-23)
     "BILI TOTAL BIO":  (99954, 358, "Bilirubine",               "BiliT", "Bilirubine Totale"),
     "BILI DIRECT BIO": (99955, 358, "Bilirubine",               "BiliD", "Bilirubine Directe"),
     "CK NAK":          (None,  376, "CK - NAC",                 "CK",    "CK - NAC"),
