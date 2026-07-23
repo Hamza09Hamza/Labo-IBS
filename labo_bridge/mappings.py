@@ -120,6 +120,7 @@ SELECTRA_MAP = {
     "SGOT":            (99952, 528, "Transaminases",          "SGOT",  "SGOT"),
     "SGPT":            (99953, 528, "Transaminases",          "SGPT",  "SGPT"),
     "Phosphatase Alc": (None,  481, "Phosphatases alcalines", "PAL",   "Phosphatases alcalines"),
+    "Phosphatase ALP": (None,  481, "Phosphatases alcalines", "PAL",   "Phosphatases alcalines"),  # same test, different method-name string (real capture 2026-07-23, field shows ^^^ALP^Phosphatase ALP)
     "Creatinine":      (None,  392, "Créatinémie",            "Crea",  "Créatinémie"),
     "GGT":             (None,  429, "Gamma GT",               "GGT",   "Gamma GT"),
 
