@@ -16,6 +16,7 @@ import os
 import re
 import subprocess
 import sys
+import urllib.parse
 
 from flask import Flask, jsonify, request, send_from_directory
 
@@ -419,8 +420,9 @@ def api_machine_mappings(machine):
     })
 
 
-@app.route("/api/machines/<machine>/mappings/<code>", methods=["PUT"])
+@app.route("/api/machines/<machine>/mappings/<path:code>", methods=["PUT"])
 def api_upsert_mapping(machine, code):
+    code = urllib.parse.unquote(code)  # see api_sample_detail's comment on <path:> + %2F
     body = request.get_json(force=True)
     try:
         me.upsert_entry(
@@ -438,8 +440,9 @@ def api_upsert_mapping(machine, code):
     return jsonify({"ok": True})
 
 
-@app.route("/api/machines/<machine>/mappings/<code>", methods=["DELETE"])
+@app.route("/api/machines/<machine>/mappings/<path:code>", methods=["DELETE"])
 def api_delete_mapping(machine, code):
+    code = urllib.parse.unquote(code)  # see api_sample_detail's comment on <path:> + %2F
     try:
         found = me.delete_entry(machine, code)
     except ValueError as e:
@@ -494,8 +497,16 @@ def api_machine_samples(machine):
     return jsonify(rows)
 
 
-@app.route("/api/samples/<machine>/<sample_id>")
+@app.route("/api/samples/<machine>/<path:sample_id>")
 def api_sample_detail(machine, sample_id):
+    # <path:...> (not the default <sample_id>) so a slash-containing sample
+    # ID (e.g. Selectra's "crp/796") doesn't 404 - the default string
+    # converter treats "/" as a path-segment boundary. BUT: unlike normal
+    # query-string decoding, Werkzeug does NOT auto-decode %2F back to "/"
+    # inside a <path:> segment (confirmed - it arrives as the literal
+    # string "crp%2F796"), so it must be unquoted here or the DB lookup
+    # below silently searches for the wrong string and returns nothing.
+    sample_id = urllib.parse.unquote(sample_id)
     # Only matched results are sample-scoped. pending_params tracks unmapped
     # CODES, not results tied to any one sample - there's nothing per-sample
     # to show for pending (see pg.py's module docstring).
