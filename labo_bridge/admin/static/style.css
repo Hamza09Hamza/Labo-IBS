@@ -625,7 +625,7 @@ body.modal-open .blob { animation-play-state: paused; }
 }
 .value-mono { font-family: var(--font-mono); font-size: 13px; font-weight: 600; }
 .muted-cell { color: var(--fg-faint); font-style: italic; font-size: 12.5px; }
-.timestamp-cell { color: var(--fg-faint); font-family: var(--font-mono); font-size: 12px; }
+.timestamp-cell { color: var(--fg-faint); font-family: var(--font-mono); font-size: 12px; white-space: nowrap; }
 
 .row-actions { display: flex; gap: 6px; justify-content: flex-end; }
 
@@ -719,11 +719,14 @@ body.modal-open .blob { animation-play-state: paused; }
    narrow (12%) for real Selectra test-code lengths. */
 #stab-results .data-table { table-layout: fixed; }
 #stab-results .data-table td { overflow: hidden; }
-#stab-results .data-table th:nth-child(1), #stab-results .data-table td:nth-child(1) { width: 20%; }
-#stab-results .data-table th:nth-child(2), #stab-results .data-table td:nth-child(2) { width: 28%; }
-#stab-results .data-table th:nth-child(3), #stab-results .data-table td:nth-child(3) { width: 16%; }
-#stab-results .data-table th:nth-child(4), #stab-results .data-table td:nth-child(4) { width: 16%; }
-#stab-results .data-table th:nth-child(5), #stab-results .data-table td:nth-child(5) { width: 20%; }
+#stab-results .data-table th:nth-child(1), #stab-results .data-table td:nth-child(1) { width: 17%; }
+#stab-results .data-table th:nth-child(2), #stab-results .data-table td:nth-child(2) { width: 25%; }
+#stab-results .data-table th:nth-child(3), #stab-results .data-table td:nth-child(3) { width: 13%; }
+/* Last Seen/Received: widened (was 16%) now that timeAgo() shows a full
+   date/time ("Jul 22, 2026, 3:41:45 PM") instead of a short "18h ago" -
+   the old width would clip the longer string given td { overflow: hidden }. */
+#stab-results .data-table th:nth-child(4), #stab-results .data-table td:nth-child(4) { width: 27%; }
+#stab-results .data-table th:nth-child(5), #stab-results .data-table td:nth-child(5) { width: 18%; }
 #stab-results .data-table .code-pill, #stab-results .data-table .param-name {
   white-space: normal; word-break: break-word;
 }
