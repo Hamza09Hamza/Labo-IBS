@@ -279,6 +279,7 @@ def api_machines():
             "photo": meta.get("photo"),
             "photo_bg": meta.get("photo_bg", "transparent"),
             "machine_id": meta.get("machine_id"),
+            "ip_address": meta.get("ip_address"),
             "mapped_codes": len(machine_map),
             "sample_count": sample_counts.get(machine, 0),
             "matched_count": matched_counts.get(machine, 0),
@@ -295,17 +296,22 @@ def api_machines():
     return jsonify(out)
 
 
-@app.route("/api/machines/<machine>/ping")
-def api_ping_machine(machine):
+def _resolve_ping_target(machine):
     """
-    Real ICMP ping to whatever IP this machine last connected FROM. Exists
-    because "listening" vs "connected" only reflects whether a TCP session
-    is open right now - several analyzers only open one when they have data
-    to send, so "listening" alone doesn't tell you if the machine is even
-    powered on and reachable on the network between transmissions.
+    Returns (ip, is_configured). Prefers the IP explicitly set on this
+    machine's config (real, machine-specific, entered from the analyzer's
+    own network settings screen). Falls back to the last-seen source_ip
+    from samples/live_status ONLY if no configured IP exists - but on
+    networks where every analyzer routes through one shared gateway/NAT
+    (confirmed on this deployment: all 6 machines show the same source_ip),
+    that fallback can't actually distinguish one machine from another, so
+    callers must surface is_configured=False to the user rather than
+    silently presenting it as equivalent, machine-specific signal.
     """
-    if machine not in server_module.MACHINES:
-        return jsonify({"error": f"unknown machine {machine!r}"}), 404
+    meta = pg_module.get_machine_config(machine) or {}
+    configured_ip = (meta.get("ip_address") or "").strip()
+    if configured_ip:
+        return configured_ip, True
 
     live = live_status.get(machine)
     ip = live.get("source_ip")
@@ -317,22 +323,55 @@ def api_ping_machine(machine):
             (machine,),
         )
         ip = rows[0][0] if rows else None
+    return ip, False
 
-    if not ip:
-        return jsonify({"ok": False, "error": "no known IP for this machine yet "
-                         "(it has never sent us anything)"}), 404
 
+def _ping_ip(ip):
     try:
         result = subprocess.run(
             ["ping", "-n", "2", "-w", "1000", ip],
             capture_output=True, text=True, timeout=6,
         )
-        reachable = result.returncode == 0
-        return jsonify({"ok": True, "ip": ip, "reachable": reachable,
-                         "output": result.stdout.strip()})
+        return result.returncode == 0
     except subprocess.TimeoutExpired:
-        return jsonify({"ok": True, "ip": ip, "reachable": False,
-                         "output": "ping timed out"})
+        return False
+
+
+@app.route("/api/machines/<machine>/ping")
+def api_ping_machine(machine):
+    """
+    Real ICMP ping to this machine's configured IP (if set in its config)
+    or its last-seen source IP as a fallback. "Listening" vs "Connected"
+    only reflects whether a TCP session is open right now - several
+    analyzers only open one when they have data to send, so that alone
+    doesn't tell you if the machine is even powered on and reachable on
+    the network between transmissions. Ping fills that specific gap.
+    """
+    if machine not in server_module.MACHINES:
+        return jsonify({"error": f"unknown machine {machine!r}"}), 404
+
+    ip, is_configured = _resolve_ping_target(machine)
+    if not ip:
+        return jsonify({"ok": False, "error": "no known IP for this machine yet - "
+                         "set one in its config, or it needs to send us something first"}), 404
+
+    reachable = _ping_ip(ip)
+    return jsonify({"ok": True, "ip": ip, "reachable": reachable, "is_configured": is_configured})
+
+
+@app.route("/api/machines/ping-all")
+def api_ping_all_machines():
+    """Ping every machine, same resolution/fallback rules as api_ping_machine."""
+    results = []
+    for machine in server_module.MACHINES:
+        ip, is_configured = _resolve_ping_target(machine)
+        if not ip:
+            results.append({"machine": machine, "ip": None, "reachable": None,
+                             "is_configured": False})
+            continue
+        results.append({"machine": machine, "ip": ip, "reachable": _ping_ip(ip),
+                         "is_configured": is_configured})
+    return jsonify(results)
 
 
 # ---------------------------------------------------------------------------
@@ -625,6 +664,7 @@ def api_put_machine_config(machine):
     kind = _get("kind")
     color = _get("color")
     machine_id = _get("machine_id")
+    ip_address = _get("ip_address")
 
     if label not in (None, "__absent__"):
         label = label.strip()
@@ -664,6 +704,11 @@ def api_put_machine_config(machine):
     else:
         machine_id = "__unset__"
 
+    if ip_address != "__absent__":
+        ip_address = ip_address.strip() if ip_address else None
+    else:
+        ip_address = "__unset__"
+
     photo_rel = None
     photo_file = request.files.get("photo") if hasattr(request, "files") else None
     if photo_file and photo_file.filename:
@@ -678,9 +723,11 @@ def api_put_machine_config(machine):
             f.write(processed)
         photo_rel = f"machines/{machine}.png"
 
-    if any(v is not None for v in (label, kind, color, photo_rel)) or machine_id != "__unset__":
+    if (any(v is not None for v in (label, kind, color, photo_rel))
+            or machine_id != "__unset__" or ip_address != "__unset__"):
         ok = pg_module.upsert_machine_config(machine, label=label, kind=kind, color=color,
-                                             photo=photo_rel, machine_id=machine_id)
+                                             photo=photo_rel, machine_id=machine_id,
+                                             ip_address=ip_address)
         if not ok:
             return jsonify({"error": "failed to save - clinic Postgres DB unreachable"}), 503
 
@@ -688,7 +735,7 @@ def api_put_machine_config(machine):
     return jsonify({"ok": True, "label": meta.get("label"), "kind": meta.get("kind"),
                     "color": meta.get("color"), "photo": meta.get("photo"),
                     "port": runtime_ports.get_port_for(machine, server_module.MACHINES[machine]["port"]),
-                    "machine_id": meta.get("machine_id")})
+                    "machine_id": meta.get("machine_id"), "ip_address": meta.get("ip_address")})
 
 
 def main():

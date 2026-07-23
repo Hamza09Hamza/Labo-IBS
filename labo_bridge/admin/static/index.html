@@ -104,6 +104,10 @@
         </div>
         <div class="header-right">
           <div class="header-stats" id="overviewStats"></div>
+          <button class="btn btn-ghost" id="pingAllBtn">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M12 22s8-7.2 8-13a8 8 0 10-16 0c0 5.8 8 13 8 13z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="9" r="2.5" stroke="currentColor" stroke-width="1.8"/></svg>
+            Ping All
+          </button>
           <button class="btn btn-primary" id="addAnalyzerBtn">
             <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
             Add Analyzer
@@ -363,6 +367,12 @@
         <label for="cfgMachineId">Clinic machine ID (labo_machine.id)</label>
         <input type="number" id="cfgMachineId" placeholder="e.g. 3">
         <p class="field-hint">Sent as <code>machine_id</code> to the clinic API instead of the machine name — required for the API to validate this analyzer against its configured exams/techniques. Leave blank to send the machine name instead.</p>
+      </div>
+
+      <div class="field">
+        <label for="cfgIpAddress">Machine IP address</label>
+        <input type="text" id="cfgIpAddress" placeholder="e.g. 10.10.12.149">
+        <p class="field-hint">Used by the Ping button — check this machine's own network settings screen for its real address. If several machines sit behind one shared gateway/NAT, leave this blank and Ping will fall back to the last address it connected from, but won't be able to tell that machine apart from others on the same gateway.</p>
       </div>
 
       <div class="field">

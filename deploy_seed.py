@@ -121,8 +121,10 @@ CREATE TABLE IF NOT EXISTS labo_bridge.machine_config (
     photo TEXT,
     photo_bg TEXT NOT NULL DEFAULT 'transparent',
     machine_id INTEGER,
+    ip_address TEXT,
     updated_at TIMESTAMP NOT NULL DEFAULT now()
 );
+ALTER TABLE labo_bridge.machine_config ADD COLUMN IF NOT EXISTS ip_address TEXT;
 """
 
 # Snapshot of machine_config as of 2026-07-21 (this dev database). Update

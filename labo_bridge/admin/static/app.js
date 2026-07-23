@@ -110,13 +110,48 @@ async function pingMachine(machine, label) {
       toast(res.error || `Couldn't ping ${label}`, "error");
       return;
     }
+    const caveat = res.is_configured ? "" : " — shared/last-seen IP, not machine-specific";
     toast(
-      res.reachable ? `${label} is reachable (${res.ip})` : `${label} did NOT respond (${res.ip})`,
+      res.reachable ? `${label} is reachable (${res.ip})${caveat}` : `${label} did NOT respond (${res.ip})${caveat}`,
       res.reachable ? "success" : "error"
     );
   } catch (e) {
     toast(`Ping failed: ${e.message}`, "error");
   }
+}
+
+async function pingAllMachines() {
+  toast("Pinging all machines...", "success");
+  try {
+    const results = await apiGet("/api/machines/ping-all");
+    const byMachine = Object.fromEntries(state.machines.map((m) => [m.machine, m.label || m.machine]));
+    const lines = results.map((r) => {
+      const label = byMachine[r.machine] || r.machine;
+      if (!r.ip) return `${label}: no known IP yet`;
+      const caveat = r.is_configured ? "" : " (shared/last-seen IP, not machine-specific)";
+      return `${label}: ${r.reachable ? "reachable" : "NOT responding"} — ${r.ip}${caveat}`;
+    });
+    showPingAllResults(lines);
+  } catch (e) {
+    toast(`Ping All failed: ${e.message}`, "error");
+  }
+}
+
+function showPingAllResults(lines) {
+  const existing = document.getElementById("pingAllResults");
+  if (existing) existing.remove();
+  const box = document.createElement("div");
+  box.id = "pingAllResults";
+  box.className = "ping-all-results";
+  box.innerHTML = `
+    <div class="ping-all-results-header">
+      <span>Ping All results</span>
+      <button type="button" class="icon-btn ping-all-close" title="Close">×</button>
+    </div>
+    <ul>${lines.map((l) => `<li>${escapeHtml(l)}</li>`).join("")}</ul>
+  `;
+  document.body.appendChild(box);
+  box.querySelector(".ping-all-close").addEventListener("click", () => box.remove());
 }
 
 // ---------------------------------------------------------------------------
@@ -1028,6 +1063,7 @@ const configScrim = document.getElementById("configModalScrim");
 const cfgLabel = document.getElementById("cfgLabel");
 const cfgPort = document.getElementById("cfgPort");
 const cfgMachineId = document.getElementById("cfgMachineId");
+const cfgIpAddress = document.getElementById("cfgIpAddress");
 const cfgKind = document.getElementById("cfgKind");
 const cfgColor = document.getElementById("cfgColor");
 const cfgColorHex = document.getElementById("cfgColorHex");
@@ -1041,7 +1077,7 @@ let configEditingMachine = null;
 // backend re-apply a runtime override and rebind the listener's socket, which
 // drops a live analyzer connection - so a machine-id-only save must NOT touch
 // the port.
-let configOriginal = { label: "", port: null, machineId: null, kind: "", color: "" };
+let configOriginal = { label: "", port: null, machineId: null, kind: "", color: "", ipAddress: "" };
 
 function openConfigModal(m) {
   configEditingMachine = m.machine;
@@ -1049,6 +1085,7 @@ function openConfigModal(m) {
   cfgLabel.value = m.label || "";
   cfgPort.value = m.port || "";
   cfgMachineId.value = m.machine_id ?? "";
+  cfgIpAddress.value = m.ip_address || "";
   cfgKind.value = m.kind || "";
   cfgColor.value = m.color || "#0C8599";
   cfgColorHex.value = m.color || "#0C8599";
@@ -1065,6 +1102,7 @@ function openConfigModal(m) {
     machineId: m.machine_id ?? null,
     kind: m.kind || "",
     color: m.color || "#0C8599",
+    ipAddress: m.ip_address || "",
   };
   configModalAlert.hidden = true;
   configScrim.classList.add("open");
@@ -1120,6 +1158,7 @@ document.getElementById("configModalSave").addEventListener("click", async () =>
     configModalAlert.textContent = "Machine ID must be a number.";
     return;
   }
+  const ipAddress = cfgIpAddress.value.trim();
 
   // Send ONLY what changed. Especially: don't resend an unchanged port, or
   // the backend re-applies the runtime override and rebinds the listener
@@ -1130,6 +1169,7 @@ document.getElementById("configModalSave").addEventListener("click", async () =>
   if (label !== configOriginal.label) { form.append("label", label); hasChange = true; }
   if (port !== configOriginal.port) { form.append("port", port === null ? "" : String(port)); hasChange = true; }
   if (machineId !== configOriginal.machineId) { form.append("machine_id", machineId === null ? "" : String(machineId)); hasChange = true; }
+  if (ipAddress !== configOriginal.ipAddress) { form.append("ip_address", ipAddress); hasChange = true; }
   if (kind !== configOriginal.kind) { form.append("kind", kind); hasChange = true; }
   if (color !== configOriginal.color) { form.append("color", color); hasChange = true; }
   if (cfgPhoto.files[0]) { form.append("photo", cfgPhoto.files[0]); hasChange = true; }
@@ -1211,6 +1251,7 @@ function closeAddAnalyzerModal() {
 }
 
 document.getElementById("addAnalyzerBtn").addEventListener("click", openAddAnalyzerModal);
+document.getElementById("pingAllBtn").addEventListener("click", pingAllMachines);
 document.getElementById("addAnalyzerClose").addEventListener("click", closeAddAnalyzerModal);
 document.getElementById("addAnalyzerCancel").addEventListener("click", closeAddAnalyzerModal);
 addAnalyzerScrim.addEventListener("click", (e) => { if (e.target === addAnalyzerScrim) closeAddAnalyzerModal(); });

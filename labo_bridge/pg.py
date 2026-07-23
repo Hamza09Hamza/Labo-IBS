@@ -398,7 +398,7 @@ def delete_mapping_sync(machine, code):
 
 
 _MACHINE_CONFIG_COLUMNS = ("machine", "label", "kind", "protocol", "port",
-                          "color", "photo", "photo_bg", "machine_id")
+                          "color", "photo", "photo_bg", "machine_id", "ip_address")
 
 
 def get_all_machine_configs():
@@ -426,7 +426,8 @@ def get_machine_config(machine):
 
 
 def upsert_machine_config(machine, label=None, kind=None, protocol=None, port=None,
-                          color=None, photo=None, photo_bg=None, machine_id="__unset__"):
+                          color=None, photo=None, photo_bg=None, machine_id="__unset__",
+                          ip_address="__unset__"):
     """
     Insert or partially update one machine's row in labo_bridge.machine_config.
     Any field left at its default (None, or the machine_id sentinel) keeps
@@ -448,12 +449,13 @@ def upsert_machine_config(machine, label=None, kind=None, protocol=None, port=No
                 cur.execute(
                     """
                     INSERT INTO labo_bridge.machine_config
-                        (machine, label, kind, protocol, port, color, photo, photo_bg, machine_id)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                        (machine, label, kind, protocol, port, color, photo, photo_bg, machine_id, ip_address)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     """,
                     (machine, label or machine, kind or "", protocol or "", port or 0,
                      color or "#0C8599", photo, photo_bg or "transparent",
-                     None if machine_id == "__unset__" else machine_id),
+                     None if machine_id == "__unset__" else machine_id,
+                     None if ip_address == "__unset__" else ip_address),
                 )
                 return True
 
@@ -467,6 +469,9 @@ def upsert_machine_config(machine, label=None, kind=None, protocol=None, port=No
             if machine_id != "__unset__":
                 sets.append("machine_id = %s")
                 params.append(machine_id)
+            if ip_address != "__unset__":
+                sets.append("ip_address = %s")
+                params.append(ip_address)
             if not sets:
                 return True
             sets.append("updated_at = now()")
