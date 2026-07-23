@@ -352,6 +352,34 @@ def seed_mappings(conn):
           f"{len(mappings_module.MAPS)} machines)")
 
 
+def clear_stale_pending(conn):
+    """
+    Delete any pending_params row whose (machine, test_code) already has a
+    curated mapping in mappings.py. Exists because a code can be seen and
+    written to pending BEFORE its mapping is added (or before a running
+    service restarts to pick up a just-added mapping) - the UI's own
+    "add mapping" flow clears its own pending row when that happens, but
+    that only covers mappings added through the UI. Mappings added by
+    editing mappings.py directly and deploying (git pull + this script)
+    never went through that path, so their old pending rows were only
+    ever cleared by hand (found repeatedly: cyanvision/GPT twice,
+    minividas/FER once, 2026-07-22/23) - this makes every deploy self-heal
+    that class of staleness instead of relying on someone noticing it in
+    the UI and asking about it.
+    """
+    with conn.cursor() as cur:
+        cur.execute("SELECT machine, test_code FROM labo_bridge.pending_params")
+        pending = cur.fetchall()
+        stale = [(m, c) for m, c in pending if c in mappings_module.MAPS.get(m, {})]
+        for machine, test_code in stale:
+            cur.execute(
+                "DELETE FROM labo_bridge.pending_params WHERE machine = %s AND test_code = %s",
+                (machine, test_code),
+            )
+    print(f"[deploy_seed] cleared {len(stale)} stale pending_params row(s) "
+          f"already covered by a curated mapping")
+
+
 def seed_machine_config(conn):
     with conn.cursor() as cur:
         for machine, label, kind, protocol, port, color, photo, machine_id in MACHINE_CONFIG_SEED:
@@ -400,6 +428,7 @@ def main():
     seed_mappings(conn)
     seed_machine_config(conn)
     seed_pending_params(conn)
+    clear_stale_pending(conn)
     print("[deploy_seed] done.")
 
 
