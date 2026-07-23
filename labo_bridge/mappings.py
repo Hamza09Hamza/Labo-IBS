@@ -216,6 +216,9 @@ MINIVIDAS_MAP = {
     "FT3":  (None, 425, "FT3",                   "FT3",  "FT3"),
     "FT4N": (None, 426, "FT4",                   "FT4",  "FT4"),
 
+    # Allergy
+    "IgE":  (None, 448, "IgE total",              "IgE",  "IgE totale"),
+
     # Reproduction / Fertility
     "HCG":  (None, 548, "BHCG",                  "BHCG", "BHCG"),
     "LH":   (None, 457, "LH",                    "LH",   "LH"),
@@ -238,7 +241,12 @@ MINIVIDAS_MAP = {
     "FER":  (None, 419, "Ferritine",              "Ferr", "Ferritine"),
     "CORS": (None, 388, "Cortisol",               "Cort", "Cortisol"),
 
-    # Serology
+    # Serology. TXC (Toxo Competition) and TXGA (Toxo IgG Avidity) NOT
+    # mapped here on purpose - the clinic DB only has one "avidité Toxo"
+    # row (355), and Competition vs Avidity are different VIDAS test
+    # methodologies; mapping both to the same row risks conflating them.
+    "TXG":  (None, 523, "Toxo IGG",               "TXG",  "Toxo IgG"),
+    "TXM":  (None, 524, "Toxo IGM",               "TXM",  "Toxo IgM"),
     "CMVG": (None, 380, "CMV IgG",                "CMVG", "CMV IgG"),
     "CMVM": (None, 381, "CMV IgM",                "CMVM", "CMV IgM"),
     "CMVU": (None, 354, "Avidite CMV",             "CMVU", "Avidité CMV"),
