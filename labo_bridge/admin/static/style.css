@@ -118,7 +118,14 @@ h1, h2, h3 { font-family: var(--font-body); letter-spacing: -0.02em; }
     radial-gradient(600px 320px at 55% 60%, color-mix(in srgb, var(--accent-3) 16%, transparent), transparent 65%),
     linear-gradient(180deg, var(--bg-page) 0%, var(--bg-page) 100%);
   filter: saturate(1.15);
-  animation: meshDrift 18s ease-in-out infinite;
+  /* Plays ONCE on load (2 iterations = one full there-and-back cycle),
+     then stops - not `infinite`. This ran forever on every single page
+     for the entire session (reported as the page getting slower the
+     longer it stayed open, recovering after navigating away and back -
+     consistent with sustained compositor/paint cost from an animation
+     that never stopped). Start and end state are identical (0%==100%),
+     so it settles with no visible jump once it stops. */
+  animation: meshDrift 18s ease-in-out 2;
   background-size: 140% 140%, 140% 140%, 140% 140%, 100% 100%;
 }
 @keyframes meshDrift {
@@ -127,12 +134,17 @@ h1, h2, h3 { font-family: var(--font-body); letter-spacing: -0.02em; }
 }
 .blob {
   position: absolute; border-radius: 50%; filter: blur(80px);
-  opacity: 0.16; will-change: transform;
+  opacity: 0.16;
 }
 :root[data-theme="dark"] .blob { opacity: 0.22; }
-.blob-1 { width: 560px; height: 560px; background: var(--accent); top: -200px; left: -140px; animation: float1 24s ease-in-out infinite; }
-.blob-2 { width: 480px; height: 480px; background: var(--accent-2); top: -80px; right: -120px; animation: float2 30s ease-in-out infinite; }
-.blob-3 { width: 340px; height: 340px; background: var(--accent-3); top: 160px; left: 48%; animation: float3 34s ease-in-out infinite; opacity: 0.10; }
+/* Same fix as .mesh-hero above: 2 iterations (one full cycle), not
+   infinite. will-change removed too - it only pays for itself while an
+   animation is actively running; holding a permanent GPU layer for a
+   blurred 500+px blob for the entire session (for animation that's now
+   finite anyway) is pure ongoing cost with no benefit once it's settled. */
+.blob-1 { width: 560px; height: 560px; background: var(--accent); top: -200px; left: -140px; animation: float1 24s ease-in-out 2; }
+.blob-2 { width: 480px; height: 480px; background: var(--accent-2); top: -80px; right: -120px; animation: float2 30s ease-in-out 2; }
+.blob-3 { width: 340px; height: 340px; background: var(--accent-3); top: 160px; left: 48%; animation: float3 34s ease-in-out 2; opacity: 0.10; }
 /* Any modal's backdrop-filter blur has to recomposite every frame; combined
    with these continuously-animating (and separately blurred) background
    blobs, that's a blur-of-a-moving-blur recalculated on every scroll tick -
@@ -159,8 +171,12 @@ body.modal-open .blob { animation-play-state: paused; }
 /* ---------- Sidebar ---------- */
 .sidebar {
   background: var(--sidebar-bg);
-  backdrop-filter: blur(28px) saturate(1.4);
-  -webkit-backdrop-filter: blur(28px) saturate(1.4);
+  /* Reduced from blur(28px) - backdrop-filter has to reblur everything
+     visible behind this element on most repaints, for as long as the
+     sidebar is on screen (i.e. the entire session). Lower blur radius is
+     meaningfully cheaper per-frame while still reading as frosted glass. */
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
   border-right: 1px solid var(--border);
   padding: 26px 18px;
   display: flex; flex-direction: column; gap: 30px;
@@ -173,7 +189,11 @@ body.modal-open .blob { animation-play-state: paused; }
 .brand-mark {
   width: 42px; height: 42px; flex-shrink: 0;
   filter: drop-shadow(0 6px 14px var(--accent-glow));
-  animation: brandFloat 5s var(--ease) infinite;
+  /* Finite (2 iterations), not infinite - same fix as the background
+     blobs/mesh above. Small element, but still perpetual GPU/paint cost
+     for the entire session for no reason once it's made its first
+     impression. */
+  animation: brandFloat 5s var(--ease) 2;
 }
 @keyframes brandFloat { 0%,100% { transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-3px) rotate(-4deg); } }
 .brand-mark svg { width: 100%; height: 100%; }
@@ -183,15 +203,18 @@ body.modal-open .blob { animation-play-state: paused; }
    independent from) the whole mark's brandFloat bob above. */
 .brand-liquid {
   transform-origin: center bottom;
-  animation: brandLiquidSway 3.4s ease-in-out infinite;
+  animation: brandLiquidSway 3.4s ease-in-out 3;
 }
 @keyframes brandLiquidSway {
   0%, 100% { transform: translateY(0) scaleY(1); }
   50%      { transform: translateY(-0.6px) scaleY(1.015); }
 }
 .brand-bubble { transform-box: fill-box; transform-origin: center; }
-.brand-bubble-1 { animation: brandBubbleRise 2.2s ease-in infinite; }
-.brand-bubble-2 { animation: brandBubbleRise 2.2s ease-in infinite 1.1s; }
+/* Finite too - 0% and 100% are both opacity:0 here, so it settles
+   invisible (not mid-fade) once it stops, same as it looks between
+   individual rises today. */
+.brand-bubble-1 { animation: brandBubbleRise 2.2s ease-in 3; }
+.brand-bubble-2 { animation: brandBubbleRise 2.2s ease-in 3 1.1s; }
 @keyframes brandBubbleRise {
   0%   { transform: translateY(0) scale(0.6); opacity: 0; }
   15%  { opacity: 0.9; }
@@ -1211,8 +1234,12 @@ body.modal-open .blob { animation-play-state: paused; }
     width: min(78vw, 300px);
     display: flex; flex-direction: column;
     background: var(--sidebar-bg);
-    backdrop-filter: blur(28px) saturate(1.4);
-    -webkit-backdrop-filter: blur(28px) saturate(1.4);
+    /* Reduced from blur(28px) - same reasoning as the desktop .sidebar
+       rule, though this one's real cost is already lower since it's only
+       actually rendered while the drawer is open (translateX(-100%)
+       otherwise) rather than for the whole session. */
+    backdrop-filter: blur(12px) saturate(1.4);
+    -webkit-backdrop-filter: blur(12px) saturate(1.4);
     transform: translateX(-100%);
     transition: transform 280ms var(--spring);
     box-shadow: var(--shadow-lg);
