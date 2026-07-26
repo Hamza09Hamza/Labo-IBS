@@ -574,8 +574,12 @@ body.modal-open .blob { animation-play-state: paused; }
 #samplesDateReset { align-self: flex-end; }
 
 /* ---------- Custom calendar popover ---------- */
+/* Lives at the document root (see index.html), not nested inside
+   .date-filter/.tab-panel - so this is position:fixed with real viewport
+   coordinates set by app.js's openDateCalendar, not position:absolute
+   relying on a positioned ancestor that may be display:none. */
 .date-calendar {
-  position: absolute; top: calc(100% + 8px); z-index: 40;
+  position: fixed; top: 0; left: 0; z-index: 40;
   width: 280px; padding: 14px;
   background: var(--bg-elevated); border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);

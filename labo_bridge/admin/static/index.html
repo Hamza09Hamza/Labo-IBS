@@ -262,34 +262,6 @@
               </div>
               <button class="btn btn-ghost" id="samplesDateReset" title="Clear date filter">Reset</button>
             </div>
-
-            <!-- Mobile-only backdrop behind the calendar popover (see
-                 style.css - only visible once .date-calendar is
-                 position:fixed and centered, below 900px). -->
-            <div class="date-calendar-scrim" id="dateCalendarScrim" hidden></div>
-
-            <!-- One shared calendar popover, repositioned/repopulated for
-                 whichever trigger (From or To) opened it - see app.js's
-                 openDateCalendar. Closes on an outside click or Escape. -->
-            <div class="date-calendar" id="dateCalendar" hidden>
-              <div class="date-calendar-header">
-                <button class="icon-btn date-calendar-prev" type="button" aria-label="Previous month">
-                  <svg viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
-                <span class="date-calendar-title" id="dateCalendarTitle"></span>
-                <button class="icon-btn date-calendar-next" type="button" aria-label="Next month">
-                  <svg viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
-              </div>
-              <div class="date-calendar-weekdays">
-                <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
-              </div>
-              <div class="date-calendar-grid" id="dateCalendarGrid"></div>
-              <div class="date-calendar-footer">
-                <button class="btn btn-ghost date-calendar-today" type="button">Today</button>
-                <button class="btn btn-ghost date-calendar-clear" type="button">Clear</button>
-              </div>
-            </div>
           </div>
           <div class="table-wrap">
             <table class="data-table" id="samplesTable">
@@ -354,6 +326,38 @@
     </section>
 
   </main>
+</div>
+
+<!-- Real bug found and fixed (2026-07-26): these two used to live INSIDE
+     #panel-samples/.panel-toolbar, a .tab-panel that's `display: none`
+     whenever its tab isn't the active one. A position:absolute/fixed
+     descendant of a display:none ancestor collapses to a 0x0 box
+     regardless of its own hidden attribute or CSS - confirmed live via a
+     user's browser console: dateCalState.which updated correctly and
+     .hidden correctly became false on click, but getBoundingClientRect()
+     came back all zeros, and closest('.tab-panel').classList.contains
+     ('active') was false. Moved both to the document root, as siblings of
+     every other overlay (modals, the nav drawer), so they're never
+     affected by any tab-panel's display state again. -->
+<div class="date-calendar-scrim" id="dateCalendarScrim" hidden></div>
+<div class="date-calendar" id="dateCalendar" hidden>
+  <div class="date-calendar-header">
+    <button class="icon-btn date-calendar-prev" type="button" aria-label="Previous month">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <span class="date-calendar-title" id="dateCalendarTitle"></span>
+    <button class="icon-btn date-calendar-next" type="button" aria-label="Next month">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+  </div>
+  <div class="date-calendar-weekdays">
+    <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
+  </div>
+  <div class="date-calendar-grid" id="dateCalendarGrid"></div>
+  <div class="date-calendar-footer">
+    <button class="btn btn-ghost date-calendar-today" type="button">Today</button>
+    <button class="btn btn-ghost date-calendar-clear" type="button">Clear</button>
+  </div>
 </div>
 
 <!-- ============ EDIT / ADD MAPPING MODAL ============ -->

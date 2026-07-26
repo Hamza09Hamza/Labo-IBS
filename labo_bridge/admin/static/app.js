@@ -969,21 +969,24 @@ function openDateCalendar(which) {
   otherTrigger.classList.remove("open");
   trigger.classList.add("open");
 
-  // Desktop: position directly below whichever trigger opened it, via an
-  // inline style. Mobile's CSS instead centers it fixed (left/top: 50% +
-  // translate(-50%,-50%)) - but an inline style always wins over a
-  // stylesheet rule regardless of media query, so setting cal.style.left
-  // unconditionally was clobbering that centering (confirmed: it rendered
-  // at x:-160, half off-screen, because the leftover inline "0px" combined
-  // with the CSS's own -50% translate). Only ever touch the inline style
-  // above the mobile breakpoint; below it, leave the element alone so the
-  // stylesheet's centering rule applies with nothing overriding it.
+  // The calendar lives at the document root now (see index.html - it used
+  // to be nested inside #panel-samples/.panel-toolbar, a .tab-panel that's
+  // `display: none` whenever its tab isn't active; a descendant of a
+  // display:none ancestor collapses to a 0x0 box regardless of its own
+  // hidden attribute, which is exactly the bug a user found: hidden
+  // correctly became false and dateCalState updated, but
+  // getBoundingClientRect() came back all zeros). Since it's no longer
+  // nested inside .date-filter, position it with real VIEWPORT coordinates
+  // (position: fixed, see CSS) instead of the old offset-from-parent math.
   if (window.innerWidth > 900) {
     const rect = trigger.getBoundingClientRect();
-    const parentRect = trigger.closest(".date-filter").getBoundingClientRect();
-    cal.style.left = `${rect.left - parentRect.left}px`;
-    cal.style.top = "";
+    cal.style.left = `${rect.left}px`;
+    cal.style.top = `${rect.bottom + 8}px`;
   } else {
+    // Mobile's CSS centers it instead (left/top: 50% + translate(-50%,
+    // -50%)) - an inline style always wins over a stylesheet rule
+    // regardless of media query, so it must be cleared here or it would
+    // clobber that centering with a stale desktop position.
     cal.style.left = "";
     cal.style.top = "";
   }
