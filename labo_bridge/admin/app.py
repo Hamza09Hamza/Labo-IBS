@@ -485,16 +485,59 @@ def api_machine_pending(machine):
 
 @app.route("/api/machines/<machine>/samples")
 def api_machine_samples(machine):
-    limit = int(request.args.get("limit", 25))
+    """
+    Paginated, newest-first, with an optional received_at date range.
+    Nothing is ever deleted or archived here - this only changes what's
+    fetched from labo_bridge.samples for the current page; the full
+    history always exists and is reachable by paging or widening the
+    date range (previously the frontend never asked for more than the
+    first 25 rows at all, with no way to see anything older).
+    """
+    page = max(1, int(request.args.get("page", 1)))
+    page_size = min(200, max(1, int(request.args.get("page_size", 25))))
+    date_from = request.args.get("date_from", "").strip()
+    date_to = request.args.get("date_to", "").strip()
+    search = request.args.get("search", "").strip()
+
+    where = ["machine = %s"]
+    params = [machine]
+    if date_from:
+        where.append("received_at >= %s")
+        params.append(date_from)
+    if date_to:
+        # date_to is a plain YYYY-MM-DD from an <input type="date">; treat
+        # it as inclusive of the whole day, not midnight at its start.
+        where.append("received_at < (%s::date + interval '1 day')")
+        params.append(date_to)
+    if search:
+        # Pagination moved filtering server-side - the old client-side
+        # .filter() only ever searched within whatever page was already
+        # fetched (at most 25 rows), silently missing every older match.
+        where.append("(sample_id ILIKE %s OR patient_name ILIKE %s)")
+        params.append(f"%{search}%")
+        params.append(f"%{search}%")
+    where_sql = " AND ".join(where)
+
+    total = _pg_rows_as_dicts(
+        f"SELECT COUNT(*) AS n FROM labo_bridge.samples WHERE {where_sql}", params
+    )
+    total_count = total[0]["n"] if total else 0
+
     rows = _pg_rows_as_dicts(
-        "SELECT * FROM labo_bridge.samples WHERE machine = %s "
-        "ORDER BY received_at DESC LIMIT %s",
-        (machine, limit),
+        f"SELECT * FROM labo_bridge.samples WHERE {where_sql} "
+        f"ORDER BY received_at DESC LIMIT %s OFFSET %s",
+        params + [page_size, (page - 1) * page_size],
     )
     for r in rows:
         if r.get("received_at") is not None:
             r["received_at"] = r["received_at"].isoformat()
-    return jsonify(rows)
+
+    return jsonify({
+        "rows": rows,
+        "total": total_count,
+        "page": page,
+        "page_size": page_size,
+    })
 
 
 @app.route("/api/samples/<machine>/<path:sample_id>")

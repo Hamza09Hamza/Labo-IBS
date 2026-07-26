@@ -245,6 +245,17 @@
               <svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
               <input type="text" id="samplesSearch" placeholder="Search by sample ID or patient…">
             </div>
+            <div class="date-filter">
+              <label class="date-filter-field">
+                <span>From</span>
+                <input type="date" id="samplesDateFrom">
+              </label>
+              <label class="date-filter-field">
+                <span>To</span>
+                <input type="date" id="samplesDateTo">
+              </label>
+              <button class="btn btn-ghost" id="samplesDateReset" title="Clear date filter">Reset</button>
+            </div>
           </div>
           <div class="table-wrap">
             <table class="data-table" id="samplesTable">
@@ -261,6 +272,7 @@
               <tbody id="samplesTableBody"></tbody>
             </table>
           </div>
+          <div class="pager" id="samplesPager"></div>
           <div class="empty-state" id="samplesEmpty" hidden>
             <svg viewBox="0 0 24 24" fill="none"><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/></svg>
             <p>No samples captured yet from this analyzer.</p>

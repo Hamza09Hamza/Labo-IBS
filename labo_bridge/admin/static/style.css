@@ -523,6 +523,36 @@ body.modal-open .blob { animation-play-state: paused; }
 .search-box input { background: none; border: none; outline: none; color: var(--fg); font-size: 13.5px; width: 100%; font-family: var(--font-body); }
 .search-box input::placeholder { color: var(--fg-faint); }
 
+.date-filter { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.date-filter-field {
+  display: flex; flex-direction: column; gap: 4px;
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--fg-faint);
+}
+.date-filter-field input {
+  background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 10px;
+  padding: 9px 12px; color: var(--fg); font-size: 13px; font-family: var(--font-body);
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--dur) var(--ease);
+}
+.date-filter-field input:focus { outline: none; border-color: var(--accent); }
+/* Reset sits at input height (not the label's) so it lines up with the
+   two date fields rather than the shorter label text above them. */
+#samplesDateReset { align-self: flex-end; }
+
+.pager {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 14px; margin-top: 16px; flex-wrap: wrap;
+}
+.pager-summary { font-size: 12.5px; color: var(--fg-muted); font-family: var(--font-mono); }
+.pager-controls { display: flex; align-items: center; gap: 10px; }
+.pager-page { font-size: 12.5px; color: var(--fg-muted); font-weight: 600; white-space: nowrap; }
+/* No .btn[disabled] styling exists anywhere else in this codebase - Prev/
+   Next needed one since they're disabled at the first/last page and would
+   otherwise look identically clickable while doing nothing. */
+.btn:disabled { opacity: 0.42; cursor: default; }
+.btn:disabled:hover { transform: none; }
+
 .panel-hint {
   display: flex; align-items: center; gap: 10px;
   background: var(--warning-bg); border: 1px solid color-mix(in srgb, var(--warning) 30%, transparent);
@@ -1212,6 +1242,21 @@ body.modal-open .blob { animation-play-state: paused; }
   .col-actions .btn, .row-actions .icon-btn { min-height: 40px; padding: 8px 14px; }
   .panel-toolbar { gap: 10px; }
   .panel-toolbar input[type="search"], .panel-toolbar input[type="text"] { min-height: 44px; font-size: 16px; }
+
+  /* Date filter: full-width stacked fields instead of squeezed inline -
+     two <input type="date"> plus a button side by side on a ~360px phone
+     would each be too narrow to read their own value. */
+  .date-filter { width: 100%; }
+  .date-filter-field { flex: 1 1 40%; }
+  .date-filter-field input { min-height: 44px; font-size: 16px; width: 100%; }
+  #samplesDateReset { min-height: 44px; flex-shrink: 0; }
+
+  /* Pager: stack the summary above the controls, and let Prev/Next take
+     the full row so they're easy to hit with a thumb. */
+  .pager { flex-direction: column; align-items: stretch; gap: 10px; }
+  .pager-summary { text-align: center; }
+  .pager-controls { justify-content: space-between; }
+  .pager-controls .btn { min-height: 44px; flex: 1; }
   /* #stab-results (sample detail modal) sets table-layout/fixed widths
      that only make sense for a real grid - irrelevant once each row is
      its own block-level card. */

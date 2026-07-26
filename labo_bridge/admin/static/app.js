@@ -25,8 +25,13 @@ const state = {
   mappings: [],
   pending: [],
   samples: [],
+  samplesTotal: 0,
+  samplesPage: 1,
+  samplesDateFrom: "",
+  samplesDateTo: "",
   editingCode: null, // null => "add new", string => "editing existing"
 };
+const SAMPLES_PAGE_SIZE = 25;
 
 // ---------------------------------------------------------------------------
 // Fetch helpers
@@ -627,6 +632,21 @@ document.getElementById("backToMachines").addEventListener("click", () => showSe
 let mappingsLoadSeq = 0;
 
 async function selectMappingsMachine(machine) {
+  // Only reset paging/date-filter/search when actually switching to a
+  // DIFFERENT machine - showSection("mappings") re-calls this for the
+  // already-selected machine every time you navigate back to the tab, and
+  // resetting on that would throw away where you were for no reason.
+  if (state.mappingsMachine !== machine) {
+    state.samplesPage = 1;
+    state.samplesDateFrom = "";
+    state.samplesDateTo = "";
+    const fromEl = document.getElementById("samplesDateFrom");
+    const toEl = document.getElementById("samplesDateTo");
+    if (fromEl) fromEl.value = "";
+    if (toEl) toEl.value = "";
+    const searchEl = document.getElementById("samplesSearch");
+    if (searchEl) searchEl.value = "";
+  }
   state.mappingsMachine = machine;
   renderMappingsMachinePicker();
   const mySeq = ++mappingsLoadSeq;
@@ -706,36 +726,62 @@ async function loadPending(machine) {
 }
 
 // ---- samples table ----
+// Filtering/paging moved server-side (see api_machine_samples) once
+// pagination was added - the old client-side .filter() only ever searched
+// whatever page happened to already be fetched (at most 25 rows), silently
+// missing every older match. loadSamples now sends the current page/date
+// range/search text as query params on every call, including the ~3s
+// live-poll refresh - so paging/filters survive a poll instead of
+// snapping back to page 1.
+function samplesQueryParams() {
+  const p = new URLSearchParams();
+  p.set("page", String(state.samplesPage));
+  p.set("page_size", String(SAMPLES_PAGE_SIZE));
+  if (state.samplesDateFrom) p.set("date_from", state.samplesDateFrom);
+  if (state.samplesDateTo) p.set("date_to", state.samplesDateTo);
+  const search = document.getElementById("samplesSearch").value.trim();
+  if (search) p.set("search", search);
+  return p;
+}
+
 async function loadSamples(machine) {
-  const rows = await apiGet(`/api/machines/${machine}/samples`);
+  const data = await apiGet(`/api/machines/${machine}/samples?${samplesQueryParams()}`);
   if (machine !== state.mappingsMachine) return; // superseded by a newer selection
-  state.samples = rows;
-  renderSamplesTable(document.getElementById("samplesSearch").value);
+  state.samples = data.rows;
+  state.samplesTotal = data.total;
+  // The live poll can't know in advance that a filter/page emptied out
+  // from under it (e.g. the last item on page 2 got reassigned) - clamp
+  // back onto the last real page rather than showing a blank page forever.
+  const lastPage = Math.max(1, Math.ceil(state.samplesTotal / SAMPLES_PAGE_SIZE));
+  if (state.samplesPage > lastPage) {
+    state.samplesPage = lastPage;
+    return loadSamples(machine);
+  }
+  renderSamplesTable();
 }
 
 // Sample IDs already rendered at least once, per machine - lets
 // renderSamplesTable tell a genuinely NEW row (just arrived via live poll)
 // apart from one that was already showing, so only actual arrivals slide in.
+// Only meaningful on page 1 (a new arrival is always the newest row, which
+// only ever lands on page 1 - a slide-in on page 3 would be misleading).
 const seenSampleIds = {};
 
-function renderSamplesTable(filter = "") {
+function renderSamplesTable() {
   const tbody = document.getElementById("samplesTableBody");
-  const f = filter.trim().toLowerCase();
-  const rows = state.samples.filter((s) =>
-    !f || (s.sample_id || "").toLowerCase().includes(f) ||
-    (s.patient_name || "").toLowerCase().includes(f)
-  );
-  document.getElementById("samplesEmpty").hidden = rows.length > 0;
+  const rows = state.samples;
+  document.getElementById("samplesEmpty").hidden = rows.length > 0 || state.samplesTotal > 0;
 
   const machine = state.mappingsMachine;
   const seen = seenSampleIds[machine] || (seenSampleIds[machine] = new Set());
   const isFirstRenderForMachine = seen.size === 0;
+  const onPageOne = state.samplesPage === 1;
 
   tbody.innerHTML = "";
   rows.forEach((s) => {
     const id = s.sample_id.trim();
-    const isNew = !isFirstRenderForMachine && !seen.has(id);
-    seen.add(id);
+    const isNew = onPageOne && !isFirstRenderForMachine && !seen.has(id);
+    if (onPageOne) seen.add(id);
 
     const tr = document.createElement("tr");
     if (isNew) tr.className = "row-enter";
@@ -753,10 +799,65 @@ function renderSamplesTable(filter = "") {
       openSampleModal(state.mappingsMachine, id));
     tbody.appendChild(tr);
   });
+
+  renderSamplesPager();
 }
 
-document.getElementById("samplesSearch").addEventListener("input", (e) => {
-  renderSamplesTable(e.target.value);
+function renderSamplesPager() {
+  const el = document.getElementById("samplesPager");
+  if (!el) return;
+  const lastPage = Math.max(1, Math.ceil(state.samplesTotal / SAMPLES_PAGE_SIZE));
+  if (state.samplesTotal === 0) { el.innerHTML = ""; return; }
+  const startN = (state.samplesPage - 1) * SAMPLES_PAGE_SIZE + 1;
+  const endN = Math.min(state.samplesPage * SAMPLES_PAGE_SIZE, state.samplesTotal);
+  el.innerHTML = `
+    <span class="pager-summary">${startN}–${endN} of ${state.samplesTotal}</span>
+    <div class="pager-controls">
+      <button class="btn btn-ghost pager-prev" ${state.samplesPage <= 1 ? "disabled" : ""}>Prev</button>
+      <span class="pager-page">Page ${state.samplesPage} / ${lastPage}</span>
+      <button class="btn btn-ghost pager-next" ${state.samplesPage >= lastPage ? "disabled" : ""}>Next</button>
+    </div>
+  `;
+  el.querySelector(".pager-prev").addEventListener("click", () => {
+    if (state.samplesPage <= 1) return;
+    state.samplesPage -= 1;
+    loadSamples(state.mappingsMachine);
+  });
+  el.querySelector(".pager-next").addEventListener("click", () => {
+    if (state.samplesPage >= lastPage) return;
+    state.samplesPage += 1;
+    loadSamples(state.mappingsMachine);
+  });
+}
+
+document.getElementById("samplesDateFrom").addEventListener("change", (e) => {
+  state.samplesDateFrom = e.target.value;
+  state.samplesPage = 1; // a changed filter always restarts at page 1
+  loadSamples(state.mappingsMachine);
+});
+document.getElementById("samplesDateTo").addEventListener("change", (e) => {
+  state.samplesDateTo = e.target.value;
+  state.samplesPage = 1;
+  loadSamples(state.mappingsMachine);
+});
+document.getElementById("samplesDateReset").addEventListener("click", () => {
+  state.samplesDateFrom = "";
+  state.samplesDateTo = "";
+  document.getElementById("samplesDateFrom").value = "";
+  document.getElementById("samplesDateTo").value = "";
+  state.samplesPage = 1;
+  loadSamples(state.mappingsMachine);
+});
+
+// Search now hits the server (see samplesQueryParams), so it's debounced
+// rather than firing a request on every keystroke.
+let samplesSearchDebounce = null;
+document.getElementById("samplesSearch").addEventListener("input", () => {
+  clearTimeout(samplesSearchDebounce);
+  samplesSearchDebounce = setTimeout(() => {
+    state.samplesPage = 1; // a changed search always restarts at page 1
+    loadSamples(state.mappingsMachine);
+  }, 350);
 });
 
 function renderMappedTable(filter = "") {
