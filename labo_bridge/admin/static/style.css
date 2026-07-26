@@ -841,15 +841,11 @@ body.modal-open .blob { animation-play-state: paused; }
    the old width would clip the longer string given td { overflow: hidden }. */
 #stab-results .data-table th:nth-child(4), #stab-results .data-table td:nth-child(4) { width: 27%; }
 #stab-results .data-table th:nth-child(5), #stab-results .data-table td:nth-child(5) { width: 18%; }
-/* code-pill (short mono code/ID) stays single-line and truncates if
-   somehow too long; param-name (the free-text French param name, which is
-   what actually runs long) wraps normally instead of hiding text behind
-   an ellipsis - the cell already has its own line under the pill row, so
-   wrapping there doesn't force the whole row taller in a messy way. */
-#stab-results .data-table .code-pill {
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block;
-}
-#stab-results .data-table .param-name {
+/* Long test codes (e.g. "Phosphatase Alc") and long param names both wrap
+   onto a second line instead of being hidden behind an ellipsis - the row
+   just grows taller for that one row, which reads better than truncating
+   text the user actually needs to read in full. */
+#stab-results .data-table .code-pill, #stab-results .data-table .param-name {
   white-space: normal; overflow-wrap: break-word; display: block;
 }
 
