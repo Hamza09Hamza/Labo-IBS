@@ -523,30 +523,96 @@ body.modal-open .blob { animation-play-state: paused; }
 .search-box input { background: none; border: none; outline: none; color: var(--fg); font-size: 13.5px; width: 100%; font-family: var(--font-body); }
 .search-box input::placeholder { color: var(--fg-faint); }
 
-.date-filter { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.date-filter { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; position: relative; }
 .date-filter-field {
   display: flex; flex-direction: column; gap: 4px;
   font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
   color: var(--fg-faint);
 }
-.date-filter-field input {
+/* Custom trigger replacing the native <input type="date"> - the native
+   picker's own UI (calendar icon, popup) differs per browser, can't be
+   restyled, and on some mobile browsers is noticeably slow to open. This
+   is a plain button that opens .date-calendar below, styled to match
+   every other input in the app instead of the OS's own date widget. */
+.date-trigger {
+  display: flex; align-items: center; gap: 8px;
   background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 10px;
   padding: 9px 12px; color: var(--fg); font-size: 13px; font-family: var(--font-body);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-sm); cursor: pointer;
   transition: border-color var(--dur) var(--ease);
 }
-.date-filter-field input:focus { outline: none; border-color: var(--accent); }
-/* Reset sits at input height (not the label's) so it lines up with the
+.date-trigger:hover { border-color: var(--border-strong); }
+.date-trigger.open { border-color: var(--accent); }
+.date-trigger svg { width: 15px; height: 15px; color: var(--fg-faint); flex-shrink: 0; }
+.date-trigger-label { white-space: nowrap; }
+.date-trigger-label.is-set { color: var(--fg); font-weight: 600; }
+/* Reset sits at trigger height (not the label's) so it lines up with the
    two date fields rather than the shorter label text above them. */
 #samplesDateReset { align-self: flex-end; }
+
+/* ---------- Custom calendar popover ---------- */
+.date-calendar {
+  position: absolute; top: calc(100% + 8px); z-index: 40;
+  width: 280px; padding: 14px;
+  background: var(--bg-elevated); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
+  animation: dateCalendarIn 160ms var(--ease);
+}
+@keyframes dateCalendarIn { from { opacity: 0; transform: translateY(-6px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.date-calendar-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.date-calendar-header .icon-btn { width: 30px; height: 30px; }
+.date-calendar-title { font-size: 13.5px; font-weight: 700; }
+.date-calendar-weekdays {
+  display: grid; grid-template-columns: repeat(7, 1fr); text-align: center;
+  font-size: 10.5px; font-weight: 700; color: var(--fg-faint); margin-bottom: 4px;
+}
+.date-calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.date-calendar-day {
+  aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+  border: none; background: none; border-radius: 8px; cursor: pointer;
+  font-family: var(--font-mono); font-size: 12.5px; color: var(--fg);
+  transition: background var(--dur) var(--ease);
+}
+.date-calendar-day:hover { background: var(--surface-hover); }
+.date-calendar-day.outside-month { color: var(--fg-faint); opacity: 0.5; }
+.date-calendar-day.today { font-weight: 700; color: var(--accent-strong); }
+.date-calendar-day.selected { background: var(--accent); color: #fff; font-weight: 700; }
+/* In-range days (between a set From and To) get a soft tint so the whole
+   selected span reads visually, not just its two endpoints. */
+.date-calendar-day.in-range { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.date-calendar-footer { display: flex; gap: 8px; margin-top: 10px; }
+.date-calendar-footer .btn { flex: 1; min-height: 36px; padding: 8px 10px; font-size: 12.5px; }
+/* Desktop: the popover anchors directly below its trigger, no backdrop
+   needed (same convention as the combo-results dropdowns elsewhere in
+   this app). Mobile centers it as a real modal moment instead (see the
+   media query), where a backdrop is the right call. */
+.date-calendar-scrim { display: none; }
 
 .pager {
   display: flex; align-items: center; justify-content: space-between;
   gap: 14px; margin-top: 16px; flex-wrap: wrap;
 }
 .pager-summary { font-size: 12.5px; color: var(--fg-muted); font-family: var(--font-mono); }
-.pager-controls { display: flex; align-items: center; gap: 10px; }
-.pager-page { font-size: 12.5px; color: var(--fg-muted); font-weight: 600; white-space: nowrap; }
+.pager-controls { display: flex; align-items: center; gap: 4px; }
+.pager-controls .icon-btn { width: 34px; height: 34px; }
+.pager-pages { display: flex; align-items: center; gap: 2px; }
+.pager-page-btn {
+  min-width: 30px; height: 30px; padding: 0 6px;
+  border-radius: 8px; border: 1px solid transparent; background: none;
+  font-family: var(--font-mono); font-size: 12.5px; font-weight: 700;
+  color: var(--fg-muted); cursor: pointer;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.pager-page-btn:hover { background: var(--surface-hover); color: var(--fg); }
+.pager-page-btn.active {
+  /* Soft tinted background + normal text color, not solid-fill + white
+     text - dark mode's --accent is a bright cyan that white text would
+     read poorly against. Same pattern already used for .machine-pill.active. */
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-elevated));
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-strong));
+  color: var(--fg);
+}
+.pager-ellipsis { color: var(--fg-faint); font-size: 12.5px; padding: 0 2px; user-select: none; }
 /* No .btn[disabled] styling exists anywhere else in this codebase - Prev/
    Next needed one since they're disabled at the first/last page and would
    otherwise look identically clickable while doing nothing. */
@@ -773,8 +839,13 @@ body.modal-open .blob { animation-play-state: paused; }
    the old width would clip the longer string given td { overflow: hidden }. */
 #stab-results .data-table th:nth-child(4), #stab-results .data-table td:nth-child(4) { width: 27%; }
 #stab-results .data-table th:nth-child(5), #stab-results .data-table td:nth-child(5) { width: 18%; }
+/* Truncate with an ellipsis instead of wrapping to a second line - a long
+   matched param/exam name used to force a two-line row here, which read
+   as messy/inconsistent against every other single-line row. app.js adds
+   a title="" attribute alongside this so the full text is still available
+   on hover, it's just not force-displayed at all times. */
 #stab-results .data-table .code-pill, #stab-results .data-table .param-name {
-  white-space: normal; word-break: break-word;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block;
 }
 
 /* Sample detail: metadata grid */
@@ -1276,15 +1347,32 @@ body.modal-open .blob { animation-play-state: paused; }
      would each be too narrow to read their own value. */
   .date-filter { width: 100%; }
   .date-filter-field { flex: 1 1 40%; }
-  .date-filter-field input { min-height: 44px; font-size: 16px; width: 100%; }
+  .date-trigger { min-height: 44px; font-size: 14px; width: 100%; }
   #samplesDateReset { min-height: 44px; flex-shrink: 0; }
+  /* Popover anchors to the trigger's position on desktop, but on a narrow
+     phone that can push it off-screen sideways - center it in the
+     viewport instead and give it a backdrop so it reads as a real modal
+     moment rather than a misplaced dropdown. */
+  .date-calendar {
+    position: fixed; top: 50%; left: 50%; right: auto;
+    transform: translate(-50%, -50%);
+    width: min(92vw, 320px);
+    z-index: 60;
+  }
+  .date-calendar-day { font-size: 13.5px; }
+  .date-calendar-scrim.open {
+    display: block; position: fixed; inset: 0; z-index: 59;
+    background: var(--scrim-bg);
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  }
 
-  /* Pager: stack the summary above the controls, and let Prev/Next take
-     the full row so they're easy to hit with a thumb. */
+  /* Pager: stack the summary above the controls, and give Prev/Next/page
+     numbers real touch-target sizing. */
   .pager { flex-direction: column; align-items: stretch; gap: 10px; }
   .pager-summary { text-align: center; }
-  .pager-controls { justify-content: space-between; }
-  .pager-controls .btn { min-height: 44px; flex: 1; }
+  .pager-controls { justify-content: center; }
+  .pager-controls .icon-btn { width: 40px; height: 40px; flex-shrink: 0; }
+  .pager-page-btn { min-width: 40px; height: 40px; font-size: 13px; }
   /* #stab-results (sample detail modal) sets table-layout/fixed widths
      that only make sense for a real grid - irrelevant once each row is
      its own block-level card. */

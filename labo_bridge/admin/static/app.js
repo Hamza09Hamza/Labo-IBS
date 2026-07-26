@@ -640,10 +640,7 @@ async function selectMappingsMachine(machine) {
     state.samplesPage = 1;
     state.samplesDateFrom = "";
     state.samplesDateTo = "";
-    const fromEl = document.getElementById("samplesDateFrom");
-    const toEl = document.getElementById("samplesDateTo");
-    if (fromEl) fromEl.value = "";
-    if (toEl) toEl.value = "";
+    updateDateTriggerLabels();
     const searchEl = document.getElementById("samplesSearch");
     if (searchEl) searchEl.value = "";
   }
@@ -803,6 +800,32 @@ function renderSamplesTable() {
   renderSamplesPager();
 }
 
+// Which page numbers to actually show as buttons: always first, last, the
+// current page, and one neighbor on each side - everything else collapses
+// into a single "…" so a 40-page result set doesn't render 40 buttons.
+// Returns a mix of numbers and the literal string "…".
+function pagerPageList(current, last) {
+  if (last <= 7) {
+    return Array.from({ length: last }, (_, i) => i + 1);
+  }
+  const pages = new Set([1, last, current, current - 1, current + 1]);
+  const sorted = [...pages].filter((p) => p >= 1 && p <= last).sort((a, b) => a - b);
+  const out = [];
+  for (let i = 0; i < sorted.length; i++) {
+    if (i > 0 && sorted[i] - sorted[i - 1] > 1) out.push("…");
+    out.push(sorted[i]);
+  }
+  return out;
+}
+
+function goToSamplesPage(page) {
+  const lastPage = Math.max(1, Math.ceil(state.samplesTotal / SAMPLES_PAGE_SIZE));
+  const clamped = Math.min(Math.max(1, page), lastPage);
+  if (clamped === state.samplesPage) return;
+  state.samplesPage = clamped;
+  loadSamples(state.mappingsMachine);
+}
+
 function renderSamplesPager() {
   const el = document.getElementById("samplesPager");
   if (!el) return;
@@ -810,41 +833,222 @@ function renderSamplesPager() {
   if (state.samplesTotal === 0) { el.innerHTML = ""; return; }
   const startN = (state.samplesPage - 1) * SAMPLES_PAGE_SIZE + 1;
   const endN = Math.min(state.samplesPage * SAMPLES_PAGE_SIZE, state.samplesTotal);
+
+  const pageButtons = pagerPageList(state.samplesPage, lastPage).map((p) => {
+    if (p === "…") return `<span class="pager-ellipsis">…</span>`;
+    const active = p === state.samplesPage ? " active" : "";
+    return `<button class="pager-page-btn${active}" data-page="${p}" ${active ? 'aria-current="page"' : ""}>${p}</button>`;
+  }).join("");
+
   el.innerHTML = `
     <span class="pager-summary">${startN}–${endN} of ${state.samplesTotal}</span>
     <div class="pager-controls">
-      <button class="btn btn-ghost pager-prev" ${state.samplesPage <= 1 ? "disabled" : ""}>Prev</button>
-      <span class="pager-page">Page ${state.samplesPage} / ${lastPage}</span>
-      <button class="btn btn-ghost pager-next" ${state.samplesPage >= lastPage ? "disabled" : ""}>Next</button>
+      <button class="icon-btn pager-prev" ${state.samplesPage <= 1 ? "disabled" : ""} aria-label="Previous page">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <div class="pager-pages">${pageButtons}</div>
+      <button class="icon-btn pager-next" ${state.samplesPage >= lastPage ? "disabled" : ""} aria-label="Next page">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
     </div>
   `;
-  el.querySelector(".pager-prev").addEventListener("click", () => {
-    if (state.samplesPage <= 1) return;
-    state.samplesPage -= 1;
-    loadSamples(state.mappingsMachine);
-  });
-  el.querySelector(".pager-next").addEventListener("click", () => {
-    if (state.samplesPage >= lastPage) return;
-    state.samplesPage += 1;
-    loadSamples(state.mappingsMachine);
+  el.querySelector(".pager-prev").addEventListener("click", () => goToSamplesPage(state.samplesPage - 1));
+  el.querySelector(".pager-next").addEventListener("click", () => goToSamplesPage(state.samplesPage + 1));
+  el.querySelectorAll(".pager-page-btn").forEach((btn) => {
+    btn.addEventListener("click", () => goToSamplesPage(parseInt(btn.dataset.page, 10)));
   });
 }
 
-document.getElementById("samplesDateFrom").addEventListener("change", (e) => {
-  state.samplesDateFrom = e.target.value;
-  state.samplesPage = 1; // a changed filter always restarts at page 1
-  loadSamples(state.mappingsMachine);
-});
-document.getElementById("samplesDateTo").addEventListener("change", (e) => {
-  state.samplesDateTo = e.target.value;
+// ---------------------------------------------------------------------------
+// Custom date-range calendar (replaces native <input type="date">)
+// ---------------------------------------------------------------------------
+// The native picker's UI differs per browser/OS, can't be restyled to match
+// the rest of the app, and was reported as slow to open on mobile. This is
+// a small custom calendar popover shared between the From and To triggers -
+// dateCalState.which tracks which one is currently being edited.
+
+const dateCalState = { which: null, viewYear: null, viewMonth: null };
+
+function ymd(y, m, d) {
+  return `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+function parseYmd(s) {
+  if (!s) return null;
+  const [y, m, d] = s.split("-").map(Number);
+  return { y, m: m - 1, d };
+}
+
+function formatDateLabel(s) {
+  if (!s) return "Any";
+  const { y, m, d } = parseYmd(s);
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${months[m]} ${d}, ${y}`;
+}
+
+function updateDateTriggerLabels() {
+  const fromLabel = document.getElementById("samplesDateFromLabel");
+  const toLabel = document.getElementById("samplesDateToLabel");
+  fromLabel.textContent = formatDateLabel(state.samplesDateFrom);
+  fromLabel.classList.toggle("is-set", !!state.samplesDateFrom);
+  toLabel.textContent = formatDateLabel(state.samplesDateTo);
+  toLabel.classList.toggle("is-set", !!state.samplesDateTo);
+}
+
+function renderDateCalendar() {
+  const { viewYear, viewMonth, which } = dateCalState;
+  const months = ["January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"];
+  document.getElementById("dateCalendarTitle").textContent = `${months[viewMonth]} ${viewYear}`;
+
+  const selectedStr = which === "from" ? state.samplesDateFrom : state.samplesDateTo;
+  const selected = parseYmd(selectedStr);
+  const fromD = parseYmd(state.samplesDateFrom);
+  const toD = parseYmd(state.samplesDateTo);
+  const today = new Date();
+  const todayStr = ymd(today.getFullYear(), today.getMonth(), today.getDate());
+
+  const firstOfMonth = new Date(viewYear, viewMonth, 1);
+  const startWeekday = firstOfMonth.getDay(); // 0=Sun
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const daysInPrevMonth = new Date(viewYear, viewMonth, 0).getDate();
+
+  const cells = [];
+  // Leading days from the previous month, so the grid always starts on Sunday.
+  for (let i = 0; i < startWeekday; i++) {
+    cells.push({ day: daysInPrevMonth - startWeekday + 1 + i, outside: true });
+  }
+  for (let d = 1; d <= daysInMonth; d++) cells.push({ day: d, outside: false });
+  // Trailing days so the grid is always a full multiple of 7 (5 or 6 rows).
+  while (cells.length % 7 !== 0) {
+    cells.push({ day: cells.length - (startWeekday + daysInMonth) + 1, outside: true });
+  }
+
+  const grid = document.getElementById("dateCalendarGrid");
+  grid.innerHTML = cells.map((c) => {
+    const cellStr = c.outside ? null : ymd(viewYear, viewMonth, c.day);
+    const classes = ["date-calendar-day"];
+    if (c.outside) classes.push("outside-month");
+    if (cellStr === todayStr) classes.push("today");
+    if (cellStr && selected && cellStr === ymd(selected.y, selected.m, selected.d)) classes.push("selected");
+    if (cellStr && fromD && toD && cellStr >= ymd(fromD.y, fromD.m, fromD.d) && cellStr <= ymd(toD.y, toD.m, toD.d)) {
+      classes.push("in-range");
+    }
+    const disabled = c.outside ? "disabled" : "";
+    return `<button class="${classes.join(" ")}" ${disabled} data-date="${cellStr || ""}">${c.day}</button>`;
+  }).join("");
+
+  grid.querySelectorAll(".date-calendar-day:not(.outside-month)").forEach((btn) => {
+    btn.addEventListener("click", () => selectDate(btn.dataset.date));
+  });
+}
+
+function selectDate(dateStr) {
   state.samplesPage = 1;
+  if (dateCalState.which === "from") {
+    state.samplesDateFrom = dateStr;
+  } else {
+    state.samplesDateTo = dateStr;
+  }
+  updateDateTriggerLabels();
+  renderDateCalendar();
   loadSamples(state.mappingsMachine);
+  closeDateCalendar();
+}
+
+function openDateCalendar(which) {
+  dateCalState.which = which;
+  const current = which === "from" ? state.samplesDateFrom : state.samplesDateTo;
+  const base = current ? parseYmd(current) : (() => { const t = new Date(); return { y: t.getFullYear(), m: t.getMonth() }; })();
+  dateCalState.viewYear = base.y;
+  dateCalState.viewMonth = base.m;
+
+  const trigger = document.getElementById(which === "from" ? "samplesDateFromTrigger" : "samplesDateToTrigger");
+  const cal = document.getElementById("dateCalendar");
+  const otherTrigger = document.getElementById(which === "from" ? "samplesDateToTrigger" : "samplesDateFromTrigger");
+  otherTrigger.classList.remove("open");
+  trigger.classList.add("open");
+
+  // Desktop: position directly below whichever trigger opened it, via an
+  // inline style. Mobile's CSS instead centers it fixed (left/top: 50% +
+  // translate(-50%,-50%)) - but an inline style always wins over a
+  // stylesheet rule regardless of media query, so setting cal.style.left
+  // unconditionally was clobbering that centering (confirmed: it rendered
+  // at x:-160, half off-screen, because the leftover inline "0px" combined
+  // with the CSS's own -50% translate). Only ever touch the inline style
+  // above the mobile breakpoint; below it, leave the element alone so the
+  // stylesheet's centering rule applies with nothing overriding it.
+  if (window.innerWidth > 900) {
+    const rect = trigger.getBoundingClientRect();
+    const parentRect = trigger.closest(".date-filter").getBoundingClientRect();
+    cal.style.left = `${rect.left - parentRect.left}px`;
+    cal.style.top = "";
+  } else {
+    cal.style.left = "";
+    cal.style.top = "";
+  }
+
+  cal.hidden = false;
+  document.getElementById("dateCalendarScrim").hidden = false;
+  document.getElementById("dateCalendarScrim").classList.add("open");
+  renderDateCalendar();
+}
+
+function closeDateCalendar() {
+  dateCalState.which = null;
+  document.getElementById("dateCalendar").hidden = true;
+  document.getElementById("samplesDateFromTrigger").classList.remove("open");
+  document.getElementById("samplesDateToTrigger").classList.remove("open");
+  const scrim = document.getElementById("dateCalendarScrim");
+  scrim.classList.remove("open");
+  scrim.hidden = true;
+}
+
+document.getElementById("samplesDateFromTrigger").addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (dateCalState.which === "from") { closeDateCalendar(); return; }
+  openDateCalendar("from");
 });
+document.getElementById("samplesDateToTrigger").addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (dateCalState.which === "to") { closeDateCalendar(); return; }
+  openDateCalendar("to");
+});
+document.getElementById("dateCalendar").addEventListener("click", (e) => e.stopPropagation());
+document.getElementById("dateCalendarScrim").addEventListener("click", closeDateCalendar);
+document.addEventListener("click", (e) => {
+  if (dateCalState.which && !document.getElementById("dateCalendar").contains(e.target)) closeDateCalendar();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && dateCalState.which) closeDateCalendar();
+});
+document.querySelector(".date-calendar-prev").addEventListener("click", () => {
+  dateCalState.viewMonth -= 1;
+  if (dateCalState.viewMonth < 0) { dateCalState.viewMonth = 11; dateCalState.viewYear -= 1; }
+  renderDateCalendar();
+});
+document.querySelector(".date-calendar-next").addEventListener("click", () => {
+  dateCalState.viewMonth += 1;
+  if (dateCalState.viewMonth > 11) { dateCalState.viewMonth = 0; dateCalState.viewYear += 1; }
+  renderDateCalendar();
+});
+document.querySelector(".date-calendar-today").addEventListener("click", () => {
+  const t = new Date();
+  selectDate(ymd(t.getFullYear(), t.getMonth(), t.getDate()));
+});
+document.querySelector(".date-calendar-clear").addEventListener("click", () => {
+  state.samplesPage = 1;
+  if (dateCalState.which === "from") state.samplesDateFrom = "";
+  else state.samplesDateTo = "";
+  updateDateTriggerLabels();
+  loadSamples(state.mappingsMachine);
+  closeDateCalendar();
+});
+
 document.getElementById("samplesDateReset").addEventListener("click", () => {
   state.samplesDateFrom = "";
   state.samplesDateTo = "";
-  document.getElementById("samplesDateFrom").value = "";
-  document.getElementById("samplesDateTo").value = "";
+  updateDateTriggerLabels();
   state.samplesPage = 1;
   loadSamples(state.mappingsMachine);
 });
@@ -1625,11 +1829,12 @@ async function openSampleModal(machine, sampleId) {
       const apiStatus = r.api_sent
         ? `<span class="badge badge-success">Sent${r.api_result_id ? " · #" + r.api_result_id : ""}</span>`
         : `<span class="badge">Staged only</span>`;
+      const fullParamName = `${r.param_abbrev || ""} ${r.param_name ? "· " + r.param_name : ""}`.trim();
       tr.innerHTML = `
         <td data-label="Code"><span class="code-pill">${escapeHtml(r.test_code)}</span></td>
         <td data-label="Matched To"><div class="param-id-row">${r.param_id !== null && r.param_id !== undefined
           ? `<span class="match-kind-badge match-kind-param" title="Matched by param_id">param_id</span><span class="param-id">#${r.param_id}</span>`
-          : `<span class="match-kind-badge match-kind-exam" title="No single param - matched by exam (service_tarification_id) instead">service_tarification_id</span><span class="param-id">#${r.service_tarification_id}</span>`}</div><div class="param-name">${escapeHtml(r.param_abbrev || "")} ${r.param_name ? "· " + escapeHtml(r.param_name) : ""}</div></td>
+          : `<span class="match-kind-badge match-kind-exam" title="No single param - matched by exam (service_tarification_id) instead">service_tarification_id</span><span class="param-id">#${r.service_tarification_id}</span>`}</div><div class="param-name" title="${escapeHtml(fullParamName)}">${escapeHtml(r.param_abbrev || "")} ${r.param_name ? "· " + escapeHtml(r.param_name) : ""}</div></td>
         <td data-label="Value" class="value-mono">${escapeHtml(r.result_value)} ${escapeHtml(r.unit || "")}</td>
         <td data-label="Received" class="timestamp-cell">${timeAgo(r.received_at)}</td>
         <td data-label="Clinic API">${apiStatus}</td>
