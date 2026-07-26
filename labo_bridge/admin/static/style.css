@@ -148,10 +148,13 @@ body.modal-open .blob { animation-play-state: paused; }
 /* ---------- Layout ---------- */
 .app { position: relative; z-index: 1; display: grid; grid-template-columns: 280px 1fr; min-height: 100vh; }
 
-@media (max-width: 900px) {
-  .app { grid-template-columns: 1fr; }
-  .sidebar { position: sticky; top: 0; z-index: 20; }
-}
+/* Mobile overrides all live in ONE block near the end of this file, after
+   every base rule they need to beat. They used to be split - a small block
+   here plus another lower down - and because this one sits ABOVE the base
+   .sidebar/.nav declarations, anything it set at equal specificity was
+   silently re-overridden further down (which is how the sidebar kept its
+   desktop `width: 280px; height: 100vh` on phones). Search "Mobile /
+   narrow-viewport layout" for the consolidated block. */
 
 /* ---------- Sidebar ---------- */
 .sidebar {
@@ -569,7 +572,15 @@ body.modal-open .blob { animation-play-state: paused; }
 /* ---------- Table ---------- */
 .table-wrap {
   background: var(--bg-elevated); border: 1px solid var(--border);
-  border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-sm);
+  border-radius: var(--radius); box-shadow: var(--shadow-sm);
+  /* overflow-x, not hidden: on a narrow screen these tables are wider than
+     the viewport, and `hidden` silently CLIPPED the rightmost column - which
+     is where the View / Map it action buttons live, making them unreachable
+     on a phone. Scrolling the table sideways inside its own container also
+     keeps the page body itself from ever scrolling horizontally. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 .data-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .data-table th {
@@ -706,7 +717,12 @@ body.modal-open .blob { animation-play-state: paused; }
    with a sticky header recalculating against everything scrolling under it
    is much more expensive to render than a short, contained inner scrollbox,
    and was the real source of lag when a sample had many matched results. */
-#stab-results .table-wrap { max-height: 360px; overflow-y: auto; contain: content; will-change: scroll-position; }
+/* overflow-x here too, not just the inherited base rule: this selector is
+   more specific than .table-wrap, so declaring only overflow-y would leave
+   the axis ambiguous. Both axes stated explicitly - vertical scrolls within
+   the 360px box, horizontal scrolls when the fixed-width columns below
+   exceed a narrow screen. */
+#stab-results .table-wrap { max-height: 360px; overflow-y: auto; overflow-x: auto; contain: content; will-change: scroll-position; }
 #stab-results .data-table thead th { position: sticky; top: 0; z-index: 1; }
 /* Fixed layout so a long test/parameter name can never balloon its column
    and starve the "Clinic API" status pill of room to render on one line -
@@ -989,9 +1005,148 @@ body.modal-open .blob { animation-play-state: paused; }
 ::-webkit-scrollbar-thumb:hover { background: var(--fg-faint); background-clip: padding-box; }
 
 /* ---------- Responsive ---------- */
-@media (max-width: 700px) {
-  .main { padding: 26px 18px 44px; }
+/* ==========================================================================
+   Mobile / narrow-viewport layout
+   ==========================================================================
+   The desktop layout is a fixed 280px sidebar + fluid main column. Below
+   900px that grid already collapses to a single column (see the .app rule
+   near the top), but the sidebar kept its desktop sizing - `width: 280px`
+   and `height: 100vh` - so on a phone it filled the entire screen and the
+   actual content sat below the fold. Everything here turns that stacked
+   sidebar into a compact horizontal top bar and reflows the content
+   density for touch.
+   ========================================================================== */
+@media (max-width: 900px) {
+  /* Collapse the two-column app grid so main sits below the bar, not
+     beside it. */
+  .app { grid-template-columns: 1fr; }
+
+  /* --- Sidebar becomes a horizontal top bar --- */
+  .sidebar {
+    position: sticky; top: 0; z-index: 20;
+    width: 100%;
+    height: auto;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 12px 16px;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    /* Desktop scrolls the nav inside a tall column; here the bar is short
+       and the page scrolls instead, so an inner scroll would just trap
+       touches. */
+    overflow: visible;
+  }
+  .brand { padding: 0; gap: 10px; }
+  .brand-mark { width: 32px; height: 32px; }
+  .brand-title { font-size: 15px; }
+  .brand-subtitle { display: none; }
+
+  /* Nav sits inline as a scrollable pill row rather than a vertical list. */
+  .nav {
+    display: flex;
+    flex-direction: row;
+    gap: 6px;
+    order: 3;
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+  .nav::-webkit-scrollbar { display: none; }
+  .nav-label { display: none; }
+  .section-nav-item {
+    flex-shrink: 0;
+    /* 44px min height: Apple HIG / Material minimum touch target. The
+       desktop padding alone lands well under that on a phone. */
+    min-height: 44px;
+    padding: 10px 14px;
+    white-space: nowrap;
+  }
+  /* The desktop hover nudge reads as a jitter on touch, where "hover"
+     sticks after a tap. */
+  .section-nav-item:hover { transform: none; }
+
+  .sidebar-footer {
+    flex-direction: row;
+    gap: 8px;
+    order: 2;
+    margin-left: auto;
+  }
+  .status-pill { font-size: 10.5px; padding: 5px 9px; }
+
+  /* --- Main content --- */
+  .main { padding: 22px 16px 48px; }
+  .page-header { flex-direction: column; align-items: flex-start; gap: 16px; }
+  .page-header h1 { font-size: 23px; }
+  .header-right { width: 100%; flex-wrap: wrap; gap: 12px; }
+  .header-stats { flex-wrap: wrap; gap: 8px; }
+  .header-right .btn { min-height: 44px; }
+
+  /* One card per row: the 310px minmax track plus page padding overflows a
+     360px-wide phone, which is what forced the whole page to scroll
+     sideways. */
+  .machine-grid { grid-template-columns: 1fr; gap: 14px; }
+  .machine-card:hover { transform: none; }
+  .machine-card:hover .card-photo { transform: none; }
+
   .field-row { grid-template-columns: 1fr; }
-  .page-header { flex-direction: column; align-items: flex-start; }
-  .mesh-hero { height: 280px; }
+  .mesh-hero { height: 220px; }
+
+  /* --- Tables ---
+     These stay as real tables (rather than reflowing into stacked cards)
+     because the columns are genuinely tabular and comparing values down a
+     column is the point. They scroll sideways inside .table-wrap instead,
+     with a min-width so columns don't crush into unreadable slivers. */
+  .data-table { min-width: 620px; font-size: 13px; }
+  .data-table th { padding: 11px 14px; }
+  .data-table td { padding: 11px 14px; }
+  .col-actions { width: auto; }
+  /* Action buttons were being clipped by the old overflow:hidden; now they
+     scroll into view and are big enough to hit. */
+  .col-actions .btn { min-height: 40px; padding: 8px 14px; }
+  .table-wrap { border-radius: var(--radius); }
+  .panel-toolbar { gap: 10px; }
+  .panel-toolbar input[type="search"], .panel-toolbar input[type="text"] { min-height: 44px; font-size: 16px; }
+
+  .tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { flex-shrink: 0; min-height: 44px; margin-right: 18px; }
+
+  .machine-picker { gap: 8px; }
+  .machine-pill { min-height: 44px; }
+
+  /* --- Modals: full-width sheet with room for the on-screen keyboard --- */
+  .modal { max-width: 100%; max-height: 92vh; border-radius: var(--radius); }
+  .modal-scrim { padding: 12px; align-items: flex-start; }
+  .modal-body { padding: 18px 16px; }
+  .modal-header, .modal-footer { padding: 14px 16px; }
+  .modal-footer { flex-wrap: wrap; gap: 10px; }
+  .modal-footer .btn { min-height: 44px; flex: 1 1 auto; }
+  .modal-footer-right { display: flex; gap: 10px; flex: 1 1 auto; }
+  /* 16px minimum on inputs: iOS Safari auto-zooms the whole page when a
+     focused input's font-size is under 16px, which then leaves the layout
+     zoomed after the keyboard closes. */
+  .field input, .field select, .field textarea { font-size: 16px; min-height: 44px; }
+  .field-collapsed input { font-size: 16px; }
+
+  /* --- Floating UI --- */
+  .toast { left: 12px; right: 12px; bottom: 16px; transform: translateY(24px) scale(0.94); max-width: none; }
+  .toast.show { transform: translateY(0) scale(1); }
+  .ping-all-results { left: 12px; right: 12px; bottom: 16px; max-width: none; min-width: 0; }
+
+  .sample-meta { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; padding: 14px; }
+}
+
+/* Very narrow phones (<=400px): drop to the tightest comfortable density. */
+@media (max-width: 400px) {
+  .main { padding: 18px 12px 40px; }
+  .page-header h1 { font-size: 21px; }
+  .header-stats { width: 100%; }
+  .stat-chip { flex: 1 1 calc(50% - 4px); }
+  .card-metrics { gap: 6px; }
+  .brand-title { font-size: 14px; }
 }

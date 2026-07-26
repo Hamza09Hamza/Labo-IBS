@@ -357,6 +357,14 @@ function changed(prev, key, next) {
   return (prev && prev[key] !== next) ? " flash-update" : "";
 }
 
+// Look up the current record for a machine by its key. Card click handlers
+// are attached once (see renderOverview) and would otherwise close over the
+// `m` from the render that created the card - stale label/color/port by the
+// time someone actually clicks. This always reads today's data instead.
+function machineByKey(key) {
+  return state.machines.find((m) => m.machine === key) || null;
+}
+
 function renderOverview() {
   const totalSamples = state.machines.reduce((a, m) => a + m.sample_count, 0);
   // "Matched" = count of curated mappings (mapped_codes), same number shown on
@@ -409,71 +417,145 @@ function renderOverview() {
     if (isNew) {
       card = document.createElement("div");
       card.dataset.machine = m.machine;
+      // Set once. Assigning className on every poll would silently wipe any
+      // class added to the card elsewhere (a transient highlight, a future
+      // state class) every 2-3s, which is a nasty thing to debug later.
+      card.className = "machine-card";
     }
-    card.className = "machine-card";
-    card.style.setProperty("--m-color", m.color || "");
-    const cardBgClass = m.photo_bg === "card" ? " has-photo-card" : "";
-    card.innerHTML = `
-      <div class="card-photo-frame${cardBgClass}">
-        <div class="card-photo-frame-top">
-          <div class="card-live-badge ${liveClass}">
-            <span class="dot"></span>${liveLabel}
-          </div>
-          <button class="icon-btn card-ping-btn" title="Ping this machine's last known IP" type="button">
-            <svg viewBox="0 0 24 24" fill="none"><path d="M12 22s8-7.2 8-13a8 8 0 10-16 0c0 5.8 8 13 8 13z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="9" r="2.5" stroke="currentColor" stroke-width="1.8"/></svg>
-          </button>
-          <button class="icon-btn card-config-btn" title="Edit machine" type="button">
-            <svg viewBox="0 0 24 24" fill="none"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4L16.5 3.5z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
-        </div>
-        <div class="card-photo-frame-body">
-          ${m.photo
-            ? `<img class="card-photo" src="/${m.photo}" alt="${escapeHtml(m.label)}" loading="lazy">`
-            : `<div class="card-avatar">${escapeHtml(initials(m.label))}</div>`}
-        </div>
-      </div>
-      <h3 class="card-title">${escapeHtml(m.label)}</h3>
-      <p class="card-kind">${escapeHtml(m.kind)}</p>
-      <div class="card-metrics">
-        <div class="card-metric" title="Test codes from this analyzer that have a curated mapping to a clinic parameter/exam — the same count shown on the Mappings screen">
-          <div class="card-metric-value matched${changed(prevMachineStats[m.machine], "mapped_codes", m.mapped_codes)}">${m.mapped_codes}</div>
-          <div class="card-metric-label">Mapped</div>
-        </div>
-        <div class="card-metric" title="Distinct test codes seen from this analyzer with no curated mapping yet — the same list shown on the Mappings 'Pending Codes' tab">
-          <div class="card-metric-value pending${changed(prevMachineStats[m.machine], "pending_count", m.pending_count)}">${m.pending_count}</div>
-          <div class="card-metric-label">Pending</div>
-        </div>
-        <div class="card-metric" title="Distinct samples/orders received from this analyzer">
-          <div class="card-metric-value${changed(prevMachineStats[m.machine], "sample_count", m.sample_count)}">${m.sample_count}</div>
-          <div class="card-metric-label">Samples</div>
-        </div>
-      </div>
-      <div class="card-footer">
-        <span class="protocol-tag">${escapeHtml(m.protocol)}</span>
-        <span>port ${m.port}</span>
-      </div>
-    `;
+    // Guarded: setProperty is a style mutation even when the value is
+    // identical, and this runs once per card per poll.
+    const wantColor = m.color || "";
+    if (card.style.getPropertyValue("--m-color") !== wantColor) {
+      card.style.setProperty("--m-color", wantColor);
+    }
+
+    // Build the card's DOM ONCE, on first creation only. Re-running
+    // innerHTML on every poll tick (~2-3s) destroys and recreates the
+    // <img> element each time, which makes the browser drop and re-decode
+    // the photo - invisible on a warm desktop cache, but on mobile it
+    // reads as the images "blinking"/reloading forever. Subsequent polls
+    // patch just the handful of values that actually change (below), so
+    // the <img> node itself is never touched.
     if (isNew) {
-      // Only attach these once, on first creation - card is now reused
-      // across polls (not recreated), so re-adding listeners here on every
-      // refresh would stack duplicate handlers instead of doing nothing.
+      const cardBgClass = m.photo_bg === "card" ? " has-photo-card" : "";
+      card.innerHTML = `
+        <div class="card-photo-frame${cardBgClass}">
+          <div class="card-photo-frame-top">
+            <div class="card-live-badge ${liveClass}">
+              <span class="dot"></span><span class="live-label">${liveLabel}</span>
+            </div>
+            <button class="icon-btn card-ping-btn" title="Ping this machine's last known IP" type="button">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M12 22s8-7.2 8-13a8 8 0 10-16 0c0 5.8 8 13 8 13z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="9" r="2.5" stroke="currentColor" stroke-width="1.8"/></svg>
+            </button>
+            <button class="icon-btn card-config-btn" title="Edit machine" type="button">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4L16.5 3.5z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+          <div class="card-photo-frame-body">
+            ${m.photo
+              ? `<img class="card-photo" src="/${m.photo}" alt="${escapeHtml(m.label)}" loading="lazy">`
+              : `<div class="card-avatar">${escapeHtml(initials(m.label))}</div>`}
+          </div>
+        </div>
+        <h3 class="card-title">${escapeHtml(m.label)}</h3>
+        <p class="card-kind">${escapeHtml(m.kind)}</p>
+        <div class="card-metrics">
+          <div class="card-metric" title="Test codes from this analyzer that have a curated mapping to a clinic parameter/exam — the same count shown on the Mappings screen">
+            <div class="card-metric-value matched" data-metric="mapped">${m.mapped_codes}</div>
+            <div class="card-metric-label">Mapped</div>
+          </div>
+          <div class="card-metric" title="Distinct test codes seen from this analyzer with no curated mapping yet — the same list shown on the Mappings 'Pending Codes' tab">
+            <div class="card-metric-value pending" data-metric="pending">${m.pending_count}</div>
+            <div class="card-metric-label">Pending</div>
+          </div>
+          <div class="card-metric" title="Distinct samples/orders received from this analyzer">
+            <div class="card-metric-value" data-metric="samples">${m.sample_count}</div>
+            <div class="card-metric-label">Samples</div>
+          </div>
+        </div>
+        <div class="card-footer">
+          <span class="protocol-tag">${escapeHtml(m.protocol)}</span>
+          <span class="card-port">port ${m.port}</span>
+        </div>
+      `;
+      // Attached once, on first creation only - the card node is reused
+      // across polls, so re-adding these every refresh would stack
+      // duplicate handlers.
       card.addEventListener("click", () => {
         state.mappingsMachine = card.dataset.machine;
         showSection("mappings");
       });
+      card.querySelector(".card-config-btn").addEventListener("click", (e) => {
+        e.stopPropagation();
+        openConfigModal(machineByKey(card.dataset.machine) || m);
+      });
+      card.querySelector(".card-ping-btn").addEventListener("click", (e) => {
+        e.stopPropagation();
+        const cur = machineByKey(card.dataset.machine) || m;
+        pingMachine(card.dataset.machine, cur.label);
+      });
       grid.appendChild(card);
     }
-    // .card-config-btn IS replaced every render (innerHTML reset above), so
-    // its listener needs re-attaching every time - cheap, and correctly
-    // captures this render's fresh `m` (label/color/etc.) for the modal.
-    card.querySelector(".card-config-btn").addEventListener("click", (e) => {
-      e.stopPropagation();
-      openConfigModal(m);
-    });
-    card.querySelector(".card-ping-btn").addEventListener("click", (e) => {
-      e.stopPropagation();
-      pingMachine(card.dataset.machine, m.label);
-    });
+
+    // Patch only what can actually change between polls. Every write below
+    // is guarded by a read-compare first: assigning the same string to
+    // textContent still counts as a DOM mutation, and doing that to a dozen
+    // nodes 6 times per card per tick is exactly the kind of pointless
+    // churn that shows up as jank on a phone.
+    const setText = (el, val) => { if (el && el.textContent !== val) el.textContent = val; };
+
+    const badge = card.querySelector(".card-live-badge");
+    const badgeClass = `card-live-badge ${liveClass}`;
+    if (badge.className !== badgeClass) badge.className = badgeClass;
+    setText(badge.querySelector(".live-label"), liveLabel);
+
+    setText(card.querySelector(".card-title"), m.label);
+    setText(card.querySelector(".card-kind"), m.kind);
+    setText(card.querySelector(".protocol-tag"), m.protocol);
+    setText(card.querySelector(".card-port"), `port ${m.port}`);
+
+    const prev = prevMachineStats[m.machine];
+    const metric = (key, statKey, value) => {
+      const el = card.querySelector(`[data-metric="${key}"]`);
+      if (!el) return;
+      setText(el, String(value));
+      // Same highlight-on-change cue as before. .flash-update is a CSS
+      // animation, and the element now persists across polls instead of
+      // being regenerated - so simply re-adding the class on a second
+      // consecutive change would NOT replay it. Remove it, force a reflow,
+      // then re-add so the animation restarts from 0 each time the number
+      // actually moves.
+      if (changed(prev, statKey, value) !== "") {
+        el.classList.remove("flash-update");
+        void el.offsetWidth;
+        el.classList.add("flash-update");
+      }
+    };
+    metric("mapped", "mapped_codes", m.mapped_codes);
+    metric("pending", "pending_count", m.pending_count);
+    metric("samples", "sample_count", m.sample_count);
+
+    // Photo/background can change via the config modal - swap only when it
+    // genuinely differs, so a normal poll never touches the <img>.
+    const frame = card.querySelector(".card-photo-frame");
+    const wantBgClass = m.photo_bg === "card";
+    if (frame.classList.contains("has-photo-card") !== wantBgClass) {
+      frame.classList.toggle("has-photo-card", wantBgClass);
+    }
+    const img = card.querySelector(".card-photo");
+    if (m.photo) {
+      const wantSrc = `/${m.photo}`;
+      if (!img) {
+        card.querySelector(".card-photo-frame-body").innerHTML =
+          `<img class="card-photo" src="${wantSrc}" alt="${escapeHtml(m.label)}" loading="lazy">`;
+      } else if (!img.getAttribute("src").startsWith(wantSrc)) {
+        img.src = wantSrc;
+        img.alt = m.label;
+      }
+    } else if (img) {
+      card.querySelector(".card-photo-frame-body").innerHTML =
+        `<div class="card-avatar">${escapeHtml(initials(m.label))}</div>`;
+    }
   });
 
   // Remove cards for machines that no longer exist (rare - only if a
@@ -1204,13 +1286,26 @@ document.getElementById("configModalSave").addEventListener("click", async () =>
   }
 
   try {
-    await apiPutForm(`/api/machines/${configEditingMachine}/config`, form);
+    const savedMachine = configEditingMachine;
+    const photoChanged = form.has("photo");
+    await apiPutForm(`/api/machines/${savedMachine}/config`, form);
     closeConfigModal();
     const portChanged = form.has("port");
     toast(portChanged
       ? `Settings saved for "${label}". Port change applied immediately.`
       : `Settings saved for "${label}".`, "success");
     await loadMachines();
+    // An uploaded photo always overwrites machines/<machine>.png, so the URL
+    // is byte-identical before and after - the browser would keep serving
+    // the OLD cached image, and renderOverview's "src already matches, skip"
+    // guard wouldn't catch it either. Force this one card's <img> to refetch
+    // with a cache-busting param. Only runs on an actual photo upload, so
+    // normal polls still never touch the image.
+    if (photoChanged) {
+      const img = document.querySelector(
+        `.machine-card[data-machine="${savedMachine}"] .card-photo`);
+      if (img) img.src = `/machines/${savedMachine}.png?v=${Date.now()}`;
+    }
     if (state.activeSection === "mappings" && state.mappingsMachine === configEditingMachine) {
       selectMappingsMachine(configEditingMachine);
     }
