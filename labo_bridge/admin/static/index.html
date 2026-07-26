@@ -58,39 +58,66 @@
       </div>
     </div>
 
-    <nav class="nav">
-      <div class="nav-label">Console</div>
-      <div class="section-nav-item active" data-section="machines">
-        <div class="section-nav-icon">
-          <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M8 20h8M12 16v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-        </div>
-        <span>Machines</span>
-      </div>
-      <div class="section-nav-item" data-section="mappings">
-        <div class="section-nav-icon">
-          <svg viewBox="0 0 24 24" fill="none"><path d="M9 15l6-6M10 6.5l1.2-1.2a3.5 3.5 0 015 5L15 11.5M14 17.5l-1.2 1.2a3.5 3.5 0 01-5-5L9 12.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </div>
-        <span>Mappings</span>
-      </div>
-      <div class="section-nav-item" data-section="api-settings">
-        <div class="section-nav-icon">
-          <svg viewBox="0 0 24 24" fill="none"><path d="M12 8.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7z" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 13.5a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V19.5a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1.08-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H4.5a2 2 0 110-4h.09a1.65 1.65 0 001.51-1.08 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H10a1.65 1.65 0 001-1.51V4.5a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V10a1.65 1.65 0 001.51 1h.09a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
-        </div>
-        <span>API Settings</span>
-      </div>
-    </nav>
+    <!-- Mobile-only: the vertical nav below is hidden below 900px and
+         shown instead as a slide-out drawer, opened by this button. -->
+    <button class="nav-toggle" id="navToggle" aria-label="Open menu" aria-expanded="false">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
 
-    <div class="sidebar-footer">
-      <div class="status-pill" id="pgStatusPill">
-        <span class="status-dot"></span>
-        <span class="status-text">Checking DB…</span>
+    <!-- .drawer-panel is `display: contents` by default (see style.css) -
+         invisible to layout on desktop, where .nav/.sidebar-footer are
+         still direct flex children of .sidebar exactly as before. Only
+         below 900px does it become the real fixed/sliding drawer surface
+         that groups both together as one panel. -->
+    <div class="drawer-panel">
+      <!-- Mobile-only (see style.css) - a small header just for the
+           drawer, giving it an explicit close affordance beyond
+           tap-outside/re-tapping the hamburger. -->
+      <div class="drawer-header">
+        <span class="drawer-header-title">Labo Bridge</span>
+        <button class="icon-btn" id="drawerClose" aria-label="Close menu">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
       </div>
-      <div class="status-pill" id="apiStatusPill">
-        <span class="status-dot"></span>
-        <span class="status-text">Checking API…</span>
+
+      <nav class="nav">
+        <div class="nav-label">Console</div>
+        <div class="section-nav-item active" data-section="machines">
+          <div class="section-nav-icon">
+            <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M8 20h8M12 16v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </div>
+          <span>Machines</span>
+        </div>
+        <div class="section-nav-item" data-section="mappings">
+          <div class="section-nav-icon">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M9 15l6-6M10 6.5l1.2-1.2a3.5 3.5 0 015 5L15 11.5M14 17.5l-1.2 1.2a3.5 3.5 0 01-5-5L9 12.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <span>Mappings</span>
+        </div>
+        <div class="section-nav-item" data-section="api-settings">
+          <div class="section-nav-icon">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M12 8.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7z" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 13.5a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V19.5a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1.08-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H4.5a2 2 0 110-4h.09a1.65 1.65 0 001.51-1.08 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H10a1.65 1.65 0 001-1.51V4.5a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V10a1.65 1.65 0 001.51 1h.09a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+          </div>
+          <span>API Settings</span>
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="status-pill" id="pgStatusPill">
+          <span class="status-dot"></span>
+          <span class="status-text">Checking DB…</span>
+        </div>
+        <div class="status-pill" id="apiStatusPill">
+          <span class="status-dot"></span>
+          <span class="status-text">Checking API…</span>
+        </div>
       </div>
     </div>
   </aside>
+
+  <!-- Mobile-only: dark backdrop behind the slide-out nav drawer. Closes
+       the drawer on tap, same pattern as the modal scrims. -->
+  <div class="drawer-scrim" id="drawerScrim"></div>
 
   <!-- ============ MAIN ============ -->
   <main class="main">

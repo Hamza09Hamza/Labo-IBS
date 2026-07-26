@@ -254,8 +254,31 @@ async function loadStatus() {
 // Section navigation (Machines / Mappings / API Settings)
 // ---------------------------------------------------------------------------
 
+// Mobile nav drawer (hamburger toggle) - the vertical Machines/Mappings/
+// API Settings nav lives off-canvas below 900px instead of squeezed into
+// the top bar (see style.css's mobile block for why the inline-row
+// attempt didn't work). closeNavDrawer is also called from showSection
+// so picking a section always closes the drawer behind it.
+function openNavDrawer() {
+  document.querySelector(".app").classList.add("nav-open");
+  document.getElementById("drawerScrim").classList.add("open");
+  document.getElementById("navToggle").setAttribute("aria-expanded", "true");
+}
+function closeNavDrawer() {
+  document.querySelector(".app").classList.remove("nav-open");
+  document.getElementById("drawerScrim").classList.remove("open");
+  document.getElementById("navToggle").setAttribute("aria-expanded", "false");
+}
+document.getElementById("navToggle").addEventListener("click", () => {
+  const isOpen = document.querySelector(".app").classList.contains("nav-open");
+  if (isOpen) closeNavDrawer(); else openNavDrawer();
+});
+document.getElementById("drawerScrim").addEventListener("click", closeNavDrawer);
+document.getElementById("drawerClose").addEventListener("click", closeNavDrawer);
+
 function showSection(section) {
   state.activeSection = section;
+  closeNavDrawer();
   document.querySelectorAll(".section-nav-item").forEach((el) => {
     el.classList.toggle("active", el.dataset.section === section);
   });
@@ -666,10 +689,10 @@ async function loadPending(machine) {
   state.pending.forEach((r) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td><span class="code-pill">${escapeHtml(r.test_code)}</span></td>
-      <td><span class="value-mono">${escapeHtml(r.sample_value)} ${escapeHtml(r.sample_unit || "")}</span></td>
-      <td>${r.seen_count}×</td>
-      <td class="timestamp-cell">${timeAgo(r.last_seen)}</td>
+      <td data-label="Test Code"><span class="code-pill">${escapeHtml(r.test_code)}</span></td>
+      <td data-label="Sample Value"><span class="value-mono">${escapeHtml(r.sample_value)} ${escapeHtml(r.sample_unit || "")}</span></td>
+      <td data-label="Times Seen">${r.seen_count}×</td>
+      <td data-label="Last Seen" class="timestamp-cell">${timeAgo(r.last_seen)}</td>
       <td class="col-actions">
         <button class="btn btn-ghost map-pending-btn" ${state.editable ? "" : "disabled"}>Map it</button>
       </td>
@@ -717,11 +740,11 @@ function renderSamplesTable(filter = "") {
     const tr = document.createElement("tr");
     if (isNew) tr.className = "row-enter";
     tr.innerHTML = `
-      <td><span class="code-pill">${escapeHtml(id)}</span></td>
-      <td>${escapeHtml(s.paillasse || "—")}</td>
-      <td>${escapeHtml((s.patient_name || "").trim() || "—")}</td>
-      <td class="value-mono">${escapeHtml(s.source_ip || "—")}</td>
-      <td class="timestamp-cell">${timeAgo(s.received_at)}</td>
+      <td data-label="Sample ID"><span class="code-pill">${escapeHtml(id)}</span></td>
+      <td data-label="Paillasse">${escapeHtml(s.paillasse || "—")}</td>
+      <td data-label="Patient">${escapeHtml((s.patient_name || "").trim() || "—")}</td>
+      <td data-label="Source IP" class="value-mono">${escapeHtml(s.source_ip || "—")}</td>
+      <td data-label="Received" class="timestamp-cell">${timeAgo(s.received_at)}</td>
       <td class="col-actions">
         <button class="btn btn-ghost view-sample-btn">View</button>
       </td>
@@ -751,18 +774,18 @@ function renderMappedTable(filter = "") {
   rows.forEach((r) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td><span class="code-pill">${escapeHtml(r.code)}</span></td>
-      <td>
+      <td data-label="Machine Code"><span class="code-pill">${escapeHtml(r.code)}</span></td>
+      <td data-label="Matched To">
         <div class="param-id-row">${r.param_id !== null
           ? `<span class="match-kind-badge match-kind-param" title="Matched by param_id">param_id</span><span class="param-id">#${r.param_id}</span>`
           : `<span class="match-kind-badge match-kind-exam" title="No single param - matched by exam (service_tarification_id) instead">service_tarification_id</span><span class="param-id">#${r.service_tarification_id}</span>`}</div>
         <div class="param-name">${escapeHtml(r.abbrev || "")} ${r.name ? "· " + escapeHtml(r.name) : ""}</div>
       </td>
-      <td><span class="exam-tag">${escapeHtml(r.service_tarification_name || "—")}</span></td>
-      <td>${r.last_value !== null
+      <td data-label="Exam"><span class="exam-tag">${escapeHtml(r.service_tarification_name || "—")}</span></td>
+      <td data-label="Last Value">${r.last_value !== null
         ? `<span class="value-mono">${escapeHtml(r.last_value)} ${escapeHtml(r.last_unit || "")}</span>`
         : '<span class="muted-cell">no data yet</span>'}</td>
-      <td class="timestamp-cell">${timeAgo(r.last_seen)}</td>
+      <td data-label="Last Seen" class="timestamp-cell">${timeAgo(r.last_seen)}</td>
       <td class="col-actions">
         <div class="row-actions">
           <button class="icon-btn edit-btn" title="Edit" ${state.editable ? "" : "disabled"}>
@@ -1502,13 +1525,13 @@ async function openSampleModal(machine, sampleId) {
         ? `<span class="badge badge-success">Sent${r.api_result_id ? " · #" + r.api_result_id : ""}</span>`
         : `<span class="badge">Staged only</span>`;
       tr.innerHTML = `
-        <td><span class="code-pill">${escapeHtml(r.test_code)}</span></td>
-        <td><div class="param-id-row">${r.param_id !== null && r.param_id !== undefined
+        <td data-label="Code"><span class="code-pill">${escapeHtml(r.test_code)}</span></td>
+        <td data-label="Matched To"><div class="param-id-row">${r.param_id !== null && r.param_id !== undefined
           ? `<span class="match-kind-badge match-kind-param" title="Matched by param_id">param_id</span><span class="param-id">#${r.param_id}</span>`
           : `<span class="match-kind-badge match-kind-exam" title="No single param - matched by exam (service_tarification_id) instead">service_tarification_id</span><span class="param-id">#${r.service_tarification_id}</span>`}</div><div class="param-name">${escapeHtml(r.param_abbrev || "")} ${r.param_name ? "· " + escapeHtml(r.param_name) : ""}</div></td>
-        <td class="value-mono">${escapeHtml(r.result_value)} ${escapeHtml(r.unit || "")}</td>
-        <td class="timestamp-cell">${timeAgo(r.received_at)}</td>
-        <td>${apiStatus}</td>
+        <td data-label="Value" class="value-mono">${escapeHtml(r.result_value)} ${escapeHtml(r.unit || "")}</td>
+        <td data-label="Received" class="timestamp-cell">${timeAgo(r.received_at)}</td>
+        <td data-label="Clinic API">${apiStatus}</td>
       `;
       tbody.appendChild(tr);
     });

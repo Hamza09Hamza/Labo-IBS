@@ -1016,67 +1016,128 @@ body.modal-open .blob { animation-play-state: paused; }
    sidebar into a compact horizontal top bar and reflows the content
    density for touch.
    ========================================================================== */
+/* Shown only below 900px (see the media query below) - a fixed hamburger
+   button that toggles the nav drawer. Positioned/hidden here via a plain
+   rule rather than inside the media query so it never flashes visible at
+   desktop widths while the stylesheet is still loading. */
+.nav-toggle {
+  display: none;
+  width: 40px; height: 40px; border-radius: 10px;
+  background: var(--bg-elevated); border: 1px solid var(--border); color: var(--fg);
+  align-items: center; justify-content: center; cursor: pointer;
+  box-shadow: var(--shadow-sm);
+}
+.nav-toggle svg { width: 20px; height: 20px; }
+
+.drawer-scrim {
+  display: none;
+  position: fixed; inset: 0; z-index: 30;
+  background: var(--scrim-bg);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  opacity: 0; pointer-events: none;
+  transition: opacity var(--dur) var(--ease);
+}
+.drawer-scrim.open { opacity: 1; pointer-events: auto; }
+
+/* Wraps .nav + .sidebar-footer so the mobile drawer can treat them as ONE
+   sliding panel (see the media query). `display: contents` makes this
+   wrapper invisible to layout at desktop widths - .nav and .sidebar-footer
+   remain direct flex children of .sidebar exactly as before this element
+   was introduced, unaffected by its presence in the DOM. */
+.drawer-panel { display: contents; }
+.drawer-header { display: none; }
+
 @media (max-width: 900px) {
   /* Collapse the two-column app grid so main sits below the bar, not
      beside it. */
   .app { grid-template-columns: 1fr; }
 
-  /* --- Sidebar becomes a horizontal top bar --- */
+  /* --- Sidebar becomes a slim top bar (brand + hamburger only) ---
+     A first attempt tried to squeeze the vertical nav into a horizontal
+     row inline in this same bar - it silently vanished, because the base
+     .nav rule sets `flex: 1` with no basis, and inside a wrapping row that
+     was already fighting the brand block and footer for space, it
+     collapsed to zero width instead of wrapping onto its own line. Rather
+     than fight that cascade, the nav moves into an off-canvas drawer
+     instead - the standard, more robust mobile pattern for a short list
+     of top-level destinations. */
   .sidebar {
     position: sticky; top: 0; z-index: 20;
     width: 100%;
     height: auto;
     flex-direction: row;
     align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
     gap: 12px;
-    padding: 12px 16px;
+    padding: 10px 14px;
     border-right: none;
     border-bottom: 1px solid var(--border);
-    /* Desktop scrolls the nav inside a tall column; here the bar is short
-       and the page scrolls instead, so an inner scroll would just trap
-       touches. */
     overflow: visible;
   }
-  .brand { padding: 0; gap: 10px; }
+  .brand { padding: 0; gap: 10px; flex: 1; min-width: 0; }
   .brand-mark { width: 32px; height: 32px; }
   .brand-title { font-size: 15px; }
   .brand-subtitle { display: none; }
 
-  /* Nav sits inline as a scrollable pill row rather than a vertical list. */
-  .nav {
-    display: flex;
-    flex-direction: row;
-    gap: 6px;
-    order: 3;
-    width: 100%;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    padding-bottom: 2px;
+  .nav-toggle { display: flex; order: -1; }
+
+  /* The nav + footer become one drawer PANEL (not two independently
+     positioned elements - an earlier version gave both `top:0; bottom:0`
+     and let .sidebar-footer override just `top:auto`, which left both
+     stretching to the viewport bottom at once and overlapping). This
+     wrapper is what's actually fixed/slid; .nav and .sidebar-footer are
+     laid out as its two flex children instead, nav taking the scrollable
+     remaining space and the footer sitting below it at its natural height. */
+  .drawer-panel {
+    position: fixed;
+    top: 0; bottom: 0; left: 0;
+    z-index: 31;
+    width: min(78vw, 300px);
+    display: flex; flex-direction: column;
+    background: var(--sidebar-bg);
+    backdrop-filter: blur(28px) saturate(1.4);
+    -webkit-backdrop-filter: blur(28px) saturate(1.4);
+    transform: translateX(-100%);
+    transition: transform 280ms var(--spring);
+    box-shadow: var(--shadow-lg);
   }
-  .nav::-webkit-scrollbar { display: none; }
-  .nav-label { display: none; }
-  .section-nav-item {
+  .drawer-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px; flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .drawer-header-title { font-size: 15px; font-weight: 700; }
+
+  .nav {
+    flex-direction: column;
+    gap: 5px;
+    padding: 16px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  /* The footer (DB/API status pills) sits below the nav in the same
+     drawer panel, at its own natural height (not stretched/positioned
+     independently), rather than needing a second slide-out surface. */
+  .sidebar-footer {
+    flex-direction: column;
+    gap: 8px;
+    padding: 16px;
+    border-top: 1px solid var(--border);
     flex-shrink: 0;
-    /* 44px min height: Apple HIG / Material minimum touch target. The
+  }
+  .app.nav-open .drawer-panel { transform: translateX(0); }
+
+  .nav-label { padding: 0 10px; margin-bottom: 4px; }
+  .section-nav-item {
+    /* 44px min height: Apple HIG / Material minimum touch target - the
        desktop padding alone lands well under that on a phone. */
     min-height: 44px;
-    padding: 10px 14px;
-    white-space: nowrap;
   }
   /* The desktop hover nudge reads as a jitter on touch, where "hover"
      sticks after a tap. */
   .section-nav-item:hover { transform: none; }
 
-  .sidebar-footer {
-    flex-direction: row;
-    gap: 8px;
-    order: 2;
-    margin-left: auto;
-  }
-  .status-pill { font-size: 10.5px; padding: 5px 9px; }
+  .status-pill { font-size: 11px; }
 
   /* --- Main content --- */
   .main { padding: 22px 16px 48px; }
@@ -1096,21 +1157,67 @@ body.modal-open .blob { animation-play-state: paused; }
   .field-row { grid-template-columns: 1fr; }
   .mesh-hero { height: 220px; }
 
-  /* --- Tables ---
-     These stay as real tables (rather than reflowing into stacked cards)
-     because the columns are genuinely tabular and comparing values down a
-     column is the point. They scroll sideways inside .table-wrap instead,
-     with a min-width so columns don't crush into unreadable slivers. */
-  .data-table { min-width: 620px; font-size: 13px; }
-  .data-table th { padding: 11px 14px; }
-  .data-table td { padding: 11px 14px; }
+  /* --- Tables: reflow into stacked cards, one per row ---
+     A first pass just let these tables scroll sideways in .table-wrap.
+     For a 5-6 column table on a ~360px phone that meant the row you
+     actually wanted (an action button, a value 4 columns over) was
+     scrolled off-screen and easy to miss - "a lot of stuff I can't get
+     into just because I'm on mobile". Below this breakpoint, each <tr>
+     becomes its own card and each <td> becomes a labeled line instead -
+     the label text is pulled straight from that column's real <th>, so
+     if a column is ever added/renamed/reordered in the HTML the mobile
+     label updates automatically without touching this CSS. */
+  .table-wrap { border-radius: var(--radius); overflow: visible; }
+  .data-table, .data-table thead, .data-table tbody, .data-table tr, .data-table td { display: block; width: 100%; }
+  .data-table thead tr { position: absolute; top: -9999px; left: -9999px; } /* keep headers for screen readers, hide visually */
+  .data-table tbody tr {
+    border: 1px solid var(--border); border-radius: var(--radius);
+    margin-bottom: 12px; padding: 6px 14px; background: var(--bg-elevated);
+  }
+  .data-table tbody tr:last-child { margin-bottom: 0; }
+  .data-table td {
+    /* A label line on its own row, then the cell's real content below it -
+     * simpler and more robust than trying to keep everything on one flex
+     * row, since a couple of these cells ("Matched To") contain TWO
+     * sibling <div>s (an id/badge row, then a name below it) rather than
+     * one plain value. Wrapping would otherwise force those two divs to
+     * become flex siblings of the label and sit awkwardly side by side. */
+    display: flex; flex-direction: column; align-items: flex-end; gap: 3px;
+    padding: 10px 0; border-bottom: 1px solid var(--border); text-align: right;
+  }
+  .data-table td:last-child { border-bottom: none; }
+  .data-table td::before {
+    content: attr(data-label);
+    font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--fg-faint); align-self: flex-start;
+  }
+  /* No data-label attribute is ever set on the actions column (it has no
+     real header text to show) - content: attr() on a missing attribute
+     still generates an empty-but-present pseudo-element, so suppress it
+     explicitly by selector rather than relying on :empty (these cells
+     hold a real button/icon, so they're never actually :empty). */
+  .data-table td.col-actions::before { content: none; }
+  /* Right-align "Matched To"'s two stacked divs to match every other
+     right-aligned cell value, and let the badge row wrap on its own line
+     instead of forcing a stretch. */
+  .data-table .param-id-row { justify-content: flex-end; width: 100%; }
+  .data-table .param-name { text-align: right; width: 100%; }
+  /* No label (::before is suppressed on this empty-data-label cell), so
+     it's just the button(s) - .data-table td's own align-items:flex-end
+     already right-aligns it; only the width needs resetting from the
+     desktop fixed 90px. */
   .col-actions { width: auto; }
-  /* Action buttons were being clipped by the old overflow:hidden; now they
-     scroll into view and are big enough to hit. */
-  .col-actions .btn { min-height: 40px; padding: 8px 14px; }
-  .table-wrap { border-radius: var(--radius); }
+  /* Action buttons were being clipped by the old overflow:hidden; now every
+     row is fully visible top to bottom, no horizontal scroll needed. */
+  .col-actions .btn, .row-actions .icon-btn { min-height: 40px; padding: 8px 14px; }
   .panel-toolbar { gap: 10px; }
   .panel-toolbar input[type="search"], .panel-toolbar input[type="text"] { min-height: 44px; font-size: 16px; }
+  /* #stab-results (sample detail modal) sets table-layout/fixed widths
+     that only make sense for a real grid - irrelevant once each row is
+     its own block-level card. */
+  #stab-results .data-table { table-layout: auto; }
+  #stab-results .data-table th, #stab-results .data-table td { width: auto !important; }
+  #stab-results .data-table td { overflow: visible; }
 
   .tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
   .tabs::-webkit-scrollbar { display: none; }
