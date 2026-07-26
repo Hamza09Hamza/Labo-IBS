@@ -1094,6 +1094,7 @@ body.modal-open .blob { animation-play-state: paused; }
   .sidebar {
     position: sticky; top: 0; z-index: 20;
     width: 100%;
+    min-width: 0; /* same grid-item-min-width trap as .main below - cheap insurance */
     height: auto;
     flex-direction: row;
     align-items: center;
@@ -1185,7 +1186,19 @@ body.modal-open .blob { animation-play-state: paused; }
   .status-pill { font-size: 11px; }
 
   /* --- Main content --- */
-  .main { padding: 22px 16px 48px; }
+  /* THE actual root cause of every "cut off on the right" screenshot:
+     .app is `display: grid`, and a grid item's default min-width is
+     `auto` - meaning the 1fr column refuses to shrink below its content's
+     intrinsic minimum width, even though 1fr sounds like it should fill
+     whatever space is available. Long non-wrapping content anywhere
+     inside .main (badge pills, "editable map", table cell text) was
+     setting that intrinsic minimum to ~476px, so the whole .main column
+     rendered at 476px inside a 390px viewport and got visually clipped -
+     confirmed by measuring getComputedStyle(.app).gridTemplateColumns
+     (476px) against the real 390px viewport width in a headless Chrome
+     session emulating an iPhone-width screen. min-width: 0 overrides the
+     "auto" default and lets the grid track actually shrink to fit. */
+  .main { padding: 22px 16px 48px; min-width: 0; }
   .page-header { flex-direction: column; align-items: flex-start; gap: 16px; }
   .page-header h1 { font-size: 23px; }
   .header-right { width: 100%; flex-wrap: wrap; gap: 12px; }
