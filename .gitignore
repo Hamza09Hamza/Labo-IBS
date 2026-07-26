@@ -5,6 +5,9 @@ cyanvision_captures/
 *.db
 labo_bridge.db
 
+# Live app state (port overrides), not source
+runtime_ports.json
+
 # Python
 __pycache__/
 *.pyc
