@@ -1102,6 +1102,21 @@ body.modal-open .blob { animation-play-state: paused; }
     border-right: none;
     border-bottom: 1px solid var(--border);
     overflow: visible;
+    /* CRITICAL: the desktop rule's backdrop-filter is inherited here
+       unless explicitly cleared - and per spec, an element with an active
+       backdrop-filter becomes the CONTAINING BLOCK for any position:fixed
+       descendant, instead of the viewport. .drawer-panel below is
+       position:fixed and IS a descendant of this element - with the
+       filter left on, its `top:0; bottom:0` were being resolved against
+       this ~60px-tall top bar, not the actual viewport, which is exactly
+       why the drawer rendered as a squished, near-invisible sliver
+       showing only "the lower part of the sidebar", tinted from blurring
+       that tiny bar's own content instead of the full page behind it.
+       Solid background here too, since a blurred top bar over a solid
+       page reads as muddy at this size anyway. */
+    background: var(--bg-elevated);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
   .brand { padding: 0; gap: 10px; flex: 1; min-width: 0; }
   .brand-mark { width: 32px; height: 32px; }
@@ -1264,9 +1279,15 @@ body.modal-open .blob { animation-play-state: paused; }
   #stab-results .data-table th, #stab-results .data-table td { width: auto !important; }
   #stab-results .data-table td { overflow: visible; }
 
-  .tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; display: flex; align-items: center; }
   .tabs::-webkit-scrollbar { display: none; }
-  .tab { flex-shrink: 0; min-height: 44px; margin-right: 18px; }
+  /* white-space: nowrap is the actual fix - "Recent Samples"/"Pending
+     Codes" have no fixed width, and without this the two-word label could
+     wrap to a second line ("Recent" / "Samples") that then read as if the
+     tab only said "Recent". flex-shrink:0 alone (the previous rule) only
+     stops the BUTTON from shrinking, it says nothing about whether the
+     TEXT inside it is allowed to wrap. */
+  .tab { flex-shrink: 0; min-height: 44px; margin-right: 18px; white-space: nowrap; display: flex; align-items: center; }
 
   .machine-picker { gap: 8px; }
   .machine-pill { min-height: 44px; }
