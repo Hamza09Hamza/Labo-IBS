@@ -546,74 +546,49 @@ body.modal-open .blob { animation-play-state: paused; }
 .search-box input { background: none; border: none; outline: none; color: var(--fg); font-size: 13.5px; width: 100%; font-family: var(--font-body); }
 .search-box input::placeholder { color: var(--fg-faint); }
 
-.date-filter { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; position: relative; }
+.date-filter { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
 .date-filter-field {
   display: flex; flex-direction: column; gap: 4px;
   font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
   color: var(--fg-faint);
 }
-/* Custom trigger replacing the native <input type="date"> - the native
-   picker's own UI (calendar icon, popup) differs per browser, can't be
-   restyled, and on some mobile browsers is noticeably slow to open. This
-   is a plain button that opens .date-calendar below, styled to match
-   every other input in the app instead of the OS's own date widget. */
-.date-trigger {
-  display: flex; align-items: center; gap: 8px;
+/* Native <input type="date"> - a custom-built popover calendar was tried
+   twice here and broke twice in ways that only showed up in a real
+   browser (once collapsing to 0x0 inside a tab panel, once rendering
+   with its right-hand columns and buttons cut off past the screen edge
+   for a trigger sitting near the right side of a wide viewport). The
+   native picker's OWN popup can't be restyled by CSS - no framework can
+   change that, it's drawn by the OS/browser shell outside the page - but
+   the FIELD itself (what you see before you click it) is styled to match
+   every other input in the app, and the browser's own default calendar
+   icon is hidden and replaced with one that matches the rest of the
+   app's icon set. */
+.date-filter-field input {
   background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 10px;
   padding: 9px 12px; color: var(--fg); font-size: 13px; font-family: var(--font-body);
-  box-shadow: var(--shadow-sm); cursor: pointer;
+  box-shadow: var(--shadow-sm);
   transition: border-color var(--dur) var(--ease);
 }
-.date-trigger:hover { border-color: var(--border-strong); }
-.date-trigger.open { border-color: var(--accent); }
-.date-trigger svg { width: 15px; height: 15px; color: var(--fg-faint); flex-shrink: 0; }
-.date-trigger-label { white-space: nowrap; }
-.date-trigger-label.is-set { color: var(--fg); font-weight: 600; }
-/* Reset sits at trigger height (not the label's) so it lines up with the
+.date-filter-field input:focus { outline: none; border-color: var(--accent); }
+/* Hide the browser's own calendar-icon glyph and draw our own SVG one in
+   its place instead, so the field reads as fully custom even though the
+   popup that opens on click is still the native one. */
+.date-filter-field input::-webkit-calendar-picker-indicator {
+  opacity: 0; position: absolute; right: 8px; width: 20px; height: 20px; cursor: pointer;
+}
+.date-filter-field {
+  position: relative;
+}
+.date-filter-field::after {
+  content: ""; position: absolute; right: 12px; bottom: 11px;
+  width: 15px; height: 15px; pointer-events: none;
+  background: var(--fg-faint);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8'%3E%3Crect x='3' y='5' width='18' height='16' rx='2'/%3E%3Cpath d='M3 10h18M8 3v4M16 3v4'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8'%3E%3Crect x='3' y='5' width='18' height='16' rx='2'/%3E%3Cpath d='M3 10h18M8 3v4M16 3v4'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+/* Reset sits at input height (not the label's) so it lines up with the
    two date fields rather than the shorter label text above them. */
 #samplesDateReset { align-self: flex-end; }
-
-/* ---------- Custom calendar popover ---------- */
-/* Lives at the document root (see index.html), not nested inside
-   .date-filter/.tab-panel - so this is position:fixed with real viewport
-   coordinates set by app.js's openDateCalendar, not position:absolute
-   relying on a positioned ancestor that may be display:none. */
-.date-calendar {
-  position: fixed; top: 0; left: 0; z-index: 40;
-  width: 280px; padding: 14px;
-  background: var(--bg-elevated); border: 1px solid var(--border-strong);
-  border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
-  animation: dateCalendarIn 160ms var(--ease);
-}
-@keyframes dateCalendarIn { from { opacity: 0; transform: translateY(-6px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
-.date-calendar-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-.date-calendar-header .icon-btn { width: 30px; height: 30px; }
-.date-calendar-title { font-size: 13.5px; font-weight: 700; }
-.date-calendar-weekdays {
-  display: grid; grid-template-columns: repeat(7, 1fr); text-align: center;
-  font-size: 10.5px; font-weight: 700; color: var(--fg-faint); margin-bottom: 4px;
-}
-.date-calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
-.date-calendar-day {
-  aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
-  border: none; background: none; border-radius: 8px; cursor: pointer;
-  font-family: var(--font-mono); font-size: 12.5px; color: var(--fg);
-  transition: background var(--dur) var(--ease);
-}
-.date-calendar-day:hover { background: var(--surface-hover); }
-.date-calendar-day.outside-month { color: var(--fg-faint); opacity: 0.5; }
-.date-calendar-day.today { font-weight: 700; color: var(--accent-strong); }
-.date-calendar-day.selected { background: var(--accent); color: #fff; font-weight: 700; }
-/* In-range days (between a set From and To) get a soft tint so the whole
-   selected span reads visually, not just its two endpoints. */
-.date-calendar-day.in-range { background: color-mix(in srgb, var(--accent) 14%, transparent); }
-.date-calendar-footer { display: flex; gap: 8px; margin-top: 10px; }
-.date-calendar-footer .btn { flex: 1; min-height: 36px; padding: 8px 10px; font-size: 12.5px; }
-/* Desktop: the popover anchors directly below its trigger, no backdrop
-   needed (same convention as the combo-results dropdowns elsewhere in
-   this app). Mobile centers it as a real modal moment instead (see the
-   media query), where a backdrop is the right call. */
-.date-calendar-scrim { display: none; }
 
 .pager {
   display: flex; align-items: center; justify-content: space-between;
@@ -1378,24 +1353,8 @@ body.modal-open .blob { animation-play-state: paused; }
      would each be too narrow to read their own value. */
   .date-filter { width: 100%; }
   .date-filter-field { flex: 1 1 40%; }
-  .date-trigger { min-height: 44px; font-size: 14px; width: 100%; }
+  .date-filter-field input { min-height: 44px; font-size: 16px; width: 100%; }
   #samplesDateReset { min-height: 44px; flex-shrink: 0; }
-  /* Popover anchors to the trigger's position on desktop, but on a narrow
-     phone that can push it off-screen sideways - center it in the
-     viewport instead and give it a backdrop so it reads as a real modal
-     moment rather than a misplaced dropdown. */
-  .date-calendar {
-    position: fixed; top: 50%; left: 50%; right: auto;
-    transform: translate(-50%, -50%);
-    width: min(92vw, 320px);
-    z-index: 60;
-  }
-  .date-calendar-day { font-size: 13.5px; }
-  .date-calendar-scrim.open {
-    display: block; position: fixed; inset: 0; z-index: 59;
-    background: var(--scrim-bg);
-    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
-  }
 
   /* Pager: stack the summary above the controls, and give Prev/Next/page
      numbers real touch-target sizing. */

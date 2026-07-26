@@ -640,7 +640,10 @@ async function selectMappingsMachine(machine) {
     state.samplesPage = 1;
     state.samplesDateFrom = "";
     state.samplesDateTo = "";
-    updateDateTriggerLabels();
+    const fromEl = document.getElementById("samplesDateFrom");
+    const toEl = document.getElementById("samplesDateTo");
+    if (fromEl) fromEl.value = "";
+    if (toEl) toEl.value = "";
     const searchEl = document.getElementById("samplesSearch");
     if (searchEl) searchEl.value = "";
   }
@@ -859,199 +862,28 @@ function renderSamplesPager() {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Custom date-range calendar (replaces native <input type="date">)
-// ---------------------------------------------------------------------------
-// The native picker's UI differs per browser/OS, can't be restyled to match
-// the rest of the app, and was reported as slow to open on mobile. This is
-// a small custom calendar popover shared between the From and To triggers -
-// dateCalState.which tracks which one is currently being edited.
-
-const dateCalState = { which: null, viewYear: null, viewMonth: null };
-
-function ymd(y, m, d) {
-  return `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-}
-
-function parseYmd(s) {
-  if (!s) return null;
-  const [y, m, d] = s.split("-").map(Number);
-  return { y, m: m - 1, d };
-}
-
-function formatDateLabel(s) {
-  if (!s) return "Any";
-  const { y, m, d } = parseYmd(s);
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  return `${months[m]} ${d}, ${y}`;
-}
-
-function updateDateTriggerLabels() {
-  const fromLabel = document.getElementById("samplesDateFromLabel");
-  const toLabel = document.getElementById("samplesDateToLabel");
-  fromLabel.textContent = formatDateLabel(state.samplesDateFrom);
-  fromLabel.classList.toggle("is-set", !!state.samplesDateFrom);
-  toLabel.textContent = formatDateLabel(state.samplesDateTo);
-  toLabel.classList.toggle("is-set", !!state.samplesDateTo);
-}
-
-function renderDateCalendar() {
-  const { viewYear, viewMonth, which } = dateCalState;
-  const months = ["January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December"];
-  document.getElementById("dateCalendarTitle").textContent = `${months[viewMonth]} ${viewYear}`;
-
-  const selectedStr = which === "from" ? state.samplesDateFrom : state.samplesDateTo;
-  const selected = parseYmd(selectedStr);
-  const fromD = parseYmd(state.samplesDateFrom);
-  const toD = parseYmd(state.samplesDateTo);
-  const today = new Date();
-  const todayStr = ymd(today.getFullYear(), today.getMonth(), today.getDate());
-
-  const firstOfMonth = new Date(viewYear, viewMonth, 1);
-  const startWeekday = firstOfMonth.getDay(); // 0=Sun
-  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
-  const daysInPrevMonth = new Date(viewYear, viewMonth, 0).getDate();
-
-  const cells = [];
-  // Leading days from the previous month, so the grid always starts on Sunday.
-  for (let i = 0; i < startWeekday; i++) {
-    cells.push({ day: daysInPrevMonth - startWeekday + 1 + i, outside: true });
-  }
-  for (let d = 1; d <= daysInMonth; d++) cells.push({ day: d, outside: false });
-  // Trailing days so the grid is always a full multiple of 7 (5 or 6 rows).
-  while (cells.length % 7 !== 0) {
-    cells.push({ day: cells.length - (startWeekday + daysInMonth) + 1, outside: true });
-  }
-
-  const grid = document.getElementById("dateCalendarGrid");
-  grid.innerHTML = cells.map((c) => {
-    const cellStr = c.outside ? null : ymd(viewYear, viewMonth, c.day);
-    const classes = ["date-calendar-day"];
-    if (c.outside) classes.push("outside-month");
-    if (cellStr === todayStr) classes.push("today");
-    if (cellStr && selected && cellStr === ymd(selected.y, selected.m, selected.d)) classes.push("selected");
-    if (cellStr && fromD && toD && cellStr >= ymd(fromD.y, fromD.m, fromD.d) && cellStr <= ymd(toD.y, toD.m, toD.d)) {
-      classes.push("in-range");
-    }
-    const disabled = c.outside ? "disabled" : "";
-    return `<button class="${classes.join(" ")}" ${disabled} data-date="${cellStr || ""}">${c.day}</button>`;
-  }).join("");
-
-  grid.querySelectorAll(".date-calendar-day:not(.outside-month)").forEach((btn) => {
-    btn.addEventListener("click", () => selectDate(btn.dataset.date));
-  });
-}
-
-function selectDate(dateStr) {
-  state.samplesPage = 1;
-  if (dateCalState.which === "from") {
-    state.samplesDateFrom = dateStr;
-  } else {
-    state.samplesDateTo = dateStr;
-  }
-  updateDateTriggerLabels();
-  renderDateCalendar();
+// Native <input type="date"> - a custom popover calendar was tried twice
+// and broke twice in ways only visible in a real browser (collapsed to
+// 0x0 inside a hidden tab panel, then rendered cut off past the right
+// edge of the screen for a trigger sitting on the right side of a wide
+// viewport). The native picker handles its own popup placement/sizing
+// with no positioning code to get wrong - see style.css for how the
+// field itself (not the OS popup) is styled to match the rest of the app.
+document.getElementById("samplesDateFrom").addEventListener("change", (e) => {
+  state.samplesDateFrom = e.target.value;
+  state.samplesPage = 1; // a changed filter always restarts at page 1
   loadSamples(state.mappingsMachine);
-  closeDateCalendar();
-}
-
-function openDateCalendar(which) {
-  dateCalState.which = which;
-  const current = which === "from" ? state.samplesDateFrom : state.samplesDateTo;
-  const base = current ? parseYmd(current) : (() => { const t = new Date(); return { y: t.getFullYear(), m: t.getMonth() }; })();
-  dateCalState.viewYear = base.y;
-  dateCalState.viewMonth = base.m;
-
-  const trigger = document.getElementById(which === "from" ? "samplesDateFromTrigger" : "samplesDateToTrigger");
-  const cal = document.getElementById("dateCalendar");
-  const otherTrigger = document.getElementById(which === "from" ? "samplesDateToTrigger" : "samplesDateFromTrigger");
-  otherTrigger.classList.remove("open");
-  trigger.classList.add("open");
-
-  // The calendar lives at the document root now (see index.html - it used
-  // to be nested inside #panel-samples/.panel-toolbar, a .tab-panel that's
-  // `display: none` whenever its tab isn't active; a descendant of a
-  // display:none ancestor collapses to a 0x0 box regardless of its own
-  // hidden attribute, which is exactly the bug a user found: hidden
-  // correctly became false and dateCalState updated, but
-  // getBoundingClientRect() came back all zeros). Since it's no longer
-  // nested inside .date-filter, position it with real VIEWPORT coordinates
-  // (position: fixed, see CSS) instead of the old offset-from-parent math.
-  if (window.innerWidth > 900) {
-    const rect = trigger.getBoundingClientRect();
-    cal.style.left = `${rect.left}px`;
-    cal.style.top = `${rect.bottom + 8}px`;
-  } else {
-    // Mobile's CSS centers it instead (left/top: 50% + translate(-50%,
-    // -50%)) - an inline style always wins over a stylesheet rule
-    // regardless of media query, so it must be cleared here or it would
-    // clobber that centering with a stale desktop position.
-    cal.style.left = "";
-    cal.style.top = "";
-  }
-
-  cal.hidden = false;
-  document.getElementById("dateCalendarScrim").hidden = false;
-  document.getElementById("dateCalendarScrim").classList.add("open");
-  renderDateCalendar();
-}
-
-function closeDateCalendar() {
-  dateCalState.which = null;
-  document.getElementById("dateCalendar").hidden = true;
-  document.getElementById("samplesDateFromTrigger").classList.remove("open");
-  document.getElementById("samplesDateToTrigger").classList.remove("open");
-  const scrim = document.getElementById("dateCalendarScrim");
-  scrim.classList.remove("open");
-  scrim.hidden = true;
-}
-
-document.getElementById("samplesDateFromTrigger").addEventListener("click", (e) => {
-  e.stopPropagation();
-  if (dateCalState.which === "from") { closeDateCalendar(); return; }
-  openDateCalendar("from");
 });
-document.getElementById("samplesDateToTrigger").addEventListener("click", (e) => {
-  e.stopPropagation();
-  if (dateCalState.which === "to") { closeDateCalendar(); return; }
-  openDateCalendar("to");
-});
-document.getElementById("dateCalendar").addEventListener("click", (e) => e.stopPropagation());
-document.getElementById("dateCalendarScrim").addEventListener("click", closeDateCalendar);
-document.addEventListener("click", (e) => {
-  if (dateCalState.which && !document.getElementById("dateCalendar").contains(e.target)) closeDateCalendar();
-});
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && dateCalState.which) closeDateCalendar();
-});
-document.querySelector(".date-calendar-prev").addEventListener("click", () => {
-  dateCalState.viewMonth -= 1;
-  if (dateCalState.viewMonth < 0) { dateCalState.viewMonth = 11; dateCalState.viewYear -= 1; }
-  renderDateCalendar();
-});
-document.querySelector(".date-calendar-next").addEventListener("click", () => {
-  dateCalState.viewMonth += 1;
-  if (dateCalState.viewMonth > 11) { dateCalState.viewMonth = 0; dateCalState.viewYear += 1; }
-  renderDateCalendar();
-});
-document.querySelector(".date-calendar-today").addEventListener("click", () => {
-  const t = new Date();
-  selectDate(ymd(t.getFullYear(), t.getMonth(), t.getDate()));
-});
-document.querySelector(".date-calendar-clear").addEventListener("click", () => {
+document.getElementById("samplesDateTo").addEventListener("change", (e) => {
+  state.samplesDateTo = e.target.value;
   state.samplesPage = 1;
-  if (dateCalState.which === "from") state.samplesDateFrom = "";
-  else state.samplesDateTo = "";
-  updateDateTriggerLabels();
   loadSamples(state.mappingsMachine);
-  closeDateCalendar();
 });
-
 document.getElementById("samplesDateReset").addEventListener("click", () => {
   state.samplesDateFrom = "";
   state.samplesDateTo = "";
-  updateDateTriggerLabels();
+  document.getElementById("samplesDateFrom").value = "";
+  document.getElementById("samplesDateTo").value = "";
   state.samplesPage = 1;
   loadSamples(state.mappingsMachine);
 });
