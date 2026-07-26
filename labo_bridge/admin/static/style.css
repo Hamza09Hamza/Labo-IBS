@@ -341,7 +341,7 @@ body.modal-open .blob { animation-play-state: paused; }
 .machine-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(310px, 1fr)); gap: 20px; }
 
 .machine-card {
-  background: linear-gradient(165deg, var(--bg-elevated) 0%, color-mix(in srgb, var(--m-color, var(--accent)) 5%, var(--bg-elevated)) 100%);
+  background: linear-gradient(165deg, color-mix(in srgb, var(--m-color, var(--accent)) 9%, var(--bg-elevated)) 0%, var(--bg-elevated) 55%, color-mix(in srgb, var(--m-color, var(--accent)) 6%, var(--bg-elevated)) 100%);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 24px;
