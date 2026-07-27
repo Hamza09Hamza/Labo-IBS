@@ -671,7 +671,7 @@ async function selectMappingsMachine(machine) {
   // every few seconds instead of just updating quietly in place.
   skeletonizeTable("mappedTableBody", 6, 5);
   skeletonizeTable("pendingTableBody", 5, 5);
-  skeletonizeTable("samplesTableBody", 6, 6);
+  skeletonizeTable("samplesTableBody", 4, 6);
 
   // Promise.allSettled (not .all): one panel failing to load must not blank
   // out the other two - each of the 3 tables loads and reports independently.
@@ -787,9 +787,7 @@ function renderSamplesTable() {
     if (isNew) tr.className = "row-enter";
     tr.innerHTML = `
       <td data-label="Sample ID"><span class="code-pill">${escapeHtml(id)}</span></td>
-      <td data-label="Paillasse">${escapeHtml(s.paillasse || "—")}</td>
       <td data-label="Patient">${escapeHtml((s.patient_name || "").trim() || "—")}</td>
-      <td data-label="Source IP" class="value-mono">${escapeHtml(s.source_ip || "—")}</td>
       <td data-label="Received" class="timestamp-cell">${timeAgo(s.received_at)}</td>
       <td class="col-actions">
         <button class="btn btn-ghost view-sample-btn">View</button>
