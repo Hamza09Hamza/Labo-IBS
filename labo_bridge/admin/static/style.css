@@ -118,6 +118,14 @@ h1, h2, h3 { font-family: var(--font-body); letter-spacing: -0.02em; }
     radial-gradient(600px 320px at 55% 60%, color-mix(in srgb, var(--accent-3) 16%, transparent), transparent 65%),
     linear-gradient(180deg, var(--bg-page) 0%, var(--bg-page) 100%);
   filter: saturate(1.15);
+  /* The band's own hard bottom edge (height: 420px, no fade) was reported
+     as a visible horizontal seam/"white line" once the settle-animation
+     stopped continuously drifting color across it - while animating, the
+     eye doesn't catch a static edge, but frozen in place it's obvious.
+     Masking the bottom ~25% down to transparent removes the seam without
+     touching the gradient colors themselves. */
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 75%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 0%, #000 75%, transparent 100%);
   /* Plays ONCE on load (2 iterations = one full there-and-back cycle),
      then stops - not `infinite`. This ran forever on every single page
      for the entire session (reported as the page getting slower the
