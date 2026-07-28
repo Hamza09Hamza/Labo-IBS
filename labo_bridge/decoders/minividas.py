@@ -73,9 +73,17 @@ def decode_frame(payload: str) -> list:
     cup_id = fields.get("ci", "").strip()
     test_code = fields.get("rt", "").strip()
     test_name = fields.get("rn", "").strip() or test_code
-    # Prefer the quantitative value; fall back to the qualitative reading
-    # (e.g. "Negatif"/"Positif") when a test has no numeric result at all.
-    value = fields.get("qn", "").strip() or fields.get("ql", "").strip()
+    # Many VIDAS assays (HIV, HCV, ...) send BOTH a numeric index (qn) and
+    # its qualitative interpretation (ql, e.g. "Negatif"/"Positif") in the
+    # same frame - keeping only qn silently dropped the interpretation the
+    # clinic actually reads at a glance. Combine both when present; fall
+    # back to whichever one exists for tests that only ever send one.
+    qn = fields.get("qn", "").strip()
+    ql = fields.get("ql", "").strip()
+    if qn and ql:
+        value = f"{qn} ({ql})"
+    else:
+        value = qn or ql
 
     return [
         {"kind": "patient", "patient_id": patient_id, "patient_name": patient_name,
