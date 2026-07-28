@@ -165,6 +165,19 @@ def _ingest_result(session, sample_id, rec):
             print(f"[{machine}] {line}")
         return
 
+    # "CAL elitech" is the Selectra's own calibration check running under a
+    # normal sample_id (not caught by selectra.py's O-record calibration
+    # filter, which only recognizes empty/STD-prefixed sample IDs) - not a
+    # patient test, so it shouldn't surface in Pending for mapping. Scoped
+    # to this exact test_code, same narrow approach as the Ca2+ skip above.
+    if machine == "selectra" and rec.get("test_code") == "CAL elitech":
+        line = (f"SKIPPED result (CAL elitech - calibration check, not a "
+                f"patient test) sample={sample_id!r:14}")
+        session.parsed_lines.append(line)
+        if not quiet:
+            print(f"[{machine}] {line}")
+        return
+
     m = matcher.match(machine, rec.get("test_code", ""))
 
     if m["method"] == "curated":
