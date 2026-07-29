@@ -1668,19 +1668,25 @@ async function openSampleModal(machine, sampleId) {
         <td data-label="Matched To"><div class="param-id-row">${r.param_id !== null && r.param_id !== undefined
           ? `<span class="match-kind-badge match-kind-param" title="Matched by param_id">param_id</span><span class="param-id">#${r.param_id}</span>`
           : `<span class="match-kind-badge match-kind-exam" title="No single param - matched by exam (service_tarification_id) instead">service_tarification_id</span><span class="param-id">#${r.service_tarification_id}</span>`}</div><div class="param-name" title="${escapeHtml(fullParamName)}">${escapeHtml(r.param_abbrev || "")} ${r.param_name ? "· " + escapeHtml(r.param_name) : ""}</div></td>
-        <td data-label="Value" class="value-mono">${escapeHtml(r.result_value)} ${escapeHtml(r.unit || "")}</td>
+        <td data-label="Value" class="value-mono">${escapeHtml(r.result_value)} ${escapeHtml(r.unit || "")}${r.dual_value ? ` <span class="badge" title="dual_value sent to clinic API">${escapeHtml(r.dual_value)}</span>` : ""}</td>
         <td data-label="Received" class="timestamp-cell">${timeAgo(r.received_at)}</td>
         <td data-label="Clinic API">${apiStatus}</td>
       `;
       tbody.appendChild(tr);
     });
 
-    // The clinic-API JSON shape: one item per matched result.
+    // The clinic-API JSON shape: one item per matched result. machine_id is
+    // preferred (per API_LABO_MACHINE_RESULT.md); falls back to the machine
+    // name only when no machine_id is configured - same precedence as
+    // api_client.build_item() actually uses when sending for real.
     const jsonPayload = matched.map((r) => {
       const item = { sample_id: sampleId, result_value: r.result_value };
       if (r.unit) item.unit = r.unit;
+      if (r.dual_value) item.dual_value = r.dual_value;
       if (r.param_id != null) item.param_id = r.param_id;
       else if (r.service_tarification_id != null) item.service_tarification_id = r.service_tarification_id;
+      if (data.machine_id != null) item.machine_id = data.machine_id;
+      else item.machine = machine;
       return item;
     });
     document.getElementById("sampleJson").textContent = JSON.stringify(jsonPayload, null, 2);

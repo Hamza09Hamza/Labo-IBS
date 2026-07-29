@@ -73,17 +73,17 @@ def decode_frame(payload: str) -> list:
     cup_id = fields.get("ci", "").strip()
     test_code = fields.get("rt", "").strip()
     test_name = fields.get("rn", "").strip() or test_code
-    # Many VIDAS assays (HIV, HCV, ...) send BOTH a numeric index (qn) and
-    # its qualitative interpretation (ql, e.g. "Negatif"/"Positif") in the
-    # same frame - keeping only qn silently dropped the interpretation the
-    # clinic actually reads at a glance. Combine both when present; fall
-    # back to whichever one exists for tests that only ever send one.
+    # Many VIDAS assays (HCV, ...) send BOTH a numeric index (qn) and its
+    # qualitative interpretation (ql, e.g. "Negatif"/"Positif") in the same
+    # frame - confirmed via real capture (2026-07-28) that some assays (HIV
+    # DUO AG/AB) send the qn field present but EMPTY, qualitative-only by
+    # design, not a decoder gap. qn is the primary result_value; ql (when
+    # present) goes to its own dual_value slot per the clinic API's
+    # dual_value field, rather than being merged into one string.
     qn = fields.get("qn", "").strip()
     ql = fields.get("ql", "").strip()
-    if qn and ql:
-        value = f"{qn} ({ql})"
-    else:
-        value = qn or ql
+    value = qn or ql
+    dual_value = ql if (qn and ql) else ""
 
     return [
         {"kind": "patient", "patient_id": patient_id, "patient_name": patient_name,
@@ -93,7 +93,7 @@ def decode_frame(payload: str) -> list:
         # gets a stable per-run identity instead of an empty string.
         {"kind": "order", "sample_id": sample_id or cup_id, "raw": payload},
         {"kind": "result", "test_code": test_code, "test_name": test_name,
-         "value": value, "unit": "", "ref_range": "",
+         "value": value, "dual_value": dual_value, "unit": "", "ref_range": "",
          "flag": fields.get("ql", "").strip(),
          "status": "measured" if fields.get("qn") else "qualitative",
          "raw": payload},

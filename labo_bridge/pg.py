@@ -263,15 +263,16 @@ def write_matched_result(machine, sample_id, specimen, test_code, match, rec,
                 INSERT INTO labo_bridge.labo_bridge_results
                     (machine, sample_id, specimen_year, specimen_month,
                      specimen_sequence, paillasse, paillasse_name, test_code,
-                     param_id, param_abbrev, param_name, result_value, unit,
-                     flag, service_tarification_id, service_tarification_name,
-                     api_sent, api_result_id)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                     param_id, param_abbrev, param_name, result_value,
+                     dual_value, unit, flag, service_tarification_id,
+                     service_tarification_name, api_sent, api_result_id)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 """,
                 (machine, sample_id.strip(), specimen.get("year"),
                  specimen.get("month"), specimen.get("sequence"),
                  paillasse_code, paillasse_name, test_code, match["param_id"],
                  match["abbrev"], match["name"], rec.get("value", ""),
+                 rec.get("dual_value") or None,
                  rec.get("unit", ""), rec.get("flag", ""),
                  match.get("service_tarification_id"),
                  match.get("service_tarification_name"),

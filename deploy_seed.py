@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS labo_bridge.labo_bridge_results (
     param_abbrev TEXT,
     param_name TEXT,
     result_value TEXT,
+    dual_value TEXT,
     unit TEXT,
     flag TEXT,
     received_at TIMESTAMP NOT NULL DEFAULT now(),
@@ -125,6 +126,7 @@ CREATE TABLE IF NOT EXISTS labo_bridge.machine_config (
     updated_at TIMESTAMP NOT NULL DEFAULT now()
 );
 ALTER TABLE labo_bridge.machine_config ADD COLUMN IF NOT EXISTS ip_address TEXT;
+ALTER TABLE labo_bridge.labo_bridge_results ADD COLUMN IF NOT EXISTS dual_value TEXT;
 """
 
 # Snapshot of machine_config as of 2026-07-21 (this dev database). Update

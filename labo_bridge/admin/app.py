@@ -569,7 +569,12 @@ def api_sample_detail(machine, sample_id):
     for r in matched:
         if r.get("received_at") is not None:
             r["received_at"] = r["received_at"].isoformat()
-    return jsonify({"sample": sample, "matched": matched})
+    machine_meta = _machine_meta().get(machine, {})
+    return jsonify({
+        "sample": sample,
+        "matched": matched,
+        "machine_id": machine_meta.get("machine_id"),
+    })
 
 
 # ---------------------------------------------------------------------------

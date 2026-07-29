@@ -42,4 +42,4 @@ if __name__ == "__main__":
     admin_thread.start()
     print("[admin] Labo Bridge Admin running at http://127.0.0.1:5050\n")
 
-    server.run_all(quiet=True)
+    server.run_all()

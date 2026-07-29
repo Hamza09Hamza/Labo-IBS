@@ -202,6 +202,7 @@ def _ingest_result(session, sample_id, rec):
                                          if not m.get("param_id") else None,
                 machine=machine,
                 machine_id=_get_machine_id(machine),
+                dual_value=rec.get("dual_value") or None,
             )
             session.api_batch.append({"item": item, "sample_id": sample_id,
                                        "test_code": rec.get("test_code", "")})
@@ -246,17 +247,11 @@ def _write_session_file(session):
     """
     Disabled on deployed/production servers: writing one file per session
     (every sample, every calibration cycle, every retransmission) grows
-    results/ unboundedly under real continuous machine traffic.
-
-    TEMPORARY (2026-07-28): scoped to minividas only, to capture a real HIV
-    result frame's raw tags and confirm whether the Mini VIDAS actually
-    sends a numeric index (qn) for HIV or only the qualitative reading (ql).
-    Revert to the unconditional `return` once that capture is done - every
-    other machine (xn330/ismart/selectra/cyanvision) must stay disabled here,
-    same reasoning as above (unbounded file growth under real traffic).
+    results/ unboundedly under real continuous machine traffic. Re-enable
+    (delete this early return) only for local debugging of a specific
+    machine's raw wire format.
     """
-    if session.machine != "minividas":
-        return
+    return
     os.makedirs(RESULTS_DIR, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     fname = os.path.join(RESULTS_DIR, f"{session.machine}_{ts}.txt")
@@ -284,7 +279,8 @@ def _write_session_file(session):
         f.write("\n-- Parsed results --\n")
         for parsed_line in session.parsed_lines:
             f.write(parsed_line + "\n")
-    print(f"[{session.machine}] saved session log to {fname}")
+    if not session.quiet:
+        print(f"[{session.machine}] saved session log to {fname}")
 
 
 class _Session:
@@ -524,9 +520,8 @@ def _serve_one_machine(machine: str, quiet: bool, stop_event: threading.Event):
     port = runtime_ports.get_port_for(machine, cfg["port"])
 
     sock = _bind_socket(machine, port)
-    if not quiet:
-        print(f"[{machine}] listening on {HOST}:{port} ({cfg['protocol'].upper()}). "
-              f"Storage: Postgres (labo_bridge schema)")
+    print(f"[{machine}] listening on {HOST}:{port} ({cfg['protocol'].upper()}). "
+          f"Storage: Postgres (labo_bridge schema)")
     live_status.set_listening(machine, datetime.now().isoformat(timespec="seconds"))
 
     if cfg["protocol"] == "hl7":
@@ -566,8 +561,7 @@ def _serve_one_machine(machine: str, quiet: bool, stop_event: threading.Event):
             # is unresponsive and correctly fall back to "listening".
             conn.settimeout(CONNECTION_IDLE_TIMEOUT_SECONDS)
             now_iso = datetime.now().isoformat(timespec="seconds")
-            if not quiet:
-                print(f"[{machine}] connected by {addr[0]}:{addr[1]} at {now_iso}")
+            print(f"[{machine}] connected by {addr[0]}:{addr[1]} at {now_iso}")
             live_status.set_connected(machine, now_iso, addr[0])
             try:
                 handler(conn, addr, cfg, machine, quiet)
@@ -575,8 +569,7 @@ def _serve_one_machine(machine: str, quiet: bool, stop_event: threading.Event):
                 print(f"[{machine}] error handling connection: {e}")
             finally:
                 conn.close()
-            if not quiet:
-                print(f"[{machine}] ready for next connection.")
+            print(f"[{machine}] ready for next connection.")
             live_status.set_listening(machine, datetime.now().isoformat(timespec="seconds"))
     finally:
         sock.close()

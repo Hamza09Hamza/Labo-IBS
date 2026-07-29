@@ -58,10 +58,17 @@ def send_results(items: list) -> dict:
 
 
 def build_item(sample_id, result_value, unit=None, param_id=None,
-               service_tarification_id=None, machine=None, machine_id=None):
+               service_tarification_id=None, machine=None, machine_id=None,
+               dual_value=None):
     """
     Build one request item per the API contract: sample_id + result_value
     required, exactly one of param_id/service_tarification_id required.
+
+    dual_value: a second qualitative reading alongside result_value (e.g.
+    Mini VIDAS assays like HCV that report both a numeric index and a
+    Negatif/Positif interpretation in the same result) - per the clinic
+    API's dual_value field. Omitted entirely when not applicable, same as
+    unit, rather than sent as an empty string.
     """
     if param_id is None and service_tarification_id is None:
         raise ValueError("build_item requires param_id or service_tarification_id")
@@ -69,6 +76,8 @@ def build_item(sample_id, result_value, unit=None, param_id=None,
     item = {"sample_id": sample_id, "result_value": result_value}
     if unit:
         item["unit"] = unit
+    if dual_value:
+        item["dual_value"] = dual_value
     if param_id is not None:
         item["param_id"] = param_id
     if service_tarification_id is not None:
