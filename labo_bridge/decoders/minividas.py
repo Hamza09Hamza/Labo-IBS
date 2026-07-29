@@ -29,7 +29,10 @@ add them here rather than guessing):
     tt  test time (HH:MM)
     td  test date (MM/DD/YY)
     ql  qualitative result (e.g. "Negatif", "Positif")
-    qn  quantitative/numeric result
+    qn  quantitative/numeric result - a bare number for some assays (HCV:
+        "0.03"), "<number> <unit>" for others (FT3: "3.39 pmol/l", FT4:
+        "12.79 pmol/l"), or present-but-empty for qualitative-only assays
+        (HIV DUO AG/AB) - confirmed via real captures 2026-07-28/29.
     qd  dilution factor flag
 """
 
@@ -82,6 +85,14 @@ def decode_frame(payload: str) -> list:
     # dual_value field, rather than being merged into one string.
     qn = fields.get("qn", "").strip()
     ql = fields.get("ql", "").strip()
+    # qn itself can carry a trailing unit (confirmed via real capture
+    # 2026-07-29: FT3 -> "3.39 pmol/l", FT4 -> "12.79 pmol/l" - always
+    # "<number> <unit>", one space). HCV's qn ("0.03") has no unit at all -
+    # split on the FIRST space only, so a bare number is left untouched.
+    unit = ""
+    if qn and " " in qn:
+        num_part, unit = qn.split(" ", 1)
+        qn = num_part
     value = qn or ql
     dual_value = ql if (qn and ql) else ""
 
@@ -93,7 +104,7 @@ def decode_frame(payload: str) -> list:
         # gets a stable per-run identity instead of an empty string.
         {"kind": "order", "sample_id": sample_id or cup_id, "raw": payload},
         {"kind": "result", "test_code": test_code, "test_name": test_name,
-         "value": value, "dual_value": dual_value, "unit": "", "ref_range": "",
+         "value": value, "dual_value": dual_value, "unit": unit, "ref_range": "",
          "flag": fields.get("ql", "").strip(),
          "status": "measured" if fields.get("qn") else "qualitative",
          "raw": payload},
