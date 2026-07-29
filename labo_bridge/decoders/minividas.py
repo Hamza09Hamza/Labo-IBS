@@ -40,6 +40,14 @@ import re
 
 TAG_RE = re.compile(r"^([a-z]{2})(.*)$")
 
+# qn's shape: optional leading "<"/">" (detection-limit marker, e.g. Vitamine
+# D's "< 8.1 ng/ml"), then the number itself, then an optional trailing unit
+# separated by whitespace (e.g. "3.39 pmol/l"). "prefix" and "number" are
+# joined back together for the result value; "unit" (whatever follows the
+# number) becomes its own field. A bare number with no prefix/unit (HCV's
+# "0.03") still matches, with both optional groups empty.
+QN_RE = re.compile(r"^(?P<prefix>[<>]\s*)?(?P<number>[\d.,]+)(?P<unit>.*)$")
+
 
 def parse_fields(text: str) -> dict:
     """Split a frame's payload (already stripped of STX/leading RS) into
@@ -86,13 +94,20 @@ def decode_frame(payload: str) -> list:
     qn = fields.get("qn", "").strip()
     ql = fields.get("ql", "").strip()
     # qn itself can carry a trailing unit (confirmed via real capture
-    # 2026-07-29: FT3 -> "3.39 pmol/l", FT4 -> "12.79 pmol/l" - always
-    # "<number> <unit>", one space). HCV's qn ("0.03") has no unit at all -
-    # split on the FIRST space only, so a bare number is left untouched.
+    # 2026-07-29: FT3 -> "3.39 pmol/l", FT4 -> "12.79 pmol/l") and/or a
+    # leading "<"/">" detection-limit marker (confirmed via real capture
+    # 2026-07-29: Vitamine D -> "< 8.1 ng/ml", displayed as one string in
+    # the admin UI). A naive split on the FIRST space breaks on the
+    # detection-limit case (the space right after "<" isn't the number/unit
+    # boundary) - QN_RE instead matches an optional </> prefix, the number
+    # itself, then treats everything else as the unit. HCV's qn ("0.03")
+    # has no unit at all and still matches cleanly (unit group empty).
     unit = ""
-    if qn and " " in qn:
-        num_part, unit = qn.split(" ", 1)
-        qn = num_part
+    if qn:
+        m = QN_RE.match(qn)
+        if m:
+            qn = (m.group("prefix") or "") + m.group("number")
+            unit = (m.group("unit") or "").strip()
     value = qn or ql
     dual_value = ql if (qn and ql) else ""
 
