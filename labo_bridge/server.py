@@ -247,11 +247,18 @@ def _write_session_file(session):
     """
     Disabled on deployed/production servers: writing one file per session
     (every sample, every calibration cycle, every retransmission) grows
-    results/ unboundedly under real continuous machine traffic. Re-enable
-    (delete this early return) only for local debugging of a specific
-    machine's raw wire format.
+    results/ unboundedly under real continuous machine traffic.
+
+    TEMPORARY (2026-07-29): scoped to minividas only, to capture a real
+    quantitative result's raw qn tag (TSH showed "2.50 uUI/ml" as one
+    combined string in result_value - need to see whether the unit is
+    always embedded in qn this way, and in what format, before writing a
+    real fix instead of guessing at a regex). Revert to the unconditional
+    `return` once that capture is done - every other machine must stay
+    disabled here, same reasoning as above.
     """
-    return
+    if session.machine != "minividas":
+        return
     os.makedirs(RESULTS_DIR, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     fname = os.path.join(RESULTS_DIR, f"{session.machine}_{ts}.txt")
@@ -279,8 +286,7 @@ def _write_session_file(session):
         f.write("\n-- Parsed results --\n")
         for parsed_line in session.parsed_lines:
             f.write(parsed_line + "\n")
-    if not session.quiet:
-        print(f"[{session.machine}] saved session log to {fname}")
+    print(f"[{session.machine}] saved session log to {fname}")
 
 
 class _Session:
@@ -520,8 +526,9 @@ def _serve_one_machine(machine: str, quiet: bool, stop_event: threading.Event):
     port = runtime_ports.get_port_for(machine, cfg["port"])
 
     sock = _bind_socket(machine, port)
-    print(f"[{machine}] listening on {HOST}:{port} ({cfg['protocol'].upper()}). "
-          f"Storage: Postgres (labo_bridge schema)")
+    if not quiet:
+        print(f"[{machine}] listening on {HOST}:{port} ({cfg['protocol'].upper()}). "
+              f"Storage: Postgres (labo_bridge schema)")
     live_status.set_listening(machine, datetime.now().isoformat(timespec="seconds"))
 
     if cfg["protocol"] == "hl7":
@@ -561,7 +568,8 @@ def _serve_one_machine(machine: str, quiet: bool, stop_event: threading.Event):
             # is unresponsive and correctly fall back to "listening".
             conn.settimeout(CONNECTION_IDLE_TIMEOUT_SECONDS)
             now_iso = datetime.now().isoformat(timespec="seconds")
-            print(f"[{machine}] connected by {addr[0]}:{addr[1]} at {now_iso}")
+            if not quiet:
+                print(f"[{machine}] connected by {addr[0]}:{addr[1]} at {now_iso}")
             live_status.set_connected(machine, now_iso, addr[0])
             try:
                 handler(conn, addr, cfg, machine, quiet)
@@ -569,7 +577,8 @@ def _serve_one_machine(machine: str, quiet: bool, stop_event: threading.Event):
                 print(f"[{machine}] error handling connection: {e}")
             finally:
                 conn.close()
-            print(f"[{machine}] ready for next connection.")
+            if not quiet:
+                print(f"[{machine}] ready for next connection.")
             live_status.set_listening(machine, datetime.now().isoformat(timespec="seconds"))
     finally:
         sock.close()
