@@ -1668,7 +1668,7 @@ async function openSampleModal(machine, sampleId) {
         <td data-label="Matched To"><div class="param-id-row">${r.param_id !== null && r.param_id !== undefined
           ? `<span class="match-kind-badge match-kind-param" title="Matched by param_id">param_id</span><span class="param-id">#${r.param_id}</span>`
           : `<span class="match-kind-badge match-kind-exam" title="No single param - matched by exam (service_tarification_id) instead">service_tarification_id</span><span class="param-id">#${r.service_tarification_id}</span>`}</div><div class="param-name" title="${escapeHtml(fullParamName)}">${escapeHtml(r.param_abbrev || "")} ${r.param_name ? "· " + escapeHtml(r.param_name) : ""}</div></td>
-        <td data-label="Value" class="value-mono">${escapeHtml(r.result_value)} ${escapeHtml(r.unit || "")}${r.dual_value ? ` <span class="badge" title="dual_value sent to clinic API">${escapeHtml(r.dual_value)}</span>` : ""}</td>
+        <td data-label="Value"><div class="value-with-dual"><span class="value-mono">${escapeHtml(r.result_value)} ${escapeHtml(r.unit || "")}</span>${r.dual_value ? `<span class="badge" title="dual_value sent to clinic API">${escapeHtml(r.dual_value)}</span>` : ""}</div></td>
         <td data-label="Received" class="timestamp-cell">${timeAgo(r.received_at)}</td>
         <td data-label="Clinic API">${apiStatus}</td>
       `;

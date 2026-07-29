@@ -741,6 +741,11 @@ body.modal-open .blob { animation-play-state: paused; }
   border: 1.5px solid color-mix(in srgb, var(--warning) 45%, transparent);
 }
 .value-mono { font-family: var(--font-mono); font-size: 13px; font-weight: 600; }
+/* A single text-space between the mono value and the dual_value badge
+   rendered too tight (badge is an inline <span>, no margin of its own) -
+   a real flex gap keeps them clearly separated regardless of content
+   width, without needing the badge itself to carry table-specific spacing. */
+.value-with-dual { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .muted-cell { color: var(--fg-faint); font-style: italic; font-size: 12.5px; }
 .timestamp-cell { color: var(--fg-faint); font-family: var(--font-mono); font-size: 12px; white-space: nowrap; }
 
