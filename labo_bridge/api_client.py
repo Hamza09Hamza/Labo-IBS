@@ -111,16 +111,23 @@ def send_batch(machine: str, queued: list) -> list:
     connection error, where no per-item breakdown exists).
 
     Returns a list of dicts, one per queued item, each
-    {"sample_id", "test_code", "api_sent": bool, "api_result_id": int|None} -
-    server.py uses this to update the local labo_bridge_results row it
-    already wrote for every matched result, so the admin UI (sample detail,
-    mapped-table "last value") can show what actually happened to a result
-    sent via the API, not just what's visible in this terminal log.
+    {"sample_id", "test_code", "param_id", "service_tarification_id",
+    "api_sent": bool, "api_result_id": int|None} - server.py uses this to
+    update the local labo_bridge_results row it already wrote for every
+    matched result, so the admin UI (sample detail, mapped-table "last
+    value") can show what actually happened to a result sent via the API,
+    not just what's visible in this terminal log. param_id/
+    service_tarification_id are carried through (not just sample_id/
+    test_code) so a test_code matching more than one clinic target
+    (matcher.match_all(), multiple rows for the same test_code) marks the
+    correct sibling row instead of an arbitrary one.
     """
     if not queued:
         return []
 
     outcomes = [{"sample_id": e["sample_id"], "test_code": e["test_code"],
+                "param_id": e.get("param_id"),
+                "service_tarification_id": e.get("service_tarification_id"),
                 "api_sent": False, "api_result_id": None} for e in queued]
 
     items = [entry["item"] for entry in queued]

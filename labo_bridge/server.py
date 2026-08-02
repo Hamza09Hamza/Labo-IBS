@@ -178,39 +178,51 @@ def _ingest_result(session, sample_id, rec):
             print(f"[{machine}] {line}")
         return
 
-    m = matcher.match(machine, rec.get("test_code", ""))
+    matches = matcher.match_all(machine, rec.get("test_code", ""))
 
-    if m["method"] == "curated":
-        # param_id is None for non-composed exams - service_tarification_id
-        # alone is the complete match in that case (see mappings.py).
-        target = (f"labo_param.id={m['param_id']}" if m["param_id"]
-                  else f"service_tarification.id={m['service_tarification_id']}")
-        # ALWAYS write locally, whether or not the API path is on - this is
-        # the only way the admin UI (sample detail, mapped-table "last
-        # value") can see a result that was sent live to the clinic API;
-        # api_sent gets flipped to True by _flush_api_batch once the API
-        # actually confirms it, so this starts False when queued for send.
-        sent_ok = pg.write_matched_result(machine, sample_id, session.specimen,
-                                          rec.get("test_code", ""), m, rec)
-        if config.USE_MACHINE_RESULT_API:
-            item = api_client.build_item(
-                sample_id=sample_id.strip(),
-                result_value=rec.get("value", ""),
-                unit=rec.get("unit") or None,
-                param_id=m.get("param_id"),
-                service_tarification_id=m.get("service_tarification_id")
-                                         if not m.get("param_id") else None,
-                machine=machine,
-                machine_id=_get_machine_id(machine),
-                dual_value=rec.get("dual_value") or None,
-            )
-            session.api_batch.append({"item": item, "sample_id": sample_id,
-                                       "test_code": rec.get("test_code", "")})
-            tag = (f"matched -> {target} ({m['abbrev']} / {m['name']}) "
-                   f"[queued for batched clinic API send]")
-        else:
-            tag = (f"matched -> {target} ({m['abbrev']} / {m['name']}) "
-                   f"{'[written to Postgres]' if sent_ok else '[Postgres write skipped, see warning above]'}")
+    if matches:
+        # A code can map to more than one clinic target (matcher.match_all())
+        # - the machine only ever sends ONE raw result, but each target gets
+        # its own row here and its own item in the clinic API batch. Almost
+        # always just one target; looping is only ever a no-op extra pass
+        # in that common case.
+        tags = []
+        for m in matches:
+            # param_id is None for non-composed exams - service_tarification_id
+            # alone is the complete match in that case (see mappings.py).
+            target = (f"labo_param.id={m['param_id']}" if m["param_id"]
+                      else f"service_tarification.id={m['service_tarification_id']}")
+            # ALWAYS write locally, whether or not the API path is on - this is
+            # the only way the admin UI (sample detail, mapped-table "last
+            # value") can see a result that was sent live to the clinic API;
+            # api_sent gets flipped to True by _flush_api_batch once the API
+            # actually confirms it, so this starts False when queued for send.
+            sent_ok = pg.write_matched_result(machine, sample_id, session.specimen,
+                                              rec.get("test_code", ""), m, rec)
+            if config.USE_MACHINE_RESULT_API:
+                item = api_client.build_item(
+                    sample_id=sample_id.strip(),
+                    result_value=rec.get("value", ""),
+                    unit=rec.get("unit") or None,
+                    param_id=m.get("param_id"),
+                    service_tarification_id=m.get("service_tarification_id")
+                                             if not m.get("param_id") else None,
+                    machine=machine,
+                    machine_id=_get_machine_id(machine),
+                    dual_value=rec.get("dual_value") or None,
+                )
+                session.api_batch.append({
+                    "item": item, "sample_id": sample_id,
+                    "test_code": rec.get("test_code", ""),
+                    "param_id": m.get("param_id"),
+                    "service_tarification_id": m.get("service_tarification_id"),
+                })
+                tags.append(f"matched -> {target} ({m['abbrev']} / {m['name']}) "
+                            f"[queued for batched clinic API send]")
+            else:
+                tags.append(f"matched -> {target} ({m['abbrev']} / {m['name']}) "
+                            f"{'[written to Postgres]' if sent_ok else '[Postgres write skipped, see warning above]'}")
+        tag = "; ".join(tags)
     else:
         sent_ok = pg.write_pending_param(machine, rec)
         tag = (f"PENDING (no curated match, needs manual review) "
@@ -239,7 +251,9 @@ def _flush_api_batch(session):
         outcomes = api_client.send_batch(session.machine, session.api_batch)
         for o in outcomes:
             if o["api_sent"]:
-                pg.mark_api_sent(session.machine, o["sample_id"], o["test_code"], o["api_result_id"])
+                pg.mark_api_sent(session.machine, o["sample_id"], o["test_code"],
+                                 o["api_result_id"], param_id=o.get("param_id"),
+                                 service_tarification_id=o.get("service_tarification_id"))
         session.api_batch = []
 
 

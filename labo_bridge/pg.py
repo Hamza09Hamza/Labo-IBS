@@ -235,13 +235,22 @@ def write_matched_result(machine, sample_id, specimen, test_code, match, rec,
     as history - they don't change matching logic.
 
     Replaces (not appends to) any existing row for this exact
-    (machine, sample_id, test_code) - confirmed necessary via real Selectra
-    captures (2026-07-21): short numeric sample IDs get physically reused
-    for entirely separate, unrelated runs on different days, which used to
-    pile up as multiple contradictory rows for the "same" sample (e.g. 4
-    different Creatinine values for sample "589"). Keeping only the latest
-    matches what a user checking a sample actually expects to see - a
-    single current result per test, not an unlabeled mix of old and new.
+    (machine, sample_id, test_code, param_id, service_tarification_id) -
+    confirmed necessary via real Selectra captures (2026-07-21): short
+    numeric sample IDs get physically reused for entirely separate,
+    unrelated runs on different days, which used to pile up as multiple
+    contradictory rows for the "same" sample (e.g. 4 different Creatinine
+    values for sample "589"). Keeping only the latest matches what a user
+    checking a sample actually expects to see - a single current result per
+    test, not an unlabeled mix of old and new.
+
+    The target columns (param_id/service_tarification_id) are part of the
+    replace key, NOT just (machine, sample_id, test_code) - a test_code that
+    matches more than one clinic target (matcher.match_all(), called once
+    per target from server.py) writes ONE ROW PER TARGET here. Without the
+    target in the key, writing the second target's row would delete the
+    first target's row that was just written moments earlier for the same
+    test_code, leaving only the last target instead of all of them.
     Returns True on success, False if the write was skipped (PG unreachable).
     """
     conn = _get_conn()
@@ -255,8 +264,11 @@ def write_matched_result(machine, sample_id, specimen, test_code, match, rec,
         with conn.cursor() as cur:
             cur.execute(
                 "DELETE FROM labo_bridge.labo_bridge_results "
-                "WHERE machine = %s AND sample_id = %s AND test_code = %s",
-                (machine, sample_id.strip(), test_code),
+                "WHERE machine = %s AND sample_id = %s AND test_code = %s "
+                "AND param_id IS NOT DISTINCT FROM %s "
+                "AND service_tarification_id IS NOT DISTINCT FROM %s",
+                (machine, sample_id.strip(), test_code,
+                 match["param_id"], match.get("service_tarification_id")),
             )
             cur.execute(
                 """
@@ -285,7 +297,8 @@ def write_matched_result(machine, sample_id, specimen, test_code, match, rec,
         return False
 
 
-def mark_api_sent(machine, sample_id, test_code, api_result_id):
+def mark_api_sent(machine, sample_id, test_code, api_result_id,
+                  param_id=None, service_tarification_id=None):
     """
     Update the local labo_bridge_results row already written for this result
     with the outcome of sending it to the clinic API (see server.py's
@@ -293,6 +306,12 @@ def mark_api_sent(machine, sample_id, test_code, api_result_id):
     Only marks the MOST RECENT matching row (ORDER BY id DESC LIMIT 1) -
     the same code can legitimately appear more than once for a sample across
     retransmissions, and only the row from THIS send should be marked.
+
+    param_id/service_tarification_id narrow the match to the exact target
+    row this API item was actually built from - a test_code matching more
+    than one clinic target (matcher.match_all()) writes multiple rows for
+    the same (machine, sample_id, test_code); without this, marking one
+    target's send outcome could hit the wrong sibling row instead.
     """
     conn = _get_conn()
     if conn is None:
@@ -306,10 +325,13 @@ def mark_api_sent(machine, sample_id, test_code, api_result_id):
                 WHERE id = (
                     SELECT id FROM labo_bridge.labo_bridge_results
                     WHERE machine = %s AND sample_id = %s AND test_code = %s
+                    AND param_id IS NOT DISTINCT FROM %s
+                    AND service_tarification_id IS NOT DISTINCT FROM %s
                     ORDER BY id DESC LIMIT 1
                 )
                 """,
-                (api_result_id, machine, sample_id.strip(), test_code),
+                (api_result_id, machine, sample_id.strip(), test_code,
+                 param_id, service_tarification_id),
             )
         return True
     except Exception as e:
