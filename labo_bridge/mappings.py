@@ -74,19 +74,19 @@ these are section headers in this LIS, not individual measured values.
 
 # code -> (param_id, service_tarification_id, service_tarification_name, abbrev, name)
 XN330_MAP = {
-    "WBC":   (81,    421, "FNS", "GB",       "Globules Blancs"),
-    "RBC":   (80,    421, "FNS", "GR",       "Globules Rouges"),
-    "HGB":   (98000, 421, "FNS", "hémoglob", "Hémoglobine"),
-    "HCT":   (97000, 421, "FNS", "Hemcte.",  "Hématocrite"),
-    "PLT":   (93,    421, "FNS", "pettes",   "Plaquettes"),
-    "MCV":   (99478, 421, "FNS", "VGM",      "VGM"),
-    "MCH":   (99307, 421, "FNS", "TGMH",     "TGMH"),
-    "MCHC":  (10100, 421, "FNS", "CCMH",     "CCMH"),
-    "NEUT%": (99134, 421, "FNS", "Neu",      "Neutrophiles"),
-    "LYMPH%":(99137, 421, "FNS", "Lympho",   "Lymphocytes"),
-    "MONO%": (99136, 421, "FNS", "Mono",     "Monocytes"),
-    "EO%":   (99950, 421, "FNS", "eosino",   "Eosinophiles"),
-    "BASO%": (99138, 421, "FNS", "Baso",     "Basophiles"),
+    "WBC":   [(81,    421, "FNS", "GB",       "Globules Blancs")],
+    "RBC":   [(80,    421, "FNS", "GR",       "Globules Rouges")],
+    "HGB":   [(98000, 421, "FNS", "hémoglob", "Hémoglobine")],
+    "HCT":   [(97000, 421, "FNS", "Hemcte.",  "Hématocrite")],
+    "PLT":   [(93,    421, "FNS", "pettes",   "Plaquettes")],
+    "MCV":   [(99478, 421, "FNS", "VGM",      "VGM")],
+    "MCH":   [(99307, 421, "FNS", "TGMH",     "TGMH")],
+    "MCHC":  [(10100, 421, "FNS", "CCMH",     "CCMH")],
+    "NEUT%": [(99134, 421, "FNS", "Neu",      "Neutrophiles")],
+    "LYMPH%":[(99137, 421, "FNS", "Lympho",   "Lymphocytes")],
+    "MONO%": [(99136, 421, "FNS", "Mono",     "Monocytes")],
+    "EO%":   [(99950, 421, "FNS", "eosino",   "Eosinophiles")],
+    "BASO%": [(99138, 421, "FNS", "Baso",     "Basophiles")],
 }
 
 # I-Smart 30 PRO (ISE electrolyte panel). Verified with the user on
@@ -98,9 +98,9 @@ XN330_MAP = {
 # (the ^-delimited field's second-to-last part), confirmed against real
 # capture: "^^^Na+^M" -> "Na+", etc.
 ISMART_MAP = {
-    "Na+": (99446, 452, "Ionogramme sanguin", "NA",  "Natrémie"),
-    "K+":  (99422, 452, "Ionogramme sanguin", "K",   "Kaliémie"),
-    "Cl-": (99925, 452, "Ionogramme sanguin", "Cl-", "Chloremie"),
+    "Na+": [(99446, 452, "Ionogramme sanguin", "NA",  "Natrémie")],
+    "K+":  [(99422, 452, "Ionogramme sanguin", "K",   "Kaliémie")],
+    "Cl-": [(99925, 452, "Ionogramme sanguin", "Cl-", "Chloremie")],
 }
 
 # Selectra chemistry analyzer (runs the ELITech/LIS2-A software stack).
@@ -115,37 +115,37 @@ ISMART_MAP = {
 # capture comes through if a provisional code doesn't match.
 SELECTRA_MAP = {
     # --- confirmed against real captured ASTM/LIS2-A bytes ---
-    "Uree uv sl":      (None,  538, "Urémie",                 "Uree",  "Urémie"),
-    "Cholesterol":     (None,  373, "Cholestérol",            "Chol",  "Cholestérol"),
-    "SGOT":            (99952, 528, "Transaminases",          "SGOT",  "SGOT"),
-    "SGPT":            (99953, 528, "Transaminases",          "SGPT",  "SGPT"),
-    "Phosphatase Alc": (None,  481, "Phosphatases alcalines", "PAL",   "Phosphatases alcalines"),
-    "Phosphatase ALP": (None,  481, "Phosphatases alcalines", "PAL",   "Phosphatases alcalines"),  # same test, different method-name string (real capture 2026-07-23, field shows ^^^ALP^Phosphatase ALP)
-    "Creatinine":      (None,  392, "Créatinémie",            "Crea",  "Créatinémie"),
-    "GGT":             (None,  429, "Gamma GT",               "GGT",   "Gamma GT"),
+    "Uree uv sl":      [(None,  538, "Urémie",                 "Uree",  "Urémie")],
+    "Cholesterol":     [(None,  373, "Cholestérol",            "Chol",  "Cholestérol")],
+    "SGOT":            [(99952, 528, "Transaminases",          "SGOT",  "SGOT")],
+    "SGPT":            [(99953, 528, "Transaminases",          "SGPT",  "SGPT")],
+    "Phosphatase Alc": [(None,  481, "Phosphatases alcalines", "PAL",   "Phosphatases alcalines")],
+    "Phosphatase ALP": [(None,  481, "Phosphatases alcalines", "PAL",   "Phosphatases alcalines")],  # same test, different method-name string (real capture 2026-07-23, field shows ^^^ALP^Phosphatase ALP)
+    "Creatinine":      [(None,  392, "Créatinémie",            "Crea",  "Créatinémie")],
+    "GGT":             [(None,  429, "Gamma GT",               "GGT",   "Gamma GT")],
 
     # --- provisional: from the machine's test menu, not yet capture-confirmed ---
-    "Glucose pap sl":  (None,  433, "Glycémie",                 "Gluc",  "Glycémie"),
-    "Acide Urique":    (None,  337, "Acide urique",             "AcUr",  "Acide urique"),
-    "Calcium":         (99736, 366, "Calcémie",                 "Ca",    "Calcémie"),
-    "CALCUIM":         (99736, 366, "Calcémie",                 "Ca",    "Calcémie"),  # analyzer's own method name is misspelled ("Calcuim") - real capture 2026-07-23, same test as "Calcium" above
-    "Phosphore":       (None,  483, "Phosphorémie",             "Phos",  "Phosphorémie"),
-    "Triglycerides":   (None,  530, "Triglycérides",            "TG",    "Triglycérides"),
-    "Cholesterol HDL": (None,  374, "Cholestérol HDL",          "HDL",   "Cholestérol HDL"),
-    "LDH-L SL":        (None,  456, "LDH",                      "LDH",   "LDH"),
-    "Proteines U":     (99561, 488, "Protéines des 24 heures",  "Prot U","Taux (Protéines des 24h)"),
-    "CRP IP V3":       (None,  393, "CRP",                      "CRP",   "CRP"),
-    "CRP IP v3":       (None,  393, "CRP",                      "CRP",   "CRP"),  # same test, lowercase "v3" seen on the wire (real capture 2026-07-23)
-    "BILI TOTAL BIO":  (99954, 358, "Bilirubine",               "BiliT", "Bilirubine Totale"),
-    "BILI DIRECT BIO": (99955, 358, "Bilirubine",               "BiliD", "Bilirubine Directe"),
-    "CK NAK":          (None,  376, "CK - NAC",                 "CK",    "CK - NAC"),
-    "CK-NAC":          (None,  376, "CK - NAC",                 "CK",    "CK - NAC"),  # alt spelling, same target
+    "Glucose pap sl":  [(None,  433, "Glycémie",                 "Gluc",  "Glycémie")],
+    "Acide Urique":    [(None,  337, "Acide urique",             "AcUr",  "Acide urique")],
+    "Calcium":         [(99736, 366, "Calcémie",                 "Ca",    "Calcémie")],
+    "CALCUIM":         [(99736, 366, "Calcémie",                 "Ca",    "Calcémie")],  # analyzer's own method name is misspelled ("Calcuim") - real capture 2026-07-23, same test as "Calcium" above
+    "Phosphore":       [(None,  483, "Phosphorémie",             "Phos",  "Phosphorémie")],
+    "Triglycerides":   [(None,  530, "Triglycérides",            "TG",    "Triglycérides")],
+    "Cholesterol HDL": [(None,  374, "Cholestérol HDL",          "HDL",   "Cholestérol HDL")],
+    "LDH-L SL":        [(None,  456, "LDH",                      "LDH",   "LDH")],
+    "Proteines U":     [(99561, 488, "Protéines des 24 heures",  "Prot U","Taux (Protéines des 24h)")],
+    "CRP IP V3":       [(None,  393, "CRP",                      "CRP",   "CRP")],
+    "CRP IP v3":       [(None,  393, "CRP",                      "CRP",   "CRP")],  # same test, lowercase "v3" seen on the wire (real capture 2026-07-23)
+    "BILI TOTAL BIO":  [(99954, 358, "Bilirubine",               "BiliT", "Bilirubine Totale")],
+    "BILI DIRECT BIO": [(99955, 358, "Bilirubine",               "BiliD", "Bilirubine Directe")],
+    "CK NAK":          [(None,  376, "CK - NAC",                 "CK",    "CK - NAC")],
+    "CK-NAC":          [(None,  376, "CK - NAC",                 "CK",    "CK - NAC")],  # alt spelling, same target
 
     # Medium confidence (thin order-volume margin, or a plausible-but-not-
     # certain choice between two standalone exams with the same name) -
     # flagged to the user on 2026-07-19, included per their go-ahead:
-    "Proteine totale": (None,  489, "Protide totaux",           "PT",    "Protide totaux"),   # 18 vs 8 orders vs "Taux de protides"(508)
-    "Albumine":        (None,  343, "Albuminémie",              "Alb",   "Albuminémie"),        # standalone exam, not the Albuminémie sub-param nested in Calcémie(366)
+    "Proteine totale": [(None,  489, "Protide totaux",           "PT",    "Protide totaux")],   # 18 vs 8 orders vs "Taux de protides"(508)
+    "Albumine":        [(None,  343, "Albuminémie",              "Alb",   "Albuminémie")],        # standalone exam, not the Albuminémie sub-param nested in Calcémie(366)
 }
 
 # CyanVision - HL7 chemistry analyzer. First real (non-QC) result captured
@@ -155,10 +155,10 @@ SELECTRA_MAP = {
 # Selectra's own SGPT mapping. param_id=99953 belongs to exactly one exam
 # (service_tarification_id=528, "Transaminases", composed) - no ambiguity.
 CYANVISION_MAP = {
-    "GPT":  (99953, 528, "Transaminases",          "SGPT", "SGPT"),
-    "IRON": (None,  418, "Fer sérique",             "Fer",  "Fer sérique"),
-    "ALP":  (None,  481, "Phosphatases alcalines",  "PAL",  "Phosphatases alcalines"),  # same clinic exam as Selectra's "Phosphatase Alc"
-    "CRE":  (None,  392, "Créatinémie",             "Crea", "Créatinémie"),  # same clinic exam as Selectra's "Creatinine"
+    "GPT":  [(99953, 528, "Transaminases",          "SGPT", "SGPT")],
+    "IRON": [(None,  418, "Fer sérique",             "Fer",  "Fer sérique")],
+    "ALP":  [(None,  481, "Phosphatases alcalines",  "PAL",  "Phosphatases alcalines")],  # same clinic exam as Selectra's "Phosphatase Alc"
+    "CRE":  [(None,  392, "Créatinémie",             "Crea", "Créatinémie")],  # same clinic exam as Selectra's "Creatinine"
 }
 
 # Sysmex XS-500i - the clinic's main hematology analyzer (being
@@ -173,19 +173,19 @@ CYANVISION_MAP = {
 # also changing xn330's - they started identical but aren't guaranteed to
 # stay that way (e.g. if one machine's decoder needs a code fix later).
 XS500I_MAP = {
-    "WBC":   (81,    421, "FNS", "GB",       "Globules Blancs"),
-    "RBC":   (80,    421, "FNS", "GR",       "Globules Rouges"),
-    "HGB":   (98000, 421, "FNS", "hémoglob", "Hémoglobine"),
-    "HCT":   (97000, 421, "FNS", "Hemcte.",  "Hématocrite"),
-    "PLT":   (93,    421, "FNS", "pettes",   "Plaquettes"),
-    "MCV":   (99478, 421, "FNS", "VGM",      "VGM"),
-    "MCH":   (99307, 421, "FNS", "TGMH",     "TGMH"),
-    "MCHC":  (10100, 421, "FNS", "CCMH",     "CCMH"),
-    "NEUT%": (99134, 421, "FNS", "Neu",      "Neutrophiles"),
-    "LYMPH%":(99137, 421, "FNS", "Lympho",   "Lymphocytes"),
-    "MONO%": (99136, 421, "FNS", "Mono",     "Monocytes"),
-    "EO%":   (99950, 421, "FNS", "eosino",   "Eosinophiles"),
-    "BASO%": (99138, 421, "FNS", "Baso",     "Basophiles"),
+    "WBC":   [(81,    421, "FNS", "GB",       "Globules Blancs")],
+    "RBC":   [(80,    421, "FNS", "GR",       "Globules Rouges")],
+    "HGB":   [(98000, 421, "FNS", "hémoglob", "Hémoglobine")],
+    "HCT":   [(97000, 421, "FNS", "Hemcte.",  "Hématocrite")],
+    "PLT":   [(93,    421, "FNS", "pettes",   "Plaquettes")],
+    "MCV":   [(99478, 421, "FNS", "VGM",      "VGM")],
+    "MCH":   [(99307, 421, "FNS", "TGMH",     "TGMH")],
+    "MCHC":  [(10100, 421, "FNS", "CCMH",     "CCMH")],
+    "NEUT%": [(99134, 421, "FNS", "Neu",      "Neutrophiles")],
+    "LYMPH%":[(99137, 421, "FNS", "Lympho",   "Lymphocytes")],
+    "MONO%": [(99136, 421, "FNS", "Mono",     "Monocytes")],
+    "EO%":   [(99950, 421, "FNS", "eosino",   "Eosinophiles")],
+    "BASO%": [(99138, 421, "FNS", "Baso",     "Basophiles")],
 }
 
 # bioMerieux Mini VIDAS - immuno analyzer. Confirmed working connection and
@@ -209,71 +209,71 @@ XS500I_MAP = {
 # P24/DUO Quick/DUO Ultra) was deliberately left OUT of this map so it stays
 # in pending_params for manual review instead of risking a wrong guess.
 MINIVIDAS_MAP = {
-    "HCV":  (None, 439, "HCV",                   "Anti-HCV", "Anticorps anti HCV"),
-    "HIV":  (None, 445, "HIV",                   "",         "HIV"),
+    "HCV":  [(None, 439, "HCV",                   "Anti-HCV", "Anticorps anti HCV")],
+    "HIV":  [(None, 445, "HIV",                   "",         "HIV")],
 
     # Thyroid. FT3/FT4N added via the admin UI (2026-07-22) using the codes
     # actually seen there, superseding the "T3"/"T4" guess this map first had
     # (which came from the photo's Code column, not a confirmed real code).
-    "TSH":  (None, 535, "TSH",                   "TSH",  "TSH"),
-    "TSH3": (None, 535, "TSH",                   "TSH",  "TSH"),
-    "FT3":  (None, 425, "FT3",                   "FT3",  "FT3"),
-    "FT4N": (None, 426, "FT4",                   "FT4",  "FT4"),
+    "TSH":  [(None, 535, "TSH",                   "TSH",  "TSH")],
+    "TSH3": [(None, 535, "TSH",                   "TSH",  "TSH")],
+    "FT3":  [(None, 425, "FT3",                   "FT3",  "FT3")],
+    "FT4N": [(None, 426, "FT4",                   "FT4",  "FT4")],
 
     # Allergy
-    "IgE":  (None, 448, "IgE total",              "IgE",  "IgE totale"),
+    "IgE":  [(None, 448, "IgE total",              "IgE",  "IgE totale")],
 
     # Reproduction / Fertility
-    "HCG":  (None, 548, "BHCG",                  "BHCG", "BHCG"),
-    "LH":   (None, 457, "LH",                    "LH",   "LH"),
-    "FSH":  (None, 424, "FSH",                   "FSH",  "FSH"),
-    "PRL":  (None, 486, "Prolactine",             "PRL",  "Prolactine"),
-    "E2II": (None, 472, "Oestradiol",             "E2",   "Oestradiol"),
+    "HCG":  [(None, 548, "BHCG",                  "BHCG", "BHCG")],
+    "LH":   [(None, 457, "LH",                    "LH",   "LH")],
+    "FSH":  [(None, 424, "FSH",                   "FSH",  "FSH")],
+    "PRL":  [(None, 486, "Prolactine",             "PRL",  "Prolactine")],
+    "E2II": [(None, 472, "Oestradiol",             "E2",   "Oestradiol")],
 
     # Tumor Markers
-    "AFP":  (None, 340, "AFP",                   "AFP",  "AFP"),
-    "125":  (None, 363, "CA 125",                 "CA125","CA 125"),
-    "199":  (None, 365, "CA 19-9",                "CA19-9","CA 19-9"),
-    "153":  (None, 364, "CA 15-3",                "CA15-3","CA 15-3"),
-    "TPSA": (None, 491, "PSAT",                   "PSAT", "PSA Total"),
-    "FPSA": (None, 490, "PSAL",                   "PSAL", "PSA Libre"),
+    "AFP":  [(None, 340, "AFP",                   "AFP",  "AFP")],
+    "125":  [(None, 363, "CA 125",                 "CA125","CA 125")],
+    "199":  [(None, 365, "CA 19-9",                "CA19-9","CA 19-9")],
+    "153":  [(None, 364, "CA 15-3",                "CA15-3","CA 15-3")],
+    "TPSA": [(None, 491, "PSAT",                   "PSAT", "PSA Total")],
+    "FPSA": [(None, 490, "PSAL",                   "PSAL", "PSA Libre")],
 
     # Immuno-Hemostasis-Cardiovascular
-    "PBNP": (None, 471, "NT probnp",              "NTproBNP", "NT-proBNP"),
+    "PBNP": [(None, 471, "NT probnp",              "NTproBNP", "NT-proBNP")],
 
     # Others
-    "FER":  (None, 419, "Ferritine",              "Ferr", "Ferritine"),
-    "CORS": (None, 388, "Cortisol",               "Cort", "Cortisol"),
+    "FER":  [(None, 419, "Ferritine",              "Ferr", "Ferritine")],
+    "CORS": [(None, 388, "Cortisol",               "Cort", "Cortisol")],
 
     # Serology. TXC (Toxo Competition) and TXGA (Toxo IgG Avidity) NOT
     # mapped here on purpose - the clinic DB only has one "avidité Toxo"
     # row (355), and Competition vs Avidity are different VIDAS test
     # methodologies; mapping both to the same row risks conflating them.
-    "TXG":  (None, 523, "Toxo IGG",               "TXG",  "Toxo IgG"),
-    "TXM":  (None, 524, "Toxo IGM",               "TXM",  "Toxo IgM"),
-    "CMVG": (None, 380, "CMV IgG",                "CMVG", "CMV IgG"),
-    "CMVM": (None, 381, "CMV IgM",                "CMVM", "CMV IgM"),
-    "CMVU": (None, 354, "Avidite CMV",             "CMVU", "Avidité CMV"),
-    "LYT":  (None, 461, "LYME",                   "LYME", "Lyme"),
-    "MSG":  (None, 498, "Rougeole",                "MSG",  "Rougeole"),
-    "MPG":  (None, 473, "oreillons",               "MPG",  "Oreillons"),
-    "VZG":  (None, 539, "Varicelle-Zona",          "VZG",  "Varicelle-Zona"),
+    "TXG":  [(None, 523, "Toxo IGG",               "TXG",  "Toxo IgG")],
+    "TXM":  [(None, 524, "Toxo IGM",               "TXM",  "Toxo IgM")],
+    "CMVG": [(None, 380, "CMV IgG",                "CMVG", "CMV IgG")],
+    "CMVM": [(None, 381, "CMV IgM",                "CMVM", "CMV IgM")],
+    "CMVU": [(None, 354, "Avidite CMV",             "CMVU", "Avidité CMV")],
+    "LYT":  [(None, 461, "LYME",                   "LYME", "Lyme")],
+    "MSG":  [(None, 498, "Rougeole",                "MSG",  "Rougeole")],
+    "MPG":  [(None, 473, "oreillons",               "MPG",  "Oreillons")],
+    "VZG":  [(None, 539, "Varicelle-Zona",          "VZG",  "Varicelle-Zona")],
 
     # Hepatitis / AIDS
-    "HBS":  (None, 342, "AG HBS",                 "AgHBs", "Antigène HBs"),
-    "HBST": (None, 342, "AG HBS",                 "AgHBs", "Antigène HBs"),
-    "HBE":  (None, 341, "Ag HBe",                 "AgHBe", "Antigène HBe"),
+    "HBS":  [(None, 342, "AG HBS",                 "AgHBs", "Antigène HBs")],
+    "HBST": [(None, 342, "AG HBS",                 "AgHBs", "Antigène HBs")],
+    "HBE":  [(None, 341, "Ag HBe",                 "AgHBe", "Antigène HBe")],
 
     # Antigen detection
-    "CHL":  (None, 331, "AC Chlamydia",            "CHL",  "Anticorps Chlamydia"),
+    "CHL":  [(None, 331, "AC Chlamydia",            "CHL",  "Anticorps Chlamydia")],
 
     # Sepsis
-    "PCT":  (None, 484, "Procalcitonine",          "PCT",  "Procalcitonine"),
+    "PCT":  [(None, 484, "Procalcitonine",          "PCT",  "Procalcitonine")],
 
     # Not on either printed reference card - seen from a real capture
     # instead (2026-07-23): rn="25-OH Vitamin D TOTAL", mt=rsl confirms a
     # genuine result frame, not calibration.
-    "VITD": (None, 542, "Vitamine D",               "VitD", "Vitamine D"),
+    "VITD": [(None, 542, "Vitamine D",               "VitD", "Vitamine D")],
 }
 
 MAPS = {
