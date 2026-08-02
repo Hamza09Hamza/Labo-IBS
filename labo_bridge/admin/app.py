@@ -399,7 +399,11 @@ def api_machine_mappings(machine):
         recent_by_code = {r["test_code"]: r for r in rows}
 
     entries = []
-    for code, (param_id, st_id, st_name, abbrev, name) in machine_map.items():
+    for code, targets in machine_map.items():
+        # Each code now maps to a LIST of targets (mappings.py) - the admin
+        # UI isn't multi-target aware yet, so show just the first/primary
+        # one here, same single-match behavior as matcher.match().
+        param_id, st_id, st_name, abbrev, name = targets[0]
         recent = recent_by_code.get(code)
         entries.append({
             "code": code,

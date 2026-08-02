@@ -42,9 +42,18 @@ def _quote(s: str) -> str:
 
 
 def _format_value(param_id, st_id, st_name, abbrev, name) -> str:
+    """
+    Render one target tuple, wrapped in the list every mappings.py entry
+    uses (`"CODE": [(...)]`) - a code can hold more than one target
+    (matcher.match_all()), but the admin UI only edits the single, first/
+    primary one for now (see api_machine_mappings), same as everywhere
+    else that isn't multi-target aware yet. Editing here always replaces
+    the whole list with this one target - a code with a second,
+    UI-added target isn't supported by this editor yet.
+    """
     param_repr = "None" if param_id is None else str(int(param_id))
     st_id_repr = "None" if st_id is None else str(int(st_id))
-    return f"({param_repr}, {st_id_repr}, {_quote(st_name)}, {_quote(abbrev)}, {_quote(name)})"
+    return f"[({param_repr}, {st_id_repr}, {_quote(st_name)}, {_quote(abbrev)}, {_quote(name)})]"
 
 
 def _find_map_block(text: str, var_name: str):
@@ -76,26 +85,29 @@ def _find_map_block(text: str, var_name: str):
 
 def _find_entry_span(block_text: str, code: str):
     """
-    Locate one `"CODE": (...)` entry inside a map's dict-literal body and
-    return (key_start, tuple_start, tuple_end) - or None if not found.
+    Locate one `"CODE": [(...)]` entry inside a map's dict-literal body and
+    return (key_start, list_start, list_end) - or None if not found. Every
+    entry is a LIST of target tuples (matcher.match_all() reads this) - the
+    span covers the WHOLE list literal, not just the first tuple, so this
+    still works correctly even for a future code with 2+ targets.
 
-    The tuple's closing paren is found by depth-counting from tuple_start,
-    NOT by a `\\([^)]*\\)` regex - values like "Basophiles (absolute)"
-    contain their own ")" characters, and a naive regex stops at that FIRST
-    ")" instead of the tuple's real end, silently truncating the match and
-    corrupting the file on write. Depth-counting (skipping ")" inside string
-    literals) handles this correctly regardless of what the string values
-    contain.
+    The list's closing bracket is found by depth-counting from list_start,
+    NOT by a `\\[[^\\]]*\\]` regex - values like "Basophiles (absolute)"
+    or a hypothetical "]"-containing string would break a naive regex.
+    Depth-counting (skipping brackets inside string literals) handles this
+    correctly regardless of what the string values contain. Tracks "[]"
+    depth only (not "()") since a tuple's own parens never need to be
+    balanced separately once we're already scoped to the outer list.
     """
-    key_re = re.compile(r'(["\'])' + re.escape(code) + r'\1\s*:\s*\(')
+    key_re = re.compile(r'(["\'])' + re.escape(code) + r'\1\s*:\s*\[')
     m = key_re.search(block_text)
     if not m:
         return None
     key_start = m.start()
-    tuple_start = m.end() - 1  # position of the opening "("
+    list_start = m.end() - 1  # position of the opening "["
 
     depth = 0
-    i = tuple_start
+    i = list_start
     in_string = None  # None, or the quote char currently inside
     while i < len(block_text):
         ch = block_text[i]
@@ -107,12 +119,12 @@ def _find_entry_span(block_text: str, code: str):
                 in_string = None
         elif ch in ("'", '"'):
             in_string = ch
-        elif ch == "(":
+        elif ch == "[":
             depth += 1
-        elif ch == ")":
+        elif ch == "]":
             depth -= 1
             if depth == 0:
-                return key_start, tuple_start, i + 1
+                return key_start, list_start, i + 1
         i += 1
     return None
 
@@ -173,9 +185,12 @@ def add_machine_map(machine: str) -> None:
 def upsert_entry(machine: str, code: str, param_id, service_tarification_id,
                   service_tarification_name: str, abbrev: str, name: str) -> None:
     """
-    Add or update one `"CODE": (...)` line inside the given machine's dict
+    Add or update one `"CODE": [(...)]` line inside the given machine's dict
     literal. Preserves any trailing inline comment on that line (e.g. "# 18
-    vs 8 orders...") - only the tuple value is replaced, comment kept as-is.
+    vs 8 orders...") - only the list value is replaced, comment kept as-is.
+    Always writes a single-target list - a code that already has 2+ targets
+    (added some other way) would have its extra targets discarded by this;
+    the admin UI isn't multi-target aware yet (see _format_value).
     Raises ValueError with a clear message if the machine's map isn't a
     plain dict literal (e.g. xs500i is `dict(XN330_MAP)` - see aliased_from()).
     """
@@ -200,15 +215,15 @@ def upsert_entry(machine: str, code: str, param_id, service_tarification_id,
         key_quoted = _quote(code)
         span = _find_entry_span(block_text, code)
         if span:
-            key_start, tuple_start, tuple_end = span
+            key_start, list_start, list_end = span
             # preserve whatever trailing comma/inline comment already
-            # followed the old tuple, exactly as it was
-            trailer_m = re.match(r'(\s*,?)([ \t]*#[^\n]*)?', block_text[tuple_end:])
+            # followed the old list, exactly as it was
+            trailer_m = re.match(r'(\s*,?)([ \t]*#[^\n]*)?', block_text[list_end:])
             trailing_comma = trailer_m.group(1) or ","
             comment = trailer_m.group(2) or ""
             replacement = f"{key_quoted}: {new_value}{trailing_comma}{comment}"
             new_block_text = (block_text[:key_start] + replacement
-                              + block_text[tuple_end + trailer_m.end():])
+                              + block_text[list_end + trailer_m.end():])
         else:
             # New entry - insert just before the closing brace, matching the
             # file's existing 4-space indent convention.
@@ -250,12 +265,12 @@ def delete_entry(machine: str, code: str) -> bool:
         span = _find_entry_span(block_text, code)
         if not span:
             return False
-        _, _, tuple_end = span
+        _, _, list_end = span
         # extend the removal to cover the whole line: back up to the
         # preceding newline, and forward past any trailing comma/comment
         line_start = block_text.rfind("\n", 0, span[0]) + 1
-        trailer_m = re.match(r'\s*,?[ \t]*(#[^\n]*)?', block_text[tuple_end:])
-        remove_end = tuple_end + trailer_m.end()
+        trailer_m = re.match(r'\s*,?[ \t]*(#[^\n]*)?', block_text[list_end:])
+        remove_end = list_end + trailer_m.end()
         new_block_text = block_text[:line_start] + block_text[remove_end:]
         new_text = text[:start] + new_block_text + text[end:]
         MAPPINGS_PATH.write_text(new_text, encoding="utf-8")
