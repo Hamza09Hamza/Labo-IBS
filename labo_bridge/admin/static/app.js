@@ -916,7 +916,11 @@ function renderMappedTable(filter = "") {
       <td data-label="Matched To">
         <div class="param-id-row">${r.param_id !== null
           ? `<span class="match-kind-badge match-kind-param" title="Matched by param_id">param_id</span><span class="param-id">#${r.param_id}</span>`
-          : `<span class="match-kind-badge match-kind-exam" title="No single param - matched by exam (service_tarification_id) instead">service_tarification_id</span><span class="param-id">#${r.service_tarification_id}</span>`}</div>
+          : `<span class="match-kind-badge match-kind-exam" title="No single param - matched by exam (service_tarification_id) instead">service_tarification_id</span><span class="param-id">#${r.service_tarification_id}</span>`}${
+            (r.targets || []).length > 1
+              ? `<span class="badge" title="This code also writes/sends to ${r.targets.length - 1} more target(s)">+${r.targets.length - 1} more</span>`
+              : ""
+          }</div>
         <div class="param-name">${escapeHtml(r.abbrev || "")} ${r.name ? "· " + escapeHtml(r.name) : ""}</div>
       </td>
       <td data-label="Exam"><span class="exam-tag">${escapeHtml(r.service_tarification_name || "—")}</span></td>
@@ -950,41 +954,81 @@ const fCode = document.getElementById("fCode");
 const codeResults = document.getElementById("codeResults");
 const fSearch = document.getElementById("fSearch");
 const searchResults = document.getElementById("searchResults");
-const matchPicked = document.getElementById("matchPicked");
-const matchPickedName = document.getElementById("matchPickedName");
-const matchPickedMeta = document.getElementById("matchPickedMeta");
+const matchedTargetsField = document.getElementById("matchedTargetsField");
+const matchedTargetsList = document.getElementById("matchedTargetsList");
+const fSearchLabel = document.getElementById("fSearchLabel");
 const modalAlert = document.getElementById("modalAlert");
 const deleteBtn = document.getElementById("deleteMappingBtn");
 
-// The one thing that actually gets saved - everything else is UI sugar
-// around picking this.
-let pickedMatch = null; // { param_id, service_tarification_id, service_tarification_name, abbrev, name }
+// pickedTargets is the actual list that gets saved - almost always one
+// entry, occasionally more (a machine code the clinic files under more
+// than one param/exam). Clicking a search result adds straight to this
+// list (see runClinicSearch below) - same one-click feel as the old
+// single-target flow; there's just no upper limit on how many times you
+// can search-and-click before saving.
+let pickedTargets = []; // [{ param_id, service_tarification_id, service_tarification_name, abbrev, name }, ...]
 
-function showPickedMatch(match) {
-  pickedMatch = match;
-  if (!match) {
-    matchPicked.hidden = true;
-    fSearch.value = "";
-    return;
-  }
-  matchPicked.hidden = false;
-  if (match.param_id) {
-    matchPickedName.textContent = match.name || match.abbrev || `Param #${match.param_id}`;
-    matchPickedMeta.textContent = `Lab parameter #${match.param_id}` +
-      (match.service_tarification_name ? ` · part of ${match.service_tarification_name}` : "");
-    matchKindBadge.textContent = "param_id";
-    matchKindBadge.className = "match-kind-badge match-kind-param";
-  } else {
-    matchPickedName.textContent = match.service_tarification_name || "Exam";
-    matchPickedMeta.textContent = `Exam #${match.service_tarification_id} · no single-value breakdown`;
-    matchKindBadge.textContent = "service_tarification_id";
-    matchKindBadge.className = "match-kind-badge match-kind-exam";
-  }
-  fSearch.value = "";
-  searchResults.classList.remove("open");
+function sameTarget(a, b) {
+  if (a.param_id || b.param_id) return a.param_id === b.param_id;
+  return a.service_tarification_id === b.service_tarification_id;
 }
 
-document.getElementById("matchPickedClear").addEventListener("click", () => showPickedMatch(null));
+function targetLabel(t) {
+  return t.param_id
+    ? (t.name || t.abbrev || `Param #${t.param_id}`)
+    : (t.service_tarification_name || "Exam");
+}
+
+function renderMatchedTargets() {
+  matchedTargetsField.hidden = pickedTargets.length === 0;
+  matchedTargetsList.innerHTML = "";
+  pickedTargets.forEach((t, i) => {
+    const row = document.createElement("div");
+    row.className = "matched-target-row";
+    const kindBadge = t.param_id
+      ? `<span class="match-kind-badge match-kind-param" title="param_id">param_id</span><span class="param-id">#${t.param_id}</span>`
+      : `<span class="match-kind-badge match-kind-exam" title="service_tarification_id">service_tarification_id</span><span class="param-id">#${t.service_tarification_id}</span>`;
+    row.innerHTML = `
+      <div class="matched-target-body">
+        <div class="matched-target-name-row">${kindBadge}<span class="matched-target-name">${escapeHtml(targetLabel(t))}</span></div>
+        <div class="matched-target-meta">${escapeHtml(t.service_tarification_name || "")}</div>
+      </div>
+      <button class="icon-btn matched-target-remove" title="Remove this target" type="button">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    `;
+    row.querySelector(".matched-target-remove").addEventListener("click", () => {
+      pickedTargets.splice(i, 1);
+      renderMatchedTargets();
+    });
+    matchedTargetsList.appendChild(row);
+  });
+  fSearchLabel.textContent = pickedTargets.length
+    ? "Add another match (optional)"
+    : "Match to a clinic parameter or exam";
+}
+
+// Adds a search result straight to the matched list - silently ignores an
+// exact duplicate re-click rather than erroring, since clicking the same
+// result twice isn't a mistake worth interrupting the user over.
+function addPickedTarget(match) {
+  if (pickedTargets.some((t) => sameTarget(t, match))) {
+    fSearch.value = "";
+    searchResults.classList.remove("open");
+    return;
+  }
+  pickedTargets.push(match);
+  fSearch.value = "";
+  searchResults.classList.remove("open");
+  renderMatchedTargets();
+}
+
+// Used by openEditModal to seed the list from an existing entry (single
+// target today, possibly several once loaded from a multi-target mapping).
+function showPickedMatch(match) {
+  pickedTargets = match ? [match] : [];
+  renderMatchedTargets();
+}
 
 // ---- machine-code picker: same styled dropdown as the clinic search below,
 // instead of a native <datalist> (unstyled, browser-default look) - just a
@@ -1059,7 +1103,17 @@ function openEditModal(entry, isNewFromPending = false) {
   fCode.disabled = !!state.editingCode; // code is the key; don't rename in place
   codeResults.classList.remove("open");
 
-  if (entry.param_id || entry.service_tarification_id) {
+  // entry.targets (the full list, from api_machine_mappings) is preferred -
+  // falls back to entry's flat param_id/service_tarification_id fields for
+  // the "Add mapping" button's blank-entry case, which has neither.
+  if (Array.isArray(entry.targets) && entry.targets.length) {
+    pickedTargets = entry.targets.map((t) => ({
+      param_id: t.param_id, service_tarification_id: t.service_tarification_id,
+      service_tarification_name: t.service_tarification_name,
+      abbrev: t.abbrev, name: t.name,
+    }));
+    renderMatchedTargets();
+  } else if (entry.param_id || entry.service_tarification_id) {
     showPickedMatch({
       param_id: entry.param_id, service_tarification_id: entry.service_tarification_id,
       service_tarification_name: entry.service_tarification_name,
@@ -1145,7 +1199,7 @@ function runClinicSearch() {
         <span class="match-kind-badge match-kind-param cr-id-badge" title="param_id">param_id #${r.id}</span>
         <div class="cr-name">${escapeHtml(r.name)}</div>
         <div class="cr-meta">${escapeHtml(r.abbreviation || "")} ${r.um ? "· " + escapeHtml(r.um) : ""} ${r.service_tarification_name ? "· " + escapeHtml(r.service_tarification_name) : ""}</div>`;
-      div.addEventListener("click", () => showPickedMatch({
+      div.addEventListener("click", () => addPickedTarget({
         param_id: r.id,
         service_tarification_id: r.service_tarification_id || null,
         service_tarification_name: r.service_tarification_name || "",
@@ -1162,7 +1216,7 @@ function runClinicSearch() {
         <span class="match-kind-badge match-kind-exam cr-id-badge" title="service_tarification_id">service_tarification_id #${r.id}</span>
         <div class="cr-name">${escapeHtml(r.name)}</div>
         <div class="cr-meta">${r.is_composed ? "Has individual parameters — search for the specific one above instead" : "Single result, no parameter breakdown"}</div>`;
-      div.addEventListener("click", () => showPickedMatch({
+      div.addEventListener("click", () => addPickedTarget({
         param_id: null,
         service_tarification_id: r.id,
         service_tarification_name: r.name,
@@ -1197,43 +1251,47 @@ document.getElementById("modalSave").addEventListener("click", async () => {
     modalAlert.textContent = "A machine test code is required.";
     return;
   }
-  if (!pickedMatch) {
+  if (!pickedTargets.length) {
     modalAlert.hidden = false;
     modalAlert.textContent = "Search and pick a parameter or exam to match this code to.";
     return;
   }
 
-  // Warn (don't hard-block) if this exact param/exam is already mapped to a
+  // Warn (don't hard-block) if any picked target is already mapped to a
   // DIFFERENT code on this same machine - legitimate cross-machine reuse
   // (e.g. XN-330 and XS-500i both mapping their own "WBC" to the same
   // param) is common and fine, but two DIFFERENT codes on the SAME machine
   // both pointing at one param is almost always a mistake (both would then
   // silently write into the same clinic param slot) - confirm() matches
   // the same pattern already used for Delete mapping's destructive action.
-  const duplicate = (state.mappings || []).find((r) => {
-    if (r.code === code) return false; // editing the same entry - not a conflict with itself
-    if (pickedMatch.param_id) return r.param_id === pickedMatch.param_id;
-    return !r.param_id && r.service_tarification_id === pickedMatch.service_tarification_id;
-  });
-  if (duplicate) {
-    const target = pickedMatch.param_id
-      ? `param_id #${pickedMatch.param_id}`
-      : `service_tarification_id #${pickedMatch.service_tarification_id}`;
-    const proceed = confirm(
-      `"${duplicate.code}" is already mapped to this same ${target} on this machine.\n\n` +
-      `Mapping "${code}" to it too means both codes will write into the same clinic slot - ` +
-      `only do this if they're genuinely the same measurement.\n\nSave anyway?`
-    );
-    if (!proceed) return;
+  for (const picked of pickedTargets) {
+    const duplicate = (state.mappings || []).find((r) => {
+      if (r.code === code) return false; // editing the same entry - not a conflict with itself
+      if (picked.param_id) return r.param_id === picked.param_id;
+      return !r.param_id && r.service_tarification_id === picked.service_tarification_id;
+    });
+    if (duplicate) {
+      const target = picked.param_id
+        ? `param_id #${picked.param_id}`
+        : `service_tarification_id #${picked.service_tarification_id}`;
+      const proceed = confirm(
+        `"${duplicate.code}" is already mapped to this same ${target} on this machine.\n\n` +
+        `Mapping "${code}" to it too means both codes will write into the same clinic slot - ` +
+        `only do this if they're genuinely the same measurement.\n\nSave anyway?`
+      );
+      if (!proceed) return;
+    }
   }
 
   try {
     await apiPut(`/api/machines/${state.mappingsMachine}/mappings/${encodeURIComponent(code)}`, {
-      param_id: pickedMatch.param_id,
-      service_tarification_id: pickedMatch.service_tarification_id,
-      service_tarification_name: pickedMatch.service_tarification_name,
-      abbrev: pickedMatch.abbrev,
-      name: pickedMatch.name,
+      targets: pickedTargets.map((t) => ({
+        param_id: t.param_id,
+        service_tarification_id: t.service_tarification_id,
+        service_tarification_name: t.service_tarification_name,
+        abbrev: t.abbrev,
+        name: t.name,
+      })),
     });
     closeModal();
     toast(`Mapping saved for "${code}".`, "success");

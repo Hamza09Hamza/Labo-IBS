@@ -340,29 +340,19 @@
         <p class="field-hint">The codes this analyzer has sent that aren't mapped yet — pick one, or type a new code.</p>
       </div>
 
+      <div class="field" id="matchedTargetsField" hidden>
+        <label>Matched to</label>
+        <div class="matched-targets-list" id="matchedTargetsList"></div>
+        <p class="field-hint">A machine code usually maps to one clinic parameter/exam — occasionally the clinic files it under more than one. Every one listed here gets written and sent for each result.</p>
+      </div>
+
       <div class="field">
-        <label for="fSearch">Match to a clinic parameter or exam</label>
+        <label for="fSearch" id="fSearchLabel">Match to a clinic parameter or exam</label>
         <div class="combo">
           <input type="text" id="fSearch" placeholder="Search by name or ID, e.g. Globules Blancs, FNS, or 81…" autocomplete="off">
           <div class="combo-results" id="searchResults"></div>
         </div>
         <p class="field-hint">Search finds both lab parameters (e.g. a single value like WBC) and full exams (for tests with no single value breakdown).</p>
-      </div>
-
-      <div class="match-picked" id="matchPicked" hidden>
-        <div class="match-picked-icon">
-          <svg viewBox="0 0 24 24" fill="none"><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/></svg>
-        </div>
-        <div class="match-picked-body">
-          <div class="match-picked-name-row">
-            <span class="match-picked-name" id="matchPickedName">—</span>
-            <span class="match-kind-badge" id="matchKindBadge">—</span>
-          </div>
-          <div class="match-picked-meta" id="matchPickedMeta">—</div>
-        </div>
-        <button class="icon-btn" id="matchPickedClear" title="Clear selection" type="button">
-          <svg viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-        </button>
       </div>
 
       <div class="modal-alert" id="modalAlert" hidden></div>

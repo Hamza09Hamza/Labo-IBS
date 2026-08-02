@@ -41,19 +41,31 @@ def _quote(s: str) -> str:
     return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def _format_value(param_id, st_id, st_name, abbrev, name) -> str:
-    """
-    Render one target tuple, wrapped in the list every mappings.py entry
-    uses (`"CODE": [(...)]`) - a code can hold more than one target
-    (matcher.match_all()), but the admin UI only edits the single, first/
-    primary one for now (see api_machine_mappings), same as everywhere
-    else that isn't multi-target aware yet. Editing here always replaces
-    the whole list with this one target - a code with a second,
-    UI-added target isn't supported by this editor yet.
-    """
+def _format_one_target(param_id, st_id, st_name, abbrev, name) -> str:
+    """Render a single (param_id, service_tarification_id, ...) tuple literal."""
     param_repr = "None" if param_id is None else str(int(param_id))
     st_id_repr = "None" if st_id is None else str(int(st_id))
-    return f"[({param_repr}, {st_id_repr}, {_quote(st_name)}, {_quote(abbrev)}, {_quote(name)})]"
+    return f"({param_repr}, {st_id_repr}, {_quote(st_name)}, {_quote(abbrev)}, {_quote(name)})"
+
+
+def _format_value(targets: list) -> str:
+    """
+    Render the full `[(...), (...), ...]` list literal for a code - every
+    mappings.py entry is a list of targets (matcher.match_all() reads this),
+    almost always just one but sometimes more (e.g. a machine code the
+    clinic files under two different historical exam entries for the same
+    physical measurement). `targets` is a list of dicts with keys param_id/
+    service_tarification_id/service_tarification_name/abbrev/name, in the
+    order they should appear (and be sent to the clinic API/written
+    locally - see server.py's _ingest_result, which iterates match_all() in
+    this same order).
+    """
+    tuples = ", ".join(
+        _format_one_target(t["param_id"], t["service_tarification_id"],
+                           t["service_tarification_name"], t["abbrev"], t["name"])
+        for t in targets
+    )
+    return f"[{tuples}]"
 
 
 def _find_map_block(text: str, var_name: str):
@@ -182,18 +194,28 @@ def add_machine_map(machine: str) -> None:
         MAP_VAR_NAMES[machine] = var_name
 
 
-def upsert_entry(machine: str, code: str, param_id, service_tarification_id,
-                  service_tarification_name: str, abbrev: str, name: str) -> None:
+def upsert_entry(machine: str, code: str, targets: list) -> None:
     """
-    Add or update one `"CODE": [(...)]` line inside the given machine's dict
-    literal. Preserves any trailing inline comment on that line (e.g. "# 18
-    vs 8 orders...") - only the list value is replaced, comment kept as-is.
-    Always writes a single-target list - a code that already has 2+ targets
-    (added some other way) would have its extra targets discarded by this;
-    the admin UI isn't multi-target aware yet (see _format_value).
+    Add or update one `"CODE": [(...), (...), ...]` line inside the given
+    machine's dict literal. Preserves any trailing inline comment on that
+    line (e.g. "# 18 vs 8 orders...") - only the list value is replaced,
+    comment kept as-is.
+
+    `targets` is a list of dicts, each with param_id/service_tarification_id/
+    service_tarification_name/abbrev/name - almost always length 1, but a
+    code can map to more than one clinic target (matcher.match_all() reads
+    every one). This call REPLACES the code's entire target list - it's not
+    additive across separate calls; the caller (the admin UI's edit modal)
+    is expected to send the complete desired list each time, same as it
+    already sends the complete desired single target today.
+
     Raises ValueError with a clear message if the machine's map isn't a
-    plain dict literal (e.g. xs500i is `dict(XN330_MAP)` - see aliased_from()).
+    plain dict literal (e.g. xs500i is `dict(XN330_MAP)` - see aliased_from()),
+    or if targets is empty (a code must map to at least one target).
     """
+    if not targets:
+        raise ValueError("at least one target is required")
+
     with _lock:
         var_name = MAP_VAR_NAMES.get(machine)
         if not var_name:
@@ -210,8 +232,7 @@ def upsert_entry(machine: str, code: str, param_id, service_tarification_id,
         start, end = block
         block_text = text[start:end]
 
-        new_value = _format_value(param_id, service_tarification_id,
-                                  service_tarification_name, abbrev, name)
+        new_value = _format_value(targets)
         key_quoted = _quote(code)
         span = _find_entry_span(block_text, code)
         if span:
@@ -241,8 +262,11 @@ def upsert_entry(machine: str, code: str, param_id, service_tarification_id,
     # Mirror into labo_bridge.mappings AFTER the file write succeeds and the
     # lock is released - mappings.py is still the source of truth, this is
     # just a queryable copy (see pg.py's module docstring).
-    pg.sync_mapping(machine, code, param_id, service_tarification_id,
-                    service_tarification_name, abbrev, name)
+    pg.sync_mapping(machine, code, [
+        (t["param_id"], t["service_tarification_id"],
+         t["service_tarification_name"], t["abbrev"], t["name"])
+        for t in targets
+    ])
     # This code is no longer "waiting to be mapped" - clear any stale
     # pending_params row for it so the Pending tab doesn't keep flagging
     # something that's now resolved.

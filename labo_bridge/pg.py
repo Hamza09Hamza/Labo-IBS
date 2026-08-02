@@ -364,8 +364,7 @@ def clear_pending_param(machine, code):
         return False
 
 
-def sync_mapping(machine, code, param_id, service_tarification_id,
-                  service_tarification_name, abbrev, name):
+def sync_mapping(machine, code, targets):
     """
     Mirror one mappings.py entry into labo_bridge.mappings - called by
     mappings_editor.py right after it writes the same entry into the source
@@ -374,6 +373,14 @@ def sync_mapping(machine, code, param_id, service_tarification_id,
     visible/queryable in pgAdmin. Silently no-ops if PG is unreachable - the
     file write already succeeded, and this is a convenience mirror, not the
     source of truth, so it shouldn't block or fail the actual edit.
+
+    `targets` is a list of (param_id, service_tarification_id,
+    service_tarification_name, abbrev, name) tuples - one code can map to
+    more than one clinic target (matcher.match_all()). Deletes every
+    existing row for this (machine, code) first, then inserts the full
+    list fresh - upsert_entry() always replaces a code's ENTIRE target list
+    (not append-only), so the mirror does the same rather than trying to
+    diff old vs. new targets.
     """
     conn = _get_conn()
     if conn is None:
@@ -381,22 +388,19 @@ def sync_mapping(machine, code, param_id, service_tarification_id,
     try:
         with conn.cursor() as cur:
             cur.execute(
-                """
-                INSERT INTO labo_bridge.mappings
-                    (machine, test_code, param_id, service_tarification_id,
-                     service_tarification_name, abbrev, name)
-                VALUES (%s,%s,%s,%s,%s,%s,%s)
-                ON CONFLICT (machine, test_code) DO UPDATE SET
-                    param_id = EXCLUDED.param_id,
-                    service_tarification_id = EXCLUDED.service_tarification_id,
-                    service_tarification_name = EXCLUDED.service_tarification_name,
-                    abbrev = EXCLUDED.abbrev,
-                    name = EXCLUDED.name,
-                    updated_at = now()
-                """,
-                (machine, code, param_id, service_tarification_id,
-                 service_tarification_name, abbrev, name),
+                "DELETE FROM labo_bridge.mappings WHERE machine = %s AND test_code = %s",
+                (machine, code),
             )
+            for param_id, st_id, st_name, abbrev, name in targets:
+                cur.execute(
+                    """
+                    INSERT INTO labo_bridge.mappings
+                        (machine, test_code, param_id, service_tarification_id,
+                         service_tarification_name, abbrev, name)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s)
+                    """,
+                    (machine, code, param_id, st_id, st_name, abbrev, name),
+                )
         return True
     except Exception as e:
         print(f"[pg] WARNING: failed to sync mapping {machine}/{code} to labo_bridge.mappings: {e}")

@@ -109,8 +109,25 @@ CREATE TABLE IF NOT EXISTS labo_bridge.mappings (
     abbrev TEXT,
     name TEXT,
     updated_at TIMESTAMP NOT NULL DEFAULT now(),
-    UNIQUE (machine, test_code)
+    UNIQUE (machine, test_code, param_id, service_tarification_id)
 );
+-- A code can map to more than one clinic target (matcher.match_all()) - the
+-- old UNIQUE(machine, test_code) only ever allowed mirroring one row per
+-- code. Widened to include the target columns so multiple targets can
+-- coexist. DROP...IF EXISTS is safe to re-run (fresh deploys never hit it,
+-- since CREATE TABLE above already creates the new constraint directly);
+-- the ADD is wrapped in a DO block since Postgres has no
+-- "ADD CONSTRAINT IF NOT EXISTS" syntax.
+ALTER TABLE labo_bridge.mappings DROP CONSTRAINT IF EXISTS mappings_machine_test_code_key;
+DO $$
+BEGIN
+    ALTER TABLE labo_bridge.mappings ADD CONSTRAINT mappings_machine_test_code_target_key
+        UNIQUE (machine, test_code, param_id, service_tarification_id);
+EXCEPTION WHEN duplicate_table THEN
+    -- constraint (backed by a unique index, hence "duplicate_table" not
+    -- "duplicate_object") already exists - this DO block already ran before.
+    NULL;
+END $$;
 
 CREATE TABLE IF NOT EXISTS labo_bridge.machine_config (
     machine TEXT PRIMARY KEY,
@@ -329,28 +346,34 @@ def create_schema(conn):
 
 
 def seed_mappings(conn):
+    # Each code maps to a LIST of targets (mappings.py) - almost always one,
+    # sometimes more (matcher.match_all()). One row per target here; the
+    # ON CONFLICT key matches labo_bridge.mappings' widened unique
+    # constraint (machine, test_code, param_id, service_tarification_id),
+    # not just (machine, test_code) - the old key could only ever hold one
+    # target per code.
     count = 0
     with conn.cursor() as cur:
         for machine, machine_map in mappings_module.MAPS.items():
-            for test_code, (param_id, st_id, st_name, abbrev, name) in machine_map.items():
-                cur.execute(
-                    """
-                    INSERT INTO labo_bridge.mappings
-                        (machine, test_code, param_id, service_tarification_id,
-                         service_tarification_name, abbrev, name)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s)
-                    ON CONFLICT (machine, test_code) DO UPDATE SET
-                        param_id = EXCLUDED.param_id,
-                        service_tarification_id = EXCLUDED.service_tarification_id,
-                        service_tarification_name = EXCLUDED.service_tarification_name,
-                        abbrev = EXCLUDED.abbrev,
-                        name = EXCLUDED.name,
-                        updated_at = now()
-                    """,
-                    (machine, test_code, param_id, st_id, st_name, abbrev, name),
-                )
-                count += 1
-    print(f"[deploy_seed] labo_bridge.mappings seeded from mappings.py ({count} entries across "
+            for test_code, targets in machine_map.items():
+                for param_id, st_id, st_name, abbrev, name in targets:
+                    cur.execute(
+                        """
+                        INSERT INTO labo_bridge.mappings
+                            (machine, test_code, param_id, service_tarification_id,
+                             service_tarification_name, abbrev, name)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s)
+                        ON CONFLICT (machine, test_code, param_id, service_tarification_id)
+                        DO UPDATE SET
+                            service_tarification_name = EXCLUDED.service_tarification_name,
+                            abbrev = EXCLUDED.abbrev,
+                            name = EXCLUDED.name,
+                            updated_at = now()
+                        """,
+                        (machine, test_code, param_id, st_id, st_name, abbrev, name),
+                    )
+                    count += 1
+    print(f"[deploy_seed] labo_bridge.mappings seeded from mappings.py ({count} target(s) across "
           f"{len(mappings_module.MAPS)} machines)")
 
 

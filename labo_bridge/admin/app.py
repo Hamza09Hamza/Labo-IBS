@@ -400,9 +400,13 @@ def api_machine_mappings(machine):
 
     entries = []
     for code, targets in machine_map.items():
-        # Each code now maps to a LIST of targets (mappings.py) - the admin
-        # UI isn't multi-target aware yet, so show just the first/primary
-        # one here, same single-match behavior as matcher.match().
+        # Each code maps to a LIST of targets (mappings.py) - almost always
+        # just one, but a code can legitimately have more (matcher.match_all()
+        # sends every one). "targets" carries the FULL list for the admin UI
+        # to show/edit; the flat param_id/service_tarification_id/etc. fields
+        # below still mirror just the first/primary one, for any part of the
+        # UI (search, mapped-table row summary) that only cares about "the"
+        # match rather than every one.
         param_id, st_id, st_name, abbrev, name = targets[0]
         recent = recent_by_code.get(code)
         entries.append({
@@ -412,6 +416,11 @@ def api_machine_mappings(machine):
             "service_tarification_name": st_name,
             "abbrev": abbrev,
             "name": name,
+            "targets": [
+                {"param_id": t[0], "service_tarification_id": t[1],
+                 "service_tarification_name": t[2], "abbrev": t[3], "name": t[4]}
+                for t in targets
+            ],
             "last_value": recent["result_value"] if recent else None,
             "last_unit": recent["unit"] if recent else None,
             "last_seen": recent["received_at"].isoformat() if recent else None,
@@ -428,14 +437,34 @@ def api_machine_mappings(machine):
 def api_upsert_mapping(machine, code):
     code = urllib.parse.unquote(code)  # see api_sample_detail's comment on <path:> + %2F
     body = request.get_json(force=True)
+    # "targets" (a list) is the current shape - one code can map to more than
+    # one clinic param/exam. Still accept the old flat single-target body
+    # (param_id/service_tarification_id/... at the top level, no "targets"
+    # key) as a fallback so any older caller/script keeps working unchanged.
+    targets = body.get("targets")
+    if targets is None:
+        targets = [{
+            "param_id": body.get("param_id"),
+            "service_tarification_id": body.get("service_tarification_id"),
+            "service_tarification_name": body.get("service_tarification_name"),
+            "abbrev": body.get("abbrev"),
+            "name": body.get("name"),
+        }]
+    if not targets:
+        return jsonify({"error": "at least one target (param or exam) is required"}), 400
     try:
         me.upsert_entry(
             machine, code,
-            param_id=body.get("param_id") or None,
-            service_tarification_id=body.get("service_tarification_id") or None,
-            service_tarification_name=body.get("service_tarification_name") or "",
-            abbrev=body.get("abbrev") or "",
-            name=body.get("name") or "",
+            targets=[
+                {
+                    "param_id": t.get("param_id") or None,
+                    "service_tarification_id": t.get("service_tarification_id") or None,
+                    "service_tarification_name": t.get("service_tarification_name") or "",
+                    "abbrev": t.get("abbrev") or "",
+                    "name": t.get("name") or "",
+                }
+                for t in targets
+            ],
         )
     except ValueError as e:
         return jsonify({"error": str(e)}), 400

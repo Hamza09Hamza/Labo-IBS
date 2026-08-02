@@ -989,6 +989,21 @@ body.modal-open .blob { animation-play-state: paused; }
 .match-picked-name { font-weight: 700; font-size: 14px; }
 .match-picked-meta { font-size: 12px; color: var(--fg-muted); font-family: var(--font-mono); margin-top: 1px; }
 
+/* One matched target per row - same success-tinted look as .match-picked
+   (an already-committed match), just stacked since a code can have more
+   than one. */
+.matched-targets-list { display: flex; flex-direction: column; gap: 8px; }
+.matched-target-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px; border-radius: 12px;
+  background: var(--success-bg); border: 1px solid color-mix(in srgb, var(--success) 30%, transparent);
+}
+.matched-target-body { flex: 1; min-width: 0; }
+.matched-target-name-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.matched-target-name { font-weight: 700; font-size: 14px; }
+.matched-target-meta { font-size: 12px; color: var(--fg-muted); margin-top: 1px; }
+.matched-target-remove { flex-shrink: 0; }
+
 .modal-alert {
   padding: 12px 15px; border-radius: 12px;
   background: var(--danger-bg); color: var(--danger); font-weight: 500;
