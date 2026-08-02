@@ -274,6 +274,11 @@ MINIVIDAS_MAP = {
     # instead (2026-07-23): rn="25-OH Vitamin D TOTAL", mt=rsl confirms a
     # genuine result frame, not calibration.
     "VITD": [(None, 542, "Vitamine D",               "VitD", "Vitamine D")],
+
+    # Added via the admin UI's mapping editor directly on the clinic server
+    # (commit c4944b4) - merged in here so it survives the list-format
+    # conversion instead of getting overwritten by a plain git pull.
+    "HAVM": [(None, 438, "HAV (IgM)", "", "HAV (IgM)")],
 }
 
 MAPS = {
