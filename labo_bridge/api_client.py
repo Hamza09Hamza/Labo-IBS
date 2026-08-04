@@ -46,10 +46,18 @@ if not _logger.handlers:
     _logger.propagate = False
 
 
-def _log(msg: str):
-    """Print to the terminal (unchanged, for live watching) AND append to
-    api_send.log (for reviewing later - see _LOG_PATH's comment above)."""
+def _print(msg: str):
+    """Terminal only - the full pretty-printed request/response JSON, useful
+    live but far too verbose to also put in the file log (a single 13-result
+    XN-330 batch alone is 250+ lines of that)."""
     print(msg)
+
+
+def _log_line(msg: str):
+    """api_send.log only - ONE compact line per attempt/outcome, no JSON
+    dump. This is the file meant to be grepped later for a sample_id or
+    timestamp, so it needs to stay small and scannable, not mirror the
+    verbose terminal output."""
     _logger.info(msg)
 
 
@@ -159,9 +167,13 @@ def send_batch(machine: str, queued: list) -> list:
                 "service_tarification_id": e.get("service_tarification_id"),
                 "api_sent": False, "api_result_id": None} for e in queued]
 
+    def target_label(entry):
+        pid, sid = entry.get("param_id"), entry.get("service_tarification_id")
+        return f"param_id:{pid}" if pid else f"service_tarification_id:{sid}"
+
     items = [entry["item"] for entry in queued]
-    _log(f"[api] >> POST {ENDPOINT}  ({len(items)} result(s) in one array)\n"
-         f"[api]    body: {json.dumps(items, ensure_ascii=False, indent=2)}")
+    _print(f"[api] >> POST {ENDPOINT}  ({len(items)} result(s) in one array)\n"
+           f"[api]    body: {json.dumps(items, ensure_ascii=False, indent=2)}")
     result = send_results(items)
 
     if not result["ok"]:
@@ -169,24 +181,41 @@ def send_batch(machine: str, queued: list) -> list:
         # Show the API's OWN response body, not just "HTTP Error 400" - the
         # clinic returns the real reason there (e.g. duplicate result, unknown
         # sample, tube mismatch), which is what you actually need to act on.
-        _log(f"[api] << send failed for batch [{labels}]: "
-             f"{result['error']} (status={result['status']})")
+        _print(f"[api] << send failed for batch [{labels}]: "
+               f"{result['error']} (status={result['status']})")
         if result.get("body"):
-            _log(f"[api]    reason from clinic API: {json.dumps(result['body'], ensure_ascii=False, indent=2)}"
-                 if not isinstance(result['body'], str) else f"[api]    reason from clinic API: {result['body']}")
-        return outcomes
+            _print(f"[api]    reason from clinic API: {json.dumps(result['body'], ensure_ascii=False, indent=2)}"
+                   if not isinstance(result['body'], str) else f"[api]    reason from clinic API: {result['body']}")
 
-    body = result["body"]
+    # The clinic API returns a per-item "results" breakdown even on a 4xx
+    # HTTP status (confirmed via real capture - a structured rejection like
+    # "sample_id must be appointment number..." per item still comes back
+    # as HTTP 400, not 200) - so this has to be checked regardless of
+    # result["ok"], not only on success. Only truly falls back to one
+    # generic line per item when there's no parseable per-item body at all
+    # (a real connection failure/timeout, or a response shape that doesn't
+    # match what's expected).
+    body = result.get("body")
     per_item = body.get("results") if isinstance(body, dict) else None
     if per_item and len(per_item) == len(queued):
         for entry, r, outcome in zip(queued, per_item, outcomes):
             label = f"{machine}/{entry['sample_id']}/{entry['test_code']}"
             if r.get("success"):
-                _log(f"[api] << accepted {label} (labo_result_id={r.get('laboResultId')})")
+                _print(f"[api] << accepted {label} (labo_result_id={r.get('laboResultId')})")
                 outcome["api_sent"] = True
                 outcome["api_result_id"] = r.get("laboResultId")
+                _log_line(f"machine={machine} sample={entry['sample_id']} test={entry['test_code']} "
+                          f"target={target_label(entry)} -> SENT id={r.get('laboResultId')}")
             else:
-                _log(f"[api] << REJECTED {label}: {r.get('message', r)}")
-    else:
-        _log(f"[api] << batch response: {body}")
+                _print(f"[api] << REJECTED {label}: {r.get('message', r)}")
+                _log_line(f"machine={machine} sample={entry['sample_id']} test={entry['test_code']} "
+                          f"target={target_label(entry)} -> REJECTED: {r.get('message', r)}")
+        return outcomes
+
+    if result["ok"]:
+        _print(f"[api] << batch response: {body}")
+    reason = result.get("error") or (str(body) if body else "no response body")
+    for entry in queued:
+        _log_line(f"machine={machine} sample={entry['sample_id']} test={entry['test_code']} "
+                  f"target={target_label(entry)} -> FAILED: {reason} (status={result['status']})")
     return outcomes
