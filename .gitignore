@@ -8,6 +8,9 @@ labo_bridge.db
 # Live app state (port overrides), not source
 runtime_ports.json
 
+# Clinic API send log (rotating, runtime data - see api_client.py)
+api_send.log*
+
 # Python
 __pycache__/
 *.pyc

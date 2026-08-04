@@ -15,13 +15,42 @@ client is ready to go the moment it is - just flip the config flag.
 """
 
 import json
+import logging
+import os
 import urllib.request
 import urllib.error
+
+from logging.handlers import RotatingFileHandler
 
 from . import config
 
 ENDPOINT = "http://172.16.2.4:8282/labo/api/machine/result"
 API_TOKEN = "labo@@2025"
+
+# Persistent record of every clinic API send attempt and outcome - the
+# terminal output alone isn't reviewable after the fact (NSSM's console
+# isn't something anyone can scroll back through days later), and "this
+# result sent, that one didn't, no clear pattern" needs the actual rejection
+# reason from the clinic API to investigate, not a guess. Rotates at 5MB x 3
+# files (~15MB ceiling) so it can't grow unbounded like the old raw session
+# captures did (see server.py's _write_session_file, disabled for that
+# reason) - one line per send attempt is tiny, this should last a very long
+# time before rotating even once.
+_LOG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "api_send.log")
+_logger = logging.getLogger("labo_bridge.api_client")
+_logger.setLevel(logging.INFO)
+if not _logger.handlers:
+    _handler = RotatingFileHandler(_LOG_PATH, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8")
+    _handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
+    _logger.addHandler(_handler)
+    _logger.propagate = False
+
+
+def _log(msg: str):
+    """Print to the terminal (unchanged, for live watching) AND append to
+    api_send.log (for reviewing later - see _LOG_PATH's comment above)."""
+    print(msg)
+    _logger.info(msg)
 
 
 def send_results(items: list) -> dict:
@@ -131,8 +160,8 @@ def send_batch(machine: str, queued: list) -> list:
                 "api_sent": False, "api_result_id": None} for e in queued]
 
     items = [entry["item"] for entry in queued]
-    print(f"[api] >> POST {ENDPOINT}  ({len(items)} result(s) in one array)\n"
-          f"[api]    body: {json.dumps(items, ensure_ascii=False, indent=2)}")
+    _log(f"[api] >> POST {ENDPOINT}  ({len(items)} result(s) in one array)\n"
+         f"[api]    body: {json.dumps(items, ensure_ascii=False, indent=2)}")
     result = send_results(items)
 
     if not result["ok"]:
@@ -140,11 +169,11 @@ def send_batch(machine: str, queued: list) -> list:
         # Show the API's OWN response body, not just "HTTP Error 400" - the
         # clinic returns the real reason there (e.g. duplicate result, unknown
         # sample, tube mismatch), which is what you actually need to act on.
-        print(f"[api] << send failed for batch [{labels}]: "
-              f"{result['error']} (status={result['status']})")
+        _log(f"[api] << send failed for batch [{labels}]: "
+             f"{result['error']} (status={result['status']})")
         if result.get("body"):
-            print(f"[api]    reason from clinic API: {json.dumps(result['body'], ensure_ascii=False, indent=2)}"
-                  if not isinstance(result['body'], str) else f"[api]    reason from clinic API: {result['body']}")
+            _log(f"[api]    reason from clinic API: {json.dumps(result['body'], ensure_ascii=False, indent=2)}"
+                 if not isinstance(result['body'], str) else f"[api]    reason from clinic API: {result['body']}")
         return outcomes
 
     body = result["body"]
@@ -153,11 +182,11 @@ def send_batch(machine: str, queued: list) -> list:
         for entry, r, outcome in zip(queued, per_item, outcomes):
             label = f"{machine}/{entry['sample_id']}/{entry['test_code']}"
             if r.get("success"):
-                print(f"[api] << accepted {label} (labo_result_id={r.get('laboResultId')})")
+                _log(f"[api] << accepted {label} (labo_result_id={r.get('laboResultId')})")
                 outcome["api_sent"] = True
                 outcome["api_result_id"] = r.get("laboResultId")
             else:
-                print(f"[api] << REJECTED {label}: {r.get('message', r)}")
+                _log(f"[api] << REJECTED {label}: {r.get('message', r)}")
     else:
-        print(f"[api] << batch response: {body}")
+        _log(f"[api] << batch response: {body}")
     return outcomes
