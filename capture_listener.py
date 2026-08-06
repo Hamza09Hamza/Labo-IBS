@@ -53,6 +53,7 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from labo_bridge.protocols import hl7_mllp  # noqa: E402 - pure framing helper, no side effects
+from labo_bridge.decoders import wato_ex35  # noqa: E402 - only used for the wato_ex35 target below
 
 HOST = "0.0.0.0"
 CAPTURES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "captures")
@@ -95,6 +96,22 @@ def _handle_connection(conn, addr, name):
     def _log(text):
         log.write(text)
         log.flush()
+
+    # Live-decoded readable output, alongside the raw capture - only for
+    # wato_ex35 (the one target with a real decoder, see
+    # labo_bridge/decoders/wato_ex35.py); other targets (e.g. karlstorz)
+    # have no decoder yet, so this file simply isn't created for them.
+    decoded_path = None
+    decoded_file = None
+    if name == "wato_ex35":
+        decoded_path = os.path.join(CAPTURES_DIR, f"{name}_{ts}_{addr[0]}_decoded.txt")
+        decoded_file = open(decoded_path, "a", encoding="utf-8")
+        print(f"[{name}] readable decoded results -> {decoded_path}")
+
+    def _log_decoded(text):
+        if decoded_file:
+            decoded_file.write(text)
+            decoded_file.flush()
 
     _log(f"=== capture started {datetime.now().isoformat()} from {addr[0]}:{addr[1]} ===\n")
 
@@ -140,6 +157,10 @@ def _handle_connection(conn, addr, name):
                 print(f"[{name}]\n{block}", end="")
                 _log(block)
 
+                if name == "wato_ex35":
+                    decoded_message = wato_ex35.decode_message(segments)
+                    _log_decoded(wato_ex35.readable_summary(decoded_message) + "\n\n")
+
                 control_id = "0"
                 for seg in segments:
                     fields = seg.split("|")
@@ -156,6 +177,9 @@ def _handle_connection(conn, addr, name):
         _log(f"=== capture ended {datetime.now().isoformat()} "
              f"({total_bytes} bytes total, {mllp_count} MLLP message(s) decoded) ===\n")
         log.close()
+        if decoded_file:
+            decoded_file.close()
+            print(f"[{name}] readable decoded results saved to {decoded_path}")
         conn.close()
         print(f"[{name}] disconnected {addr[0]}:{addr[1]} - {total_bytes} bytes, "
               f"{mllp_count} MLLP message(s). Full capture saved to {log_path}")
