@@ -1,5 +1,6 @@
 results/
 cyanvision_captures/
+captures/
 
 # Local capture database (runtime data, created on first connection)
 *.db
