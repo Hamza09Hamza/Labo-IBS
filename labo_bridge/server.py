@@ -350,7 +350,19 @@ class _Session:
         elif kind == "order":
             if self.is_calibration:
                 return
-            self.sample_id = ev.get("sample_id", "") or self.sample_id
+            order_sample_id = ev.get("sample_id", "")
+            # CyanVision's own OBR-2 is a short internal specimen counter
+            # (e.g. "2228"), not the clinic appointment number - confirmed
+            # via real capture (2026-08-10): the real appointment number
+            # ("2608029203", matching the API's required 8+ digit format)
+            # arrives in PID-2 (self.patient_id) instead. The clinic API
+            # rejects OBR-2 outright ("sample_id must start with an 8-digit
+            # appointment number"), so for this machine only, prefer
+            # patient_id as the sample_id sent onward; every other machine's
+            # OBR/order sample_id is untouched.
+            if self.machine == "cyanvision" and self.patient_id:
+                order_sample_id = self.patient_id
+            self.sample_id = order_sample_id or self.sample_id
             paillasse = ev.get("paillasse")
             self.specimen = {k: ev[k] for k in ("year", "month", "sequence", "paillasse") if k in ev}
             pg.write_sample(self.machine, self.sample_id or "",
