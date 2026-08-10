@@ -1,0 +1,161 @@
+We figured it out completely—the uMEC12 is now sending real SpO₂ values.
+
+## What happened from the beginning
+
+### 1. We initially treated it like a WATO analyzer
+
+We started a passive TCP listener:
+
+```bash
+python3 -u capture_wato.py 6010
+```
+
+That stayed empty because this device is actually a **Mindray uMEC12**, and it does not initiate an HL7 connection to an arbitrary listener like port `6010`.
+
+That initial device assumption was wrong.
+
+### 2. We established the network
+
+Final network configuration:
+
+```text
+Mac:      192.168.1.100
+uMEC12:   192.168.1.113
+Mask:     255.255.255.0
+Gateway:  blank
+```
+
+The successful ping proved basic Ethernet/IP connectivity:
+
+```text
+192.168.1.100 → 192.168.1.113
+0% packet loss
+```
+
+But ping only tests ICMP—it does not request patient measurements.
+
+### 3. Packet capture exposed the real protocol
+
+`tcpdump` showed the uMEC12 broadcasting every second:
+
+```text
+192.168.1.113:4444 → UDP broadcast port 3501
+192.168.1.113:4444 → UDP broadcast port 4600
+```
+
+This revealed Mindray’s Patient Data Share protocol:
+
+- UDP `4600`: HL7 online announcement containing patient/device status.
+- UDP `3501`: proprietary binary device announcement.
+- TCP `4601`: actual PDS patient data and vital-sign interface.
+
+### 4. The connection direction was reversed
+
+The uMEC12 does not connect to our listener. The Mac must connect to the uMEC12:
+
+```text
+uMEC12
+   │
+   ├── UDP 4600 broadcast: “I am online”
+   │
+   ▼
+Mac discovers monitor
+   │
+   ├── TCP connection to 192.168.1.113:4601
+   ├── Send QRY^R02 requesting parameters
+   ├── Exchange heartbeat every second
+   │
+   ▼
+uMEC12 sends HL7 ORU^R01 measurements
+```
+
+### 5. We created the proper uMEC12 client
+
+[capture_umec12.py](/Users/boukaderhamza/Documents/Clinique/Labo-IBS/capture_umec12.py) now:
+
+- Listens to UDP `3501` and `4600`.
+- Connects to the monitor on TCP `4601`.
+- Sends the required Mindray query.
+- Maintains the one-second heartbeat.
+- Decodes patient details, alarms and vital signs.
+- Saves readable and untouched raw captures.
+
+### 6. The first query was sent too early
+
+Initially, the Mac sent the query immediately after opening TCP.
+
+The uMEC12 was still transmitting its startup block—patient information, module list, alarm settings and configuration—and apparently ignored the early parameter query.
+
+That is why we received:
+
+- Patient information.
+- Configuration.
+- Heartbeats.
+- Alarms.
+
+But no `control=204` periodic measurements.
+
+We tried explicit SpO₂ parameter codes, but those also failed when sent too early.
+
+### 7. The decisive fix
+
+We changed the client to wait for the uMEC12’s first `control=106` heartbeat, which indicates that initialization has completed, then resend the query:
+
+```text
+[tcp] monitor ready; re-sent QRY for parameters 160,161,162
+```
+
+That fixed it.
+
+The requested codes were:
+
+```text
+160 = SpO₂
+161 = FP, pulse rate
+162 = PI, perfusion index
+```
+
+## What the successful capture showed
+
+Before the probe obtained a signal:
+
+```text
+SpO2 = -100
+FP   = -100
+PI   = -100
+```
+
+`-100` is the monitor’s invalid/no-reading placeholder—not a clinical result.
+
+When the probe established a signal:
+
+```text
+13:30:36  SpO₂ 93%, pulse 87
+13:30:44  SpO₂ 96%, pulse 90
+13:30:48  SpO₂ 97%, pulse 91
+13:30:50  SpO₂ 97%, pulse 93, PI 10.445
+13:30:52  SpO₂ 98%, pulse 94, PI 10.445
+13:30:58  SpO₂ 98%, pulse 99, PI 10.445
+```
+
+When the probe was removed at `13:31:05`:
+
+```text
+SpO2 = -100
+FP   = -100
+PI   = -100
+
+Alarm: SpO₂ sensor off
+```
+
+That transition confirms the values came directly from the uMEC12 and were decoded correctly.
+
+## Final command
+
+```bash
+python3 -u capture_umec12.py \
+  --monitor-ip 192.168.1.113 \
+  --parameters 160,161,162
+```
+
+So the final answer is: the uMEC12 uses UDP only to announce itself. The Mac must connect to TCP `4601`, wait until the monitor finishes initialization, send the correct PDS query, maintain the heartbeat, and decode the resulting HL7 `control=204` messages.

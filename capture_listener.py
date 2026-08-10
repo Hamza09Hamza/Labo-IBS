@@ -7,10 +7,20 @@ writing a real decoder for it - the same first step already used for
 xs500i and the Mini VIDAS (capture real bytes, then build the decoder from
 that evidence - see labo_bridge/decoders/minividas.py's docstring). There is
 no ASTM handshake, no matcher, no Postgres, no clinic-API call anywhere in
-this file - it only binds a port, logs every byte it receives (raw hex +
-readable text, flushed to disk immediately, not buffered until the
-connection closes), and additionally auto-decodes anything that turns out
-to be HL7/MLLP framed.
+this file - it only binds a port and logs every byte it receives, then
+additionally auto-decodes anything that turns out to be HL7/MLLP framed.
+
+Every connection produces TWO files (see _handle_connection):
+  .raw - the exact bytes off the wire, nothing else, written before any
+         parsing is even attempted. This is the file that's still correct
+         even if the MLLP-framing guess below turns out wrong for a given
+         machine - re-decode straight from it later, nothing lost or
+         reshaped in between.
+  .log - a readable narrative on top: timestamped hex/text dump of each
+         chunk, plus whatever this script guessed/decoded from it (MLLP
+         segments, ACKs sent). Convenient to read, but it's a BEST-EFFORT
+         INTERPRETATION - if it ever disagrees with the .raw file, trust
+         the .raw file.
 
 Why MLLP gets special treatment: the Mindray WATO EX-35's Ethernet HL7 mode
 uses plain MLLP (<VT> message <FS> <CR>) per its manual, identical to
@@ -41,8 +51,8 @@ Usage:
     python capture_listener.py wato_ex35:6010 karlstorz:6011
 
 Ctrl+C stops every listener. Every connection's bytes land in
-captures/<name>_<timestamp>_<peer-ip>.log as they arrive, so nothing is
-lost even if the connection never closes cleanly.
+captures/<name>_<timestamp>_<peer-ip>.{raw,log} as they arrive, so nothing
+is lost even if the connection never closes cleanly.
 """
 
 import os
@@ -88,15 +98,29 @@ def _handle_connection(conn, addr, name):
     os.makedirs(CAPTURES_DIR, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_path = os.path.join(CAPTURES_DIR, f"{name}_{ts}_{addr[0]}.log")
-    print(f"[{name}] connected by {addr[0]}:{addr[1]} -> logging to {log_path}")
+    # Pure, untouched bytes exactly as they came off the wire - zero
+    # interpretation, not even the hex/text formatting the .log file below
+    # applies. This is the file to trust if the MLLP-framing guess for this
+    # machine turns out wrong (e.g. WATO's serial+CRC mode, or Karl Storz's
+    # undocumented protocol): it can be re-parsed from scratch by a
+    # different/corrected decoder later with nothing lost or reshaped in
+    # between. The .log file is the readable, best-effort NARRATIVE on top
+    # of it (hex dump + whatever this script guessed/decoded) - convenient,
+    # but never the thing to trust over this one if they disagree.
+    raw_path = os.path.join(CAPTURES_DIR, f"{name}_{ts}_{addr[0]}.raw")
+    print(f"[{name}] connected by {addr[0]}:{addr[1]}\n"
+          f"[{name}]   readable log -> {log_path}\n"
+          f"[{name}]   raw bytes    -> {raw_path}")
 
     log = open(log_path, "a", encoding="utf-8")
+    raw = open(raw_path, "ab")
 
     def _log(text):
         log.write(text)
         log.flush()
 
     _log(f"=== capture started {datetime.now().isoformat()} from {addr[0]}:{addr[1]} ===\n")
+    _log(f"raw bytes for this session also saved to {os.path.basename(raw_path)}\n")
 
     buffer = b""
     total_bytes = 0
@@ -113,6 +137,13 @@ def _handle_connection(conn, addr, name):
                 break
             if not data:
                 break
+
+            # Written FIRST, before anything below even looks at the bytes -
+            # this line cannot be skipped by an MLLP-parsing bug, a wrong
+            # framing guess, or an exception further down. Whatever happens
+            # next to `data`, it's already safely on disk unmodified.
+            raw.write(data)
+            raw.flush()
 
             total_bytes += len(data)
             buffer += data
@@ -156,9 +187,13 @@ def _handle_connection(conn, addr, name):
         _log(f"=== capture ended {datetime.now().isoformat()} "
              f"({total_bytes} bytes total, {mllp_count} MLLP message(s) decoded) ===\n")
         log.close()
+        raw.close()
         conn.close()
         print(f"[{name}] disconnected {addr[0]}:{addr[1]} - {total_bytes} bytes, "
-              f"{mllp_count} MLLP message(s). Full capture saved to {log_path}")
+              f"{mllp_count} MLLP message(s) decoded as MLLP (decode may be WRONG if this "
+              f"machine doesn't actually speak MLLP - the .raw file is unaffected either way)\n"
+              f"[{name}]   readable log -> {log_path}\n"
+              f"[{name}]   raw bytes    -> {raw_path}")
 
 
 def _serve(name, port, stop_event):
