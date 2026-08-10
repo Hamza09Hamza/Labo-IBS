@@ -259,13 +259,18 @@ def _flush_api_batch(session):
 
 def _write_session_file(session):
     """
-    Disabled on deployed/production servers: writing one file per session
-    (every sample, every calibration cycle, every retransmission) grows
-    results/ unboundedly under real continuous machine traffic. Re-enable
-    (delete this early return) only for local debugging of a specific
-    machine's raw wire format.
+    Disabled on deployed/production servers for every machine except
+    cyanvision: writing one file per session (every sample, every
+    calibration cycle, every retransmission) grows results/ unboundedly
+    under real continuous machine traffic. cyanvision is temporarily
+    enabled (2026-08-10) to see its real raw wire format on the live
+    server - specifically whether OBX carries a ref number instead of/
+    alongside sample_id. Revert to unconditional `return` once that
+    capture is done; re-enabling for any other machine should be equally
+    temporary and scoped the same way, not left on by default.
     """
-    return
+    if session.machine != "cyanvision":
+        return
     os.makedirs(RESULTS_DIR, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     fname = os.path.join(RESULTS_DIR, f"{session.machine}_{ts}.txt")
