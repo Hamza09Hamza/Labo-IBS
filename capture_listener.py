@@ -30,15 +30,45 @@ extra trailing characters. Harmless for discovery purposes (the point here
 is "see the real bytes"); a real decoder would need to strip it once
 confirmed.
 
-Karl Storz (or anything else that isn't MLLP-framed at all) is still
-captured byte-for-byte - it just never enters the MLLP branch, and nothing
-is ever sent back to it unsolicited (safest default for a device whose
-protocol isn't documented).
+Anything that isn't MLLP-framed at all is still captured byte-for-byte -
+it just never enters the MLLP branch, and nothing is ever sent back to it
+unsolicited (safest default for a device whose protocol isn't documented).
+
+uMEC12 is NOT a target here - use capture_umec12.py instead. Confirmed
+2026-08-10: it doesn't push data to a listener at all (neither TCP nor
+UDP as first assumed here) - it's a Mindray Patient Data Share (PDS)
+device: broadcasts a UDP announcement on port 4600, but the actual
+measurements only start flowing after WE connect out to it on TCP 4601
+and send a QRY^R02 request plus a 1-second heartbeat. That's a real
+protocol client, not a passive capture, so it lives in its own script.
 
 Usage:
-    python capture_listener.py                        # wato_ex35 on 6010
+    python capture_listener.py                        # bloc target (see DEFAULT_TARGETS)
     python capture_listener.py wato_ex35:6010
-    python capture_listener.py wato_ex35:6010 karlstorz:6011
+    python capture_listener.py cyanvision:6004         # raw capture, see note below
+    python capture_listener.py selectra:6003           # raw capture, see note below
+
+Target syntax: name:port (protocol defaults to tcp) or name:protocol:port
+(protocol is "tcp" or "udp") - UDP support kept generically in case a
+future passive-broadcast target needs it, even though uMEC12 turned out
+not to be one.
+
+Note on cyanvision/selectra: 6004/6003 are their real, currently-configured
+ports (the same ones run_all.py/server.py listen on for the live pipeline) -
+this script and the real service cannot bind the same port at the same
+time. Stop run_all.py/the LaboBridge service before capturing against
+either, capture what's needed, then start it again. Not included in the
+no-args default for this reason (bloc targets are safe to always run;
+these aren't, since they compete with the real production listener).
+
+selectra speaks ASTM/LIS2-A (ENQ/STX/ETX/checksum), not HL7/MLLP, so it
+never enters the MLLP auto-decode branch below - raw hex/text only here,
+same as any non-MLLP target. That's the point right now: capturing exactly
+what the Selectra's real Q (query) record looks like on the wire once
+Host Query mode is enabled on it, since no verified field-level spec for
+that record exists anywhere public (see selectra_hostquery_test.py's
+docstring) - real bytes beat a guessed format before testing a host reply
+against the real machine.
 
 Ctrl+C stops every listener. Every connection's bytes land in
 captures/<name>_<timestamp>_<peer-ip>.log as they arrive, so nothing is
@@ -59,7 +89,10 @@ HOST = "0.0.0.0"
 CAPTURES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "captures")
 IDLE_TIMEOUT_SECONDS = 90  # how long a silent-but-still-open connection waits before we say so
 
-DEFAULT_TARGETS = {"wato_ex35": 6010}
+# No-args default: wato_ex35 is the only bloc target this script actually
+# handles now - see module docstring for why umec12 moved to its own script
+# (capture_umec12.py).
+DEFAULT_TARGETS = {"wato_ex35": ("tcp", 6010)}
 
 
 def _readable(data: bytes) -> str:
@@ -74,14 +107,22 @@ def _parse_targets(argv):
         return dict(DEFAULT_TARGETS)
     targets = {}
     for arg in argv:
-        if ":" not in arg:
-            raise SystemExit(f"bad target {arg!r}, expected name:port (e.g. wato_ex35:6010)")
-        name, port_s = arg.rsplit(":", 1)
+        parts = arg.split(":")
+        if len(parts) == 2:
+            name, port_s = parts
+            protocol = "tcp"
+        elif len(parts) == 3:
+            name, protocol, port_s = parts
+            if protocol not in ("tcp", "udp"):
+                raise SystemExit(f"bad protocol in {arg!r}: {protocol!r} (must be tcp or udp)")
+        else:
+            raise SystemExit(f"bad target {arg!r}, expected name:port or name:protocol:port "
+                              f"(e.g. wato_ex35:6010 or selectra:udp:6003)")
         try:
             port = int(port_s)
         except ValueError:
             raise SystemExit(f"bad port in {arg!r}: {port_s!r} is not a number")
-        targets[name] = port
+        targets[name] = (protocol, port)
     return targets
 
 
@@ -99,8 +140,9 @@ def _handle_connection(conn, addr, name):
 
     # Live-decoded readable output, alongside the raw capture - only for
     # wato_ex35 (the one target with a real decoder, see
-    # labo_bridge/decoders/wato_ex35.py); other targets (e.g. karlstorz)
-    # have no decoder yet, so this file simply isn't created for them.
+    # labo_bridge/decoders/wato_ex35.py); other targets (e.g. cyanvision,
+    # selectra) have no decoder yet, so this file simply isn't created
+    # for them.
     decoded_path = None
     decoded_file = None
     if name == "wato_ex35":
@@ -185,7 +227,7 @@ def _handle_connection(conn, addr, name):
               f"{mllp_count} MLLP message(s). Full capture saved to {log_path}")
 
 
-def _serve(name, port, stop_event):
+def _serve_tcp(name, port, stop_event):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
@@ -195,7 +237,7 @@ def _serve(name, port, stop_event):
         return
     sock.listen(5)
     sock.settimeout(1.0)  # so Ctrl+C (stop_event) is noticed promptly, not blocked in accept()
-    print(f"[{name}] listening on {HOST}:{port} (raw capture, MLLP auto-decode if applicable)")
+    print(f"[{name}] listening on tcp {HOST}:{port} (raw capture, MLLP auto-decode if applicable)")
 
     try:
         while not stop_event.is_set():
@@ -212,18 +254,70 @@ def _serve(name, port, stop_event):
         sock.close()
 
 
+def _serve_udp(name, port, stop_event):
+    """
+    UDP has no connection/accept step - every datagram is logged as its own
+    chunk, one file per (name, port) for the life of this process (not one
+    file per "connection" the way TCP is, since UDP has no such concept).
+    No MLLP auto-decode here (kept generic for any future UDP target);
+    nothing is ever sent back, same safe default as the TCP path for
+    undocumented protocols.
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        sock.bind((HOST, port))
+    except OSError as e:
+        print(f"[{name}] could not bind {HOST}:{port}: {e}")
+        return
+    sock.settimeout(1.0)  # so Ctrl+C (stop_event) is noticed promptly
+    print(f"[{name}] listening on udp {HOST}:{port} (raw capture, no auto-decode)")
+
+    os.makedirs(CAPTURES_DIR, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_path = os.path.join(CAPTURES_DIR, f"{name}_udp_{ts}.log")
+    log = open(log_path, "a", encoding="utf-8")
+    print(f"[{name}] logging to {log_path}")
+    total_bytes = 0
+    datagram_count = 0
+
+    try:
+        while not stop_event.is_set():
+            try:
+                data, addr = sock.recvfrom(65535)
+            except socket.timeout:
+                continue
+            total_bytes += len(data)
+            datagram_count += 1
+            stamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+            block = (f"[{stamp}] RECV {len(data)} bytes from {addr[0]}:{addr[1]}\n"
+                     f"  hex: {data.hex()}\n"
+                     f"  txt: {_readable(data)}\n")
+            print(f"[{name}] {block}", end="")
+            log.write(block)
+            log.flush()
+    finally:
+        log.write(f"=== capture ended {datetime.now().isoformat()} "
+                   f"({total_bytes} bytes total, {datagram_count} datagram(s)) ===\n")
+        log.close()
+        sock.close()
+        print(f"[{name}] stopped - {total_bytes} bytes, {datagram_count} datagram(s). "
+              f"Full capture saved to {log_path}")
+
+
 def main():
     targets = _parse_targets(sys.argv[1:])
     os.makedirs(CAPTURES_DIR, exist_ok=True)
     print(f"Raw capture listener - captures saved under {CAPTURES_DIR}/")
-    print(f"Targets: {', '.join(f'{n}={p}' for n, p in targets.items())}")
+    print(f"Targets: {', '.join(f'{n}={proto}/{p}' for n, (proto, p) in targets.items())}")
     print("This does NOT touch Postgres, the clinic API, or any matcher/mapping "
           "logic - it only captures and (for HL7/MLLP) decodes for viewing.\n")
 
     stop_event = threading.Event()
     threads = []
-    for name, port in targets.items():
-        t = threading.Thread(target=_serve, args=(name, port, stop_event),
+    for name, (protocol, port) in targets.items():
+        target_fn = _serve_udp if protocol == "udp" else _serve_tcp
+        t = threading.Thread(target=target_fn, args=(name, port, stop_event),
                              name=f"capture-{name}", daemon=True)
         t.start()
         threads.append(t)
