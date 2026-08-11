@@ -2,10 +2,23 @@ results/
 cyanvision_captures/
 captures/
 clinical_portal/captures/
+selectra_host_query/data/
+selectra_packet_capture/.selectra_pktmon_active.json
+selectra_packet_capture/selectra_capture_*/
+selectra_packet_capture/selectra_capture_*.zip
 
 # Local capture database (runtime data, created on first connection)
 *.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
 labo_bridge.db
+
+# Packet captures and generated diagnostic archives
+*.etl
+*.pcap
+*.pcapng
 
 # Live app state (port overrides), not source
 runtime_ports.json
@@ -15,5 +28,41 @@ api_send.log*
 
 # Python
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
 .venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Node / frontend dependencies and generated output
+node_modules/
+.npm/
+.pnpm-store/
+.yarn/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+dist/
+build/
+coverage/
+.next/
+.nuxt/
+.svelte-kit/
+
+# Local environment and editor files
+.env
+.env.*
+!.env.example
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini
