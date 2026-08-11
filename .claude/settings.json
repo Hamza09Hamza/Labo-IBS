@@ -5,7 +5,8 @@
       "Bash(git branch *)",
       "Bash(git push *)",
       "WebSearch",
-      "Bash(nc -zv -w 2 169.254.46.0 1-100)"
+      "Bash(nc -zv -w 2 169.254.46.0 1-100)",
+      "Bash(npx skills *)"
     ]
   }
 }

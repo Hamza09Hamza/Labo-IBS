@@ -1,6 +1,7 @@
 results/
 cyanvision_captures/
 captures/
+clinical_portal/captures/
 
 # Local capture database (runtime data, created on first connection)
 *.db

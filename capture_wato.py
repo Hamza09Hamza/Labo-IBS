@@ -54,6 +54,7 @@ with a code NOT in this dict is still shown, just without a friendly label -
 never guessed at.
 """
 
+import argparse
 import os
 import socket
 import sys
@@ -61,6 +62,7 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from labo_bridge.protocols import hl7_mllp  # noqa: E402 - pure framing helper, no side effects
+from clinical_portal.publish import PortalPublisher  # noqa: E402
 
 HOST = "0.0.0.0"
 DEFAULT_PORT = 6010
@@ -139,7 +141,40 @@ def _annotate_obx(segment: str):
     return f"{label} = {value}{(' ' + unit) if unit else ''}"
 
 
-def _handle_connection(conn, addr):
+def _portal_reading(segment: str):
+    """Normalize only a numeric OBX; never guess a value from coded text."""
+    fields = segment.split("|")
+    if not fields or fields[0] != "OBX" or len(fields) < 6:
+        return None
+    try:
+        float(fields[5].strip())
+    except (TypeError, ValueError):
+        return None
+
+    identifier = fields[3].split("^")
+    code = next((part for part in identifier if part.startswith("MDC_")), identifier[0])
+    known = MDC_CODES.get(code)
+    label = known[0] if known else (identifier[1] if len(identifier) > 1 else code)
+    unit = ""
+    if len(fields) > 6 and fields[6]:
+        unit = fields[6].split("^", 1)[0]
+    if not unit and known:
+        unit = known[1]
+    return {"code": code, "label": label, "value": fields[5].strip(), "unit": unit}
+
+
+def _portal_patient(segments):
+    for segment in segments:
+        fields = segment.split("|")
+        if fields and fields[0] == "PID":
+            return {
+                "id": fields[3].strip() if len(fields) > 3 else "",
+                "name": fields[5].replace("^", " ").strip() if len(fields) > 5 else "",
+            }
+    return None
+
+
+def _handle_connection(conn, addr, portal_publisher=None):
     os.makedirs(CAPTURES_DIR, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_path = os.path.join(CAPTURES_DIR, f"wato_ex35_{ts}_{addr[0]}.log")
@@ -203,6 +238,14 @@ def _handle_connection(conn, addr):
                 print(f"[wato_ex35]\n{block}", end="")
                 _log(block)
 
+                if portal_publisher is not None:
+                    readings = [reading for reading in
+                                (_portal_reading(segment) for segment in segments)
+                                if reading is not None]
+                    patient = _portal_patient(segments)
+                    if readings or patient:
+                        portal_publisher.publish(readings=readings, patient=patient)
+
                 control_id = "0"
                 for seg in segments:
                     fields = seg.split("|")
@@ -228,7 +271,28 @@ def _handle_connection(conn, addr):
 
 
 def main():
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_PORT
+    global CAPTURES_DIR
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("port", nargs="?", type=int, default=DEFAULT_PORT,
+                        help=f"Mac TCP listener port (default: {DEFAULT_PORT})")
+    parser.add_argument("--portal-url",
+                        help="publish normalized readings to this local portal, e.g. http://127.0.0.1:5050")
+    parser.add_argument("--chamber", type=int, choices=(1, 2, 3),
+                        help="operating chamber containing this WATO")
+    parser.add_argument("--captures-dir",
+                        help="directory for raw/readable captures (default: project captures/)")
+    args = parser.parse_args()
+    if bool(args.portal_url) != bool(args.chamber):
+        parser.error("--portal-url and --chamber must be supplied together")
+    if not 1 <= args.port <= 65535:
+        parser.error("port must be between 1 and 65535")
+    if args.captures_dir:
+        CAPTURES_DIR = os.path.abspath(args.captures_dir)
+    port = args.port
+    portal_publisher = (
+        PortalPublisher(args.portal_url, args.chamber, "wato")
+        if args.portal_url else None
+    )
     os.makedirs(CAPTURES_DIR, exist_ok=True)
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -250,7 +314,7 @@ def main():
             except socket.timeout:
                 continue
             try:
-                _handle_connection(conn, addr)
+                _handle_connection(conn, addr, portal_publisher=portal_publisher)
             except Exception as e:
                 print(f"[wato_ex35] error handling connection from {addr}: {e}")
             print("[wato_ex35] ready for next connection.")

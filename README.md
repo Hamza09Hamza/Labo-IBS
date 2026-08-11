@@ -159,6 +159,10 @@ The flag is disabled by default. Confirm the target API contract, authentication
 
 The UI polls the backend for live status and statistics. Machine port changes can trigger runtime listener rebinds without restarting the full process.
 
+The operating-chamber monitoring portal is a separate application with its
+own process and configuration. See `CLINICAL_PORTAL.md`; it is not started by
+or served from this laboratory bridge.
+
 ## Project structure
 
 ```text

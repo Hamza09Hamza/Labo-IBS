@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#eef6f7">
+  <title>OperationBloc Bridge</title>
+  <link rel="stylesheet" href="/portal.css">
+</head>
+<body>
+  <a class="skip-link" href="#mainContent">Skip to block monitoring</a>
+
+  <div class="bg-ambient" aria-hidden="true">
+    <div class="mesh-hero"></div>
+    <div class="blob blob-one"></div>
+    <div class="blob blob-two"></div>
+    <div class="blob blob-three"></div>
+  </div>
+
+  <div class="clinical-app">
+    <aside class="sidebar" aria-label="Clinical navigation">
+      <a class="brand" href="/" aria-label="OperationBloc Bridge home">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 42 42" fill="none">
+            <defs>
+              <linearGradient id="clinicalBrand" x1="5" y1="4" x2="37" y2="38" gradientUnits="userSpaceOnUse">
+                <stop stop-color="#2DD4E8"/><stop offset="1" stop-color="#7C3AED"/>
+              </linearGradient>
+            </defs>
+            <path d="M21 3.5a17.5 17.5 0 1017.5 17.5" stroke="url(#clinicalBrand)" stroke-width="3" stroke-linecap="round"/>
+            <path d="M7.5 22h7l2.8-8 5.2 15 3.2-9h8.8" stroke="url(#clinicalBrand)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="35.5" cy="10" r="2.5" fill="#7C3AED"/>
+          </svg>
+        </span>
+        <span class="brand-text">
+          <strong>OperationBloc</strong>
+          <small>Bridge Console</small>
+        </span>
+      </a>
+
+      <button class="nav-toggle" id="navToggle" type="button" aria-label="Open block navigation" aria-expanded="false">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+
+      <div class="drawer-panel">
+        <div class="drawer-header">
+          <span>OperationBloc Bridge</span>
+          <button class="icon-button" id="drawerClose" type="button" aria-label="Close block navigation">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+
+        <nav class="side-nav" id="roomTabs" aria-label="Operation blocks">
+          <p class="nav-label">Live supervision</p>
+          <button class="side-nav-item active" type="button" data-tab="all">
+            <span class="side-nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="8" height="7" rx="2" stroke="currentColor" stroke-width="1.7"/><rect x="13" y="4" width="8" height="7" rx="2" stroke="currentColor" stroke-width="1.7"/><rect x="3" y="13" width="8" height="7" rx="2" stroke="currentColor" stroke-width="1.7"/><rect x="13" y="13" width="8" height="7" rx="2" stroke="currentColor" stroke-width="1.7"/></svg>
+            </span>
+            <span class="side-nav-copy"><strong>Overview</strong><small>All operation blocks</small></span>
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <div class="status-pill" id="bridgeHealth" role="status">
+            <span class="status-dot"></span><span>Checking feed…</span>
+          </div>
+          <div class="status-pill simulation-status" id="simulationStatus" hidden>
+            <span class="status-dot"></span><span>Simulation data</span>
+          </div>
+          <div class="sidebar-meta">
+            <span>Supervisory display</span>
+            <time class="tabular" id="clinicalClock">--:--:--</time>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <div class="drawer-scrim" id="drawerScrim"></div>
+
+    <main class="main" id="mainContent" tabindex="-1">
+      <div class="utility-row">
+        <div class="live-caption"><span></span> Live clinical workspace</div>
+        <button class="theme-button" id="themeToggle" type="button" aria-label="Switch to dark theme">
+          <svg class="sun-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="3.5" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.5v2M12 19.5v2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M2.5 12h2M19.5 12h2M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <svg class="moon-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20 15.4A8.3 8.3 0 118.6 4a6.9 6.9 0 0011.4 11.4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+          <span>Theme</span>
+        </button>
+      </div>
+
+      <div class="demo-banner" id="demoBanner" hidden role="status">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 8v4M12 16h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M10.3 3.9L2.7 17a2.1 2.1 0 001.8 3.1h15a2.1 2.1 0 001.8-3.1L13.7 3.9a2.1 2.1 0 00-3.4 0z" stroke="currentColor" stroke-width="1.7"/></svg>
+        <div><strong>Simulation active</strong><span>Preview data only. No values come from a patient or medical device.</span></div>
+      </div>
+
+      <section id="overviewView" class="portal-view active" aria-labelledby="overviewTitle">
+        <header class="page-header">
+          <div>
+            <p class="page-kicker">Equipment console</p>
+            <h1 id="overviewTitle">Operation blocks</h1>
+            <p class="page-sub">Manage and supervise the two connected machines inside each block.</p>
+          </div>
+          <div class="header-stats" id="overviewSummary" aria-label="Block status summary">
+            <div class="stat-chip"><strong class="tabular">—</strong><span>Blocks online</span></div>
+            <div class="stat-chip"><strong class="tabular">—</strong><span>Active alarms</span></div>
+            <div class="stat-chip"><strong class="tabular">—</strong><span>Devices live</span></div>
+          </div>
+        </header>
+
+        <div class="board-meta">
+          <span>3 blocks · 2 machines per block</span>
+          <span>Updated <time id="lastUpdated" class="tabular">—</time></span>
+        </div>
+
+        <div class="room-board" id="roomBoard">
+          <div class="room-card skeleton-card"></div>
+          <div class="room-card skeleton-card"></div>
+          <div class="room-card skeleton-card"></div>
+        </div>
+      </section>
+
+      <section id="detailView" class="portal-view">
+        <div id="roomDetail"></div>
+      </section>
+
+      <div class="portal-error" id="portalError" role="alert" hidden>
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="M12 8v5M12 17h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <div><strong>Live block data is unavailable</strong><span>Check that OperationBloc Bridge is running, then retry.</span></div>
+        <button type="button" id="retryPortal">Retry connection</button>
+      </div>
+    </main>
+  </div>
+
+  <div class="modal-scrim" id="machineConfigScrim" aria-hidden="true">
+    <div class="config-modal" role="dialog" aria-modal="true" aria-labelledby="machineConfigTitle">
+      <header class="modal-header">
+        <div><p>OperationBloc configuration</p><h2 id="machineConfigTitle">Machine settings</h2></div>
+        <button class="icon-button" id="machineConfigClose" type="button" aria-label="Close machine settings">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+      </header>
+
+      <div class="modal-body">
+        <div class="modal-machine-summary">
+          <div class="modal-photo-preview" id="machinePhotoPreview"><span id="machinePhotoFallback">MD</span><img id="machinePhotoPreviewImage" alt="" hidden></div>
+          <div><strong id="machineSummaryName">Machine</strong><span id="machineSummaryKind">Connection settings</span></div>
+        </div>
+
+        <div class="form-grid">
+          <label class="field field-wide" for="configBlockName"><span>Block name</span><input id="configBlockName" type="text" autocomplete="off"></label>
+          <label class="field" for="configMachineLabel"><span>Machine display name</span><input id="configMachineLabel" type="text" autocomplete="off"></label>
+          <label class="field" for="configMachineKind"><span>Machine type</span><input id="configMachineKind" type="text" autocomplete="off" placeholder="Patient monitor"></label>
+          <label class="field" for="configMachinePort"><span id="configPortLabel">Connection port</span><input id="configMachinePort" type="number" min="1" max="65535" inputmode="numeric"><small id="configPortHelp"></small></label>
+          <label class="field" id="configLocalPortField" for="configLocalPort"><span>Bridge source port</span><input id="configLocalPort" type="number" min="1" max="65535" inputmode="numeric" placeholder="Automatic"><small>Optional local port for the outbound uMEC12 socket.</small></label>
+          <label class="field field-wide" id="configIpField" for="configMachineIp"><span id="configIpLabel">Device IP address</span><input id="configMachineIp" type="text" inputmode="decimal" placeholder="192.168.1.113" autocomplete="off"><small id="configIpHelp"></small></label>
+          <label class="field" for="configBlockColor"><span>Block accent</span><div class="color-input"><input id="configBlockColor" type="color"><input id="configBlockColorHex" type="text" maxlength="7" autocomplete="off"></div></label>
+          <label class="field" for="configMachinePhoto"><span>Machine photo</span><input id="configMachinePhoto" type="file" accept="image/png,image/jpeg,image/webp"><small>PNG, JPG, or WebP up to 8 MB.</small></label>
+        </div>
+
+        <label class="enabled-control" for="configMachineEnabled">
+          <span><strong>Enable this machine</strong><small>Starts its collector the next time OperationBloc Bridge launches.</small></span>
+          <input id="configMachineEnabled" type="checkbox">
+        </label>
+
+        <div class="restart-notice">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20 11a8 8 0 10-2.34 5.66M20 4v7h-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div><strong>Restart required for connection changes</strong><span>Saved IP, port, and enabled-state changes are applied safely on the next bridge start.</span></div>
+        </div>
+
+        <div class="modal-alert" id="machineConfigAlert" hidden></div>
+      </div>
+
+      <footer class="modal-footer">
+        <button class="button button-ghost" id="machineConfigCancel" type="button">Cancel</button>
+        <button class="button button-primary" id="machineConfigSave" type="button">Save settings</button>
+      </footer>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"><span class="toast-dot"></span><span id="toastText"></span></div>
+
+  <script src="/portal.js" defer></script>
+</body>
+</html>

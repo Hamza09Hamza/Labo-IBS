@@ -1,0 +1,72 @@
+{
+  "web": {
+    "host": "0.0.0.0",
+    "port": 5051,
+    "collector_url": "http://127.0.0.1:5051"
+  },
+  "chambers": [
+    {
+      "id": 1,
+      "name": "Operation Block 1",
+      "code": "OB-01",
+      "color": "#0C8599",
+      "umec12": {
+        "label": "Mindray uMEC12",
+        "kind": "Patient monitor",
+        "enabled": true,
+        "ip": "192.168.1.113",
+        "photo": "machines/umec12.png"
+      },
+      "wato": {
+        "label": "Mindray WATO EX-35",
+        "kind": "Anesthesia workstation",
+        "enabled": true,
+        "destination_ip": "192.168.1.100",
+        "listen_port": 6010,
+        "photo": "machines/wato-ex35.jpg"
+      }
+    },
+    {
+      "id": 2,
+      "name": "Operation Block 2",
+      "code": "OB-02",
+      "color": "#7C3AED",
+      "umec12": {
+        "label": "Mindray uMEC12",
+        "kind": "Patient monitor",
+        "enabled": false,
+        "ip": "",
+        "photo": "machines/umec12.png"
+      },
+      "wato": {
+        "label": "Mindray WATO EX-35",
+        "kind": "Anesthesia workstation",
+        "enabled": true,
+        "destination_ip": "192.168.1.100",
+        "listen_port": 6011,
+        "photo": "machines/wato-ex35.jpg"
+      }
+    },
+    {
+      "id": 3,
+      "name": "Operation Block 3",
+      "code": "OB-03",
+      "color": "#F59E0B",
+      "umec12": {
+        "label": "Mindray uMEC12",
+        "kind": "Patient monitor",
+        "enabled": false,
+        "ip": "",
+        "photo": "machines/umec12.png"
+      },
+      "wato": {
+        "label": "Mindray WATO EX-35",
+        "kind": "Anesthesia workstation",
+        "enabled": true,
+        "destination_ip": "192.168.1.100",
+        "listen_port": 6012,
+        "photo": "machines/wato-ex35.jpg"
+      }
+    }
+  ]
+}

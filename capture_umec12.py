@@ -15,6 +15,7 @@ anything to the clinic API.
 Usage:
     python3 -u capture_umec12.py --monitor-ip 192.168.1.113
     python3 -u capture_umec12.py --monitor-ip 192.168.1.113 --parameters 160,161,162
+    python3 -u capture_umec12.py --monitor-ip 192.168.1.113 --local-ip 192.168.1.100 --local-port 6010
     python3 -u capture_umec12.py --monitor-ip 192.168.1.113 --verbose
     python3 -u capture_umec12.py --discover-only
 """
@@ -28,6 +29,7 @@ import time
 from datetime import datetime
 
 from labo_bridge.protocols import hl7_mllp
+from clinical_portal.publish import PortalPublisher
 
 
 CAPTURES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "captures")
@@ -349,22 +351,42 @@ def _udp_listener(port: int, stop_event: threading.Event, discovered: dict,
 
 
 def _tcp_capture(monitor_ip: str, monitor_port: int, stop_event: threading.Event,
-                 verbose: bool = False, parameter_ids=DEFAULT_PARAMETER_IDS):
+                 verbose: bool = False, parameter_ids=DEFAULT_PARAMETER_IDS,
+                 local_ip: str = "0.0.0.0", local_port: int | None = None,
+                 portal_publisher: PortalPublisher | None = None):
     os.makedirs(CAPTURES_DIR, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_path = os.path.join(CAPTURES_DIR, f"umec12_tcp_{ts}_{monitor_ip}.log")
     raw_path = os.path.join(CAPTURES_DIR, f"umec12_tcp_{ts}_{monitor_ip}.raw")
 
-    print(f"[tcp] connecting to uMEC12 at {monitor_ip}:{monitor_port} ...")
-    conn = socket.create_connection((monitor_ip, monitor_port), timeout=5)
+    if local_port is None:
+        print(f"[tcp] connecting to uMEC12 at {monitor_ip}:{monitor_port} ...")
+    else:
+        print(f"[tcp] connecting {local_ip}:{local_port} -> "
+              f"uMEC12 {monitor_ip}:{monitor_port} ...")
+
+    # A fixed local/source port is optional. This is useful when firewall or
+    # integration rules require the TCP flow to be precisely
+    # Mac:<local_port> -> monitor:<monitor_port>. It is not a server listener:
+    # the Mac still initiates the PDS connection and exchanges data over that
+    # established socket.
+    conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    conn.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    conn.settimeout(5)
+    if local_port is not None:
+        conn.bind((local_ip, local_port))
+    conn.connect((monitor_ip, monitor_port))
     conn.settimeout(0.25)
-    print(f"[tcp] connected to {monitor_ip}:{monitor_port}")
+    local_endpoint = conn.getsockname()
+    print(f"[tcp] connected {local_endpoint[0]}:{local_endpoint[1]} -> "
+          f"{monitor_ip}:{monitor_port}")
     print(f"[tcp] readable log -> {log_path}")
     print(f"[tcp] raw capture  -> {raw_path}")
 
     buffer = b""
     next_echo = time.monotonic()
     last_alarm_messages = {}
+    portal_alarm_state = {"54": [], "56": []}
     query_resent_after_ready = False
     with open(log_path, "a", encoding="utf-8") as log, open(raw_path, "ab") as raw:
         query = _query_message(parameter_ids)
@@ -401,6 +423,41 @@ def _tcp_capture(monitor_ip: str, monitor_port: int, stop_event: threading.Event
                             _print_message(prefix, message, log)
                         parsed = _message_summary(message)
                         control_id = parsed["control_id"]
+
+                        # Feed the doctor portal with normalized values while
+                        # preserving this script's raw capture as the source
+                        # of truth. Publishing is queued on a background
+                        # thread, so a slow/missing web UI cannot delay the
+                        # monitor heartbeat or measurement socket.
+                        if portal_publisher is not None:
+                            if control_id == "103" and parsed["patient"]:
+                                portal_publisher.publish(patient=parsed["patient"])
+                            elif control_id in {"204", "503"}:
+                                readings = [{
+                                    "code": result["code"],
+                                    "label": result["name"] or result["code"],
+                                    "value": result["value"],
+                                    "unit": result["unit"],
+                                    "valid": result["value"].strip() != "-100",
+                                } for result in parsed["results"]]
+                                if readings:
+                                    portal_publisher.publish(readings=readings)
+                            elif control_id in {"54", "56"}:
+                                alarms = []
+                                for result in parsed["results"]:
+                                    if result["code"] not in {"2", "3", "4"} or "^" not in result["value"]:
+                                        continue
+                                    alarm_code, alarm_text = result["value"].split("^", 1)
+                                    if alarm_text.strip():
+                                        alarms.append({
+                                            "code": alarm_code,
+                                            "text": alarm_text.strip(),
+                                            "level": "physiological" if control_id == "54" else "technical",
+                                        })
+                                portal_alarm_state[control_id] = alarms
+                                portal_publisher.publish(
+                                    alarms=portal_alarm_state["54"] + portal_alarm_state["56"]
+                                )
                         # Older uMEC firmware can ignore a QRY that arrives
                         # while it is still streaming the connection's initial
                         # patient/module configuration. Its first control=106
@@ -428,13 +485,26 @@ def _tcp_capture(monitor_ip: str, monitor_port: int, stop_event: threading.Event
 
 
 def main():
+    global CAPTURES_DIR
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--monitor-ip", default=DEFAULT_MONITOR_IP,
                         help=f"uMEC12 address (default: {DEFAULT_MONITOR_IP})")
     parser.add_argument("--monitor-port", type=int, default=DEFAULT_MONITOR_PORT,
                         help=f"Mindray PDS TCP port (default: {DEFAULT_MONITOR_PORT})")
+    parser.add_argument("--local-ip", default="0.0.0.0",
+                        help="Mac source address for the PDS connection (default: route-selected)")
+    parser.add_argument("--local-port", type=int,
+                        help="fixed Mac source port, e.g. 6010 (default: automatic ephemeral port)")
+    parser.add_argument("--portal-url",
+                        help="publish normalized readings to this local portal, e.g. http://127.0.0.1:5050")
+    parser.add_argument("--chamber", type=int, choices=(1, 2, 3),
+                        help="operating chamber receiving this monitor's values")
+    parser.add_argument("--captures-dir",
+                        help="directory for raw/readable captures (default: project captures/)")
     parser.add_argument("--discover-only", action="store_true",
                         help="decode UDP announcements without opening the PDS TCP connection")
+    parser.add_argument("--no-udp", action="store_true",
+                        help="skip shared UDP discovery listeners (recommended with multiple chamber collectors)")
     parser.add_argument("--verbose", action="store_true",
                         help="print every PDS configuration and heartbeat message")
     parser.add_argument("--parameters", default=",".join(DEFAULT_PARAMETER_IDS),
@@ -443,19 +513,32 @@ def main():
                         help="use Mindray's send-all query instead of explicit parameter IDs")
     args = parser.parse_args()
 
+    if bool(args.portal_url) != bool(args.chamber):
+        parser.error("--portal-url and --chamber must be supplied together")
+    if args.discover_only and args.no_udp:
+        parser.error("--discover-only and --no-udp cannot be used together")
+    if args.captures_dir:
+        CAPTURES_DIR = os.path.abspath(args.captures_dir)
+
+    for option, port in (("--monitor-port", args.monitor_port),
+                         ("--local-port", args.local_port)):
+        if port is not None and not 1 <= port <= 65535:
+            parser.error(f"{option} must be between 1 and 65535")
+
     stop_event = threading.Event()
     discovered_event = threading.Event()
     discovered = {}
     threads = []
-    for udp_port in UDP_PORTS:
-        thread = threading.Thread(
-            target=_udp_listener,
-            args=(udp_port, stop_event, discovered, discovered_event),
-            name=f"umec-udp-{udp_port}",
-            daemon=True,
-        )
-        thread.start()
-        threads.append(thread)
+    if not args.no_udp:
+        for udp_port in UDP_PORTS:
+            thread = threading.Thread(
+                target=_udp_listener,
+                args=(udp_port, stop_event, discovered, discovered_event),
+                name=f"umec-udp-{udp_port}",
+                daemon=True,
+            )
+            thread.start()
+            threads.append(thread)
 
     try:
         if args.discover_only:
@@ -469,11 +552,22 @@ def main():
             parameter_ids = None if args.all_parameters else [
                 value.strip() for value in args.parameters.split(",") if value.strip()
             ]
+            portal_publisher = (
+                PortalPublisher(args.portal_url, args.chamber, "umec12")
+                if args.portal_url else None
+            )
             _tcp_capture(args.monitor_ip, args.monitor_port, stop_event,
-                         verbose=args.verbose, parameter_ids=parameter_ids)
+                         verbose=args.verbose, parameter_ids=parameter_ids,
+                         local_ip=args.local_ip, local_port=args.local_port,
+                         portal_publisher=portal_publisher)
     except (ConnectionRefusedError, TimeoutError, socket.timeout, OSError) as exc:
-        print(f"[tcp] connection failed: {exc}")
-        print("[tcp] The uMEC12 must expose Mindray PDS Realtime Results on TCP 4601.")
+        print(f"[tcp] connection or local bind failed: {exc}")
+        if args.local_port is not None:
+            print(f"[tcp] Expected flow: {args.local_ip}:{args.local_port} -> "
+                  f"{args.monitor_ip}:{args.monitor_port}")
+            print(f"[tcp] Make sure no other listener/process is using local port "
+                  f"{args.local_port}.")
+        print("[tcp] The uMEC12 PDS Realtime Results service normally remains on TCP 4601.")
     except KeyboardInterrupt:
         print("\nStopping...")
     finally:
