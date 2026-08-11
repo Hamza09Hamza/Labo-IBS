@@ -40,15 +40,21 @@ extra trailing characters. Harmless for discovery purposes (the point here
 is "see the real bytes"); a real decoder would need to strip it once
 confirmed.
 
-Karl Storz (or anything else that isn't MLLP-framed at all) is still
+Anything that isn't MLLP-framed at all is still
 captured byte-for-byte - it just never enters the MLLP branch, and nothing
 is ever sent back to it unsolicited (safest default for a device whose
 protocol isn't documented).
 
 Usage:
-    python capture_listener.py                        # wato_ex35 on 6010
+    python capture_listener.py                        # wato_ex35 on TCP 6010
     python capture_listener.py wato_ex35:6010
-    python capture_listener.py wato_ex35:6010 karlstorz:6011
+    python capture_listener.py cyanvision:6004
+    python capture_listener.py selectra:6003
+    python capture_listener.py device_name:udp:6011
+
+Target syntax is name:port (TCP) or name:protocol:port. Selectra and
+CyanVision's configured production ports compete with run_all, so stop the
+production listener before binding those same ports with this diagnostic.
 
 Ctrl+C stops every listener. Every connection's bytes land in
 captures/<name>_<timestamp>_<peer-ip>.{raw,log} as they arrive, so nothing
@@ -63,12 +69,13 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from labo_bridge.protocols import hl7_mllp  # noqa: E402 - pure framing helper, no side effects
+from labo_bridge.decoders import wato_ex35  # noqa: E402 - standalone WATO readable summaries
 
 HOST = "0.0.0.0"
 CAPTURES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "captures")
 IDLE_TIMEOUT_SECONDS = 90  # how long a silent-but-still-open connection waits before we say so
 
-DEFAULT_TARGETS = {"wato_ex35": 6010}
+DEFAULT_TARGETS = {"wato_ex35": ("tcp", 6010)}
 
 
 def _readable(data: bytes) -> str:
@@ -83,14 +90,26 @@ def _parse_targets(argv):
         return dict(DEFAULT_TARGETS)
     targets = {}
     for arg in argv:
-        if ":" not in arg:
-            raise SystemExit(f"bad target {arg!r}, expected name:port (e.g. wato_ex35:6010)")
-        name, port_s = arg.rsplit(":", 1)
+        parts = arg.split(":")
+        if len(parts) == 2:
+            name, port_s = parts
+            protocol = "tcp"
+        elif len(parts) == 3:
+            name, protocol, port_s = parts
+            protocol = protocol.lower()
+            if protocol not in ("tcp", "udp"):
+                raise SystemExit(f"bad protocol in {arg!r}: expected tcp or udp")
+        else:
+            raise SystemExit(
+                f"bad target {arg!r}, expected name:port or name:protocol:port"
+            )
         try:
             port = int(port_s)
         except ValueError:
             raise SystemExit(f"bad port in {arg!r}: {port_s!r} is not a number")
-        targets[name] = port
+        if not 1 <= port <= 65535:
+            raise SystemExit(f"bad port in {arg!r}: must be between 1 and 65535")
+        targets[name] = (protocol, port)
     return targets
 
 
@@ -118,6 +137,13 @@ def _handle_connection(conn, addr, name):
     def _log(text):
         log.write(text)
         log.flush()
+
+    decoded_path = None
+    decoded_file = None
+    if name == "wato_ex35":
+        decoded_path = os.path.join(CAPTURES_DIR, f"{name}_{ts}_{addr[0]}_decoded.txt")
+        decoded_file = open(decoded_path, "a", encoding="utf-8")
+        print(f"[{name}]   decoded WATO -> {decoded_path}")
 
     _log(f"=== capture started {datetime.now().isoformat()} from {addr[0]}:{addr[1]} ===\n")
     _log(f"raw bytes for this session also saved to {os.path.basename(raw_path)}\n")
@@ -171,6 +197,11 @@ def _handle_connection(conn, addr, name):
                 print(f"[{name}]\n{block}", end="")
                 _log(block)
 
+                if decoded_file:
+                    decoded_message = wato_ex35.decode_message(segments)
+                    decoded_file.write(wato_ex35.readable_summary(decoded_message) + "\n\n")
+                    decoded_file.flush()
+
                 control_id = "0"
                 for seg in segments:
                     fields = seg.split("|")
@@ -188,6 +219,8 @@ def _handle_connection(conn, addr, name):
              f"({total_bytes} bytes total, {mllp_count} MLLP message(s) decoded) ===\n")
         log.close()
         raw.close()
+        if decoded_file:
+            decoded_file.close()
         conn.close()
         print(f"[{name}] disconnected {addr[0]}:{addr[1]} - {total_bytes} bytes, "
               f"{mllp_count} MLLP message(s) decoded as MLLP (decode may be WRONG if this "
@@ -196,7 +229,7 @@ def _handle_connection(conn, addr, name):
               f"[{name}]   raw bytes    -> {raw_path}")
 
 
-def _serve(name, port, stop_event):
+def _serve_tcp(name, port, stop_event):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
@@ -206,7 +239,7 @@ def _serve(name, port, stop_event):
         return
     sock.listen(5)
     sock.settimeout(1.0)  # so Ctrl+C (stop_event) is noticed promptly, not blocked in accept()
-    print(f"[{name}] listening on {HOST}:{port} (raw capture, MLLP auto-decode if applicable)")
+    print(f"[{name}] listening on tcp {HOST}:{port} (raw capture, MLLP auto-decode if applicable)")
 
     try:
         while not stop_event.is_set():
@@ -223,18 +256,65 @@ def _serve(name, port, stop_event):
         sock.close()
 
 
+def _serve_udp(name, port, stop_event):
+    """Capture every UDP datagram without replying or guessing a protocol."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        sock.bind((HOST, port))
+    except OSError as exc:
+        print(f"[{name}] could not bind udp {HOST}:{port}: {exc}")
+        return
+    sock.settimeout(1.0)
+    os.makedirs(CAPTURES_DIR, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_path = os.path.join(CAPTURES_DIR, f"{name}_udp_{ts}.log")
+    raw_path = os.path.join(CAPTURES_DIR, f"{name}_udp_{ts}.raw")
+    total_bytes = 0
+    datagram_count = 0
+    print(f"[{name}] listening on udp {HOST}:{port}\n"
+          f"[{name}]   readable log -> {log_path}\n"
+          f"[{name}]   raw bytes    -> {raw_path}")
+
+    with open(log_path, "a", encoding="utf-8") as log, open(raw_path, "ab") as raw:
+        try:
+            while not stop_event.is_set():
+                try:
+                    data, addr = sock.recvfrom(65535)
+                except socket.timeout:
+                    continue
+                raw.write(data)
+                raw.flush()
+                total_bytes += len(data)
+                datagram_count += 1
+                stamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+                block = (f"[{stamp}] RECV datagram #{datagram_count}: {len(data)} bytes "
+                         f"from {addr[0]}:{addr[1]}\n"
+                         f"  hex: {data.hex()}\n"
+                         f"  txt: {_readable(data)}\n")
+                print(f"[{name}] {block}", end="")
+                log.write(block)
+                log.flush()
+        finally:
+            log.write(f"=== capture ended {datetime.now().isoformat()} "
+                      f"({total_bytes} bytes, {datagram_count} datagrams) ===\n")
+            sock.close()
+    print(f"[{name}] UDP capture stopped - {total_bytes} bytes in {datagram_count} datagrams")
+
+
 def main():
     targets = _parse_targets(sys.argv[1:])
     os.makedirs(CAPTURES_DIR, exist_ok=True)
     print(f"Raw capture listener - captures saved under {CAPTURES_DIR}/")
-    print(f"Targets: {', '.join(f'{n}={p}' for n, p in targets.items())}")
+    print(f"Targets: {', '.join(f'{n}={proto}/{p}' for n, (proto, p) in targets.items())}")
     print("This does NOT touch Postgres, the clinic API, or any matcher/mapping "
           "logic - it only captures and (for HL7/MLLP) decodes for viewing.\n")
 
     stop_event = threading.Event()
     threads = []
-    for name, port in targets.items():
-        t = threading.Thread(target=_serve, args=(name, port, stop_event),
+    for name, (protocol, port) in targets.items():
+        target = _serve_udp if protocol == "udp" else _serve_tcp
+        t = threading.Thread(target=target, args=(name, port, stop_event),
                              name=f"capture-{name}", daemon=True)
         t.start()
         threads.append(t)

@@ -259,13 +259,15 @@ def _flush_api_batch(session):
 
 def _write_session_file(session):
     """
-    Disabled on deployed/production servers: writing one file per session
-    (every sample, every calibration cycle, every retransmission) grows
-    results/ unboundedly under real continuous machine traffic. Re-enable
-    (delete this early return) only for local debugging of a specific
-    machine's raw wire format.
+    Disabled on deployed/production servers for every machine except
+    cyanvision: writing one file per session (every sample, every
+    calibration cycle, every retransmission) grows results/ unboundedly
+    under real continuous machine traffic. CyanVision is temporarily
+    enabled so its real wire format and sample identifiers can be audited.
+    Keep any future capture equally temporary and machine-scoped.
     """
-    return
+    if session.machine != "cyanvision":
+        return
     os.makedirs(RESULTS_DIR, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     fname = os.path.join(RESULTS_DIR, f"{session.machine}_{ts}.txt")
@@ -345,7 +347,15 @@ class _Session:
         elif kind == "order":
             if self.is_calibration:
                 return
-            self.sample_id = ev.get("sample_id", "") or self.sample_id
+            order_sample_id = ev.get("sample_id", "")
+            # A real CyanVision capture confirmed that OBR-2 is only the
+            # analyzer's short internal specimen counter. The clinic's real
+            # appointment/sample identifier is sent in PID-2. Prefer that
+            # value only for CyanVision and retain the existing fallback for
+            # every other analyzer and for messages without a patient ID.
+            if self.machine == "cyanvision" and self.patient_id:
+                order_sample_id = self.patient_id
+            self.sample_id = order_sample_id or self.sample_id
             paillasse = ev.get("paillasse")
             self.specimen = {k: ev[k] for k in ("year", "month", "sequence", "paillasse") if k in ev}
             pg.write_sample(self.machine, self.sample_id or "",
