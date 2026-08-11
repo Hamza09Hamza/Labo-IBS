@@ -418,6 +418,12 @@ def _handle_astm(conn, addr, cfg, machine, quiet):
             else:
                 buffer = buffer[1:]
 
+    # A complete ASTM batch ends with EOT and is written above. If the peer
+    # disconnects or times out mid-batch, retain those exact received bytes
+    # too instead of losing the most useful evidence about a broken session.
+    if session.raw_bytes:
+        _write_session_file(session)
+
 
 def _handle_minividas(conn, addr, cfg, machine, quiet):
     """
