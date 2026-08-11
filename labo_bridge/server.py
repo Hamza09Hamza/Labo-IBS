@@ -81,11 +81,6 @@ MACHINES = {
                    "initial_ack": False, "port": 6006},
 }
 
-# TEMPORARY TEST HOOK flag - see _handle_astm. Remove alongside it once the
-# Selectra host-send test is done.
-_selectra_test_sent = False
-
-
 def _get_machine_id(machine: str):
     """
     Look up the clinic labo_machine.id configured for this machine, from
@@ -260,13 +255,14 @@ def _flush_api_batch(session):
 def _write_session_file(session):
     """
     Disabled on deployed/production servers for every machine except
-    cyanvision: writing one file per session (every sample, every
+    CyanVision and Selectra while their wire formats are being audited:
+    writing one file per session (every sample, every
     calibration cycle, every retransmission) grows results/ unboundedly
     under real continuous machine traffic. CyanVision is temporarily
     enabled so its real wire format and sample identifiers can be audited.
     Keep any future capture equally temporary and machine-scoped.
     """
-    if session.machine != "cyanvision":
+    if session.machine not in {"cyanvision", "selectra"}:
         return
     os.makedirs(RESULTS_DIR, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
@@ -382,19 +378,6 @@ def _handle_astm(conn, addr, cfg, machine, quiet):
     buffer = b""
     if cfg.get("initial_ack"):
         conn.sendall(astm.B_ACK)
-
-    # TEMPORARY TEST HOOK - remove once the Selectra host-send test is done.
-    # Sends one harmless ASTM-framed test message the first time Selectra
-    # connects after this process started, purely to see whether the
-    # Selectra reacts at all to bytes sent FROM labo_bridge (it currently
-    # only ever pushes data to us; this checks if the link is bidirectional).
-    global _selectra_test_sent
-    if machine == "selectra" and not _selectra_test_sent:
-        _selectra_test_sent = True
-        test_frame = astm.build_frame(1, "hi")
-        conn.sendall(test_frame)
-        print(f"[{machine}] TEST: sent host message {test_frame!r} - "
-              f"watching for any reply/reaction...")
 
     while True:
         try:

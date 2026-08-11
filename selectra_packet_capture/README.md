@@ -1,6 +1,6 @@
 # Selectra traffic capture kit — Windows server
 
-This is designed for the Windows server at `172.16.2.4` that already hosts `run_all` and the interface on port `5050`. It records complete packets involving the Selectra Windows host `10.10.12.52`, regardless of TCP/UDP port. It also retains other IP protocols such as ICMP and records both directions.
+This is designed for the Windows server at `172.16.2.4` that already hosts `run_all` and the interface on port `5050`. It records complete packets matching either the suspected Selectra Windows host `10.10.12.52` or any TCP connection using the LaboBridge Selectra port `6003`, in both directions and across physical, TCP/IP, and Hyper-V network components.
 
 It uses Windows' built-in Packet Monitor. It does not open a listening port, replace the existing service, restart `run_all`, or change port `5050`.
 

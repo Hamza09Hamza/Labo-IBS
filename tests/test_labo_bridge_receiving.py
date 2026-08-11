@@ -1,4 +1,6 @@
 import unittest
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 import capture_listener
@@ -46,6 +48,20 @@ class ReceivingMergeCase(unittest.TestCase):
         self.assertEqual(reading["label"], "Peak Airway Pressure")
         self.assertEqual(reading["value"], "15")
         self.assertEqual(reading["unit_label"], "cmH2O")
+
+    def test_selectra_session_writes_exact_raw_diagnostic_bytes(self):
+        session = server._Session("selectra", "10.10.12.52", quiet=True)
+        session.raw_bytes = b"\x05\x02ASTM-DATA\x03\x04"
+        session.raw_lines = ["H|\\^&", "L|1|N"]
+
+        with tempfile.TemporaryDirectory() as directory, patch.object(server, "RESULTS_DIR", directory):
+            server._write_session_file(session)
+            files = list(Path(directory).glob("selectra_*.txt"))
+            self.assertEqual(len(files), 1)
+            report = files[0].read_text()
+
+        self.assertIn("Source IP: 10.10.12.52", report)
+        self.assertIn("b'\\x05\\x02ASTM-DATA\\x03\\x04'", report)
 
 
 if __name__ == "__main__":

@@ -3,6 +3,9 @@ param(
     [ValidatePattern('^(?:\d{1,3}\.){3}\d{1,3}$')]
     [string]$TargetIP = '10.10.12.52',
 
+    [ValidateRange(1, 65535)]
+    [int]$SelectraPort = 6003,
+
     [ValidateRange(0, 86400)]
     [int]$DurationSeconds = 0,
 
@@ -29,6 +32,7 @@ function Start-ElevatedCopy {
         '-ExecutionPolicy', 'Bypass',
         '-File', ('"{0}"' -f $PSCommandPath),
         '-TargetIP', $TargetIP,
+        '-SelectraPort', [string]$SelectraPort,
         '-DurationSeconds', [string]$DurationSeconds,
         '-FileSizeMB', [string]$FileSizeMB
     )
@@ -106,8 +110,9 @@ New-Item -ItemType Directory -Path $outputDirectory -ErrorAction Stop | Out-Null
     'Selectra Windows full-packet capture'
     "Capture started UTC: $((Get-Date).ToUniversalTime().ToString('o'))"
     "Target IP: $TargetIP"
-    'Direction: both source and destination'
-    'Protocols and ports: unrestricted'
+    "LaboBridge Selectra port: $SelectraPort"
+    'Filters: suspected IP OR any TCP traffic on the Selectra listener port'
+    'Network components: all (physical NIC, TCP/IP stack, and Hyper-V paths)'
     'Packet length: full packet (--pkt-size 0)'
     "Server: $env:COMPUTERNAME"
     "Windows: $([Environment]::OSVersion.VersionString)"
@@ -124,16 +129,22 @@ New-Item -ItemType Directory -Path $outputDirectory -ErrorAction Stop | Out-Null
 
 $captureStarted = $false
 try {
-    # PktMon filters are global. Refuse to start over an active capture above,
-    # then use one exact-IP filter for this short diagnostic session.
+    # Separate PktMon filters are OR conditions. This catches traffic using
+    # either the suspected Selectra-PC IP or the configured LaboBridge port,
+    # even when the real source IP differs from the assumption.
     & pktmon.exe filter remove 2>&1 | Add-Content -LiteralPath $statusPath
     if ($LASTEXITCODE -ne 0) {
         throw 'Could not clear inactive PktMon filters.'
     }
 
-    & pktmon.exe filter add SelectraFullCapture -i $TargetIP 2>&1 | Add-Content -LiteralPath $statusPath
+    & pktmon.exe filter add SelectraSuspectedIP -i $TargetIP 2>&1 | Add-Content -LiteralPath $statusPath
     if ($LASTEXITCODE -ne 0) {
         throw "Could not add the PktMon IP filter for $TargetIP."
+    }
+
+    & pktmon.exe filter add LaboBridgeSelectraPort -t TCP -p $SelectraPort 2>&1 | Add-Content -LiteralPath $statusPath
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not add the PktMon TCP-port filter for $SelectraPort."
     }
 
     $marker = @{
@@ -146,10 +157,11 @@ try {
 
     Write-Host ''
     Write-Host 'Starting full-packet capture on the Windows server...' -ForegroundColor Cyan
-    Write-Host "Target: $TargetIP - every port and protocol, both directions"
+    Write-Host "Targets: IP $TargetIP OR TCP port $SelectraPort, both directions"
+    Write-Host 'Capture points: every Windows network component, including Hyper-V'
     Write-Host 'This does not bind a port and does not stop or restart run_all.' -ForegroundColor Green
 
-    & pktmon.exe start --capture --comp nics --pkt-size 0 --file-name $etlPath --file-size $FileSizeMB --log-mode multi-file 2>&1 |
+    & pktmon.exe start --capture --comp all --pkt-size 0 --file-name $etlPath --file-size $FileSizeMB --log-mode multi-file 2>&1 |
         Add-Content -LiteralPath $statusPath
     if ($LASTEXITCODE -ne 0) {
         throw 'PktMon could not start. See pktmon_status.txt in the new capture directory.'
