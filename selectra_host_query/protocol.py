@@ -93,10 +93,18 @@ def build_order_records(order: dict) -> list[str]:
     specimen_type = _clean(order.get("specimen_type") or "SERUM")
     tests = [_clean(code) for code in order.get("tests") or [] if _clean(code)]
     universal_tests = "\\".join(f"^^^{code}" for code in tests)
+    # O record field [5] (priority) is populated "R" (Routine) in every real
+    # O record this Selectra has been observed to send in its own R/result
+    # captures (e.g. "O|1|339|||R||||||||||Normal||||...") - confirmed via
+    # real capture, 2026-08-12. Leaving it blank (as before) is a real
+    # mismatch from what the machine's own usage of this record shape looks
+    # like, unlike patient_id in the P record below, which is correctly
+    # empty-by-default and only non-empty here because of what was typed
+    # into the web form's Patient ID field during testing.
     return [
         f"H|\\^&|||LABO-BRIDGE-HQ|||||SELECTRA||P|LIS2-A|{stamp}",
         f"P|1||{patient_id}||{family_name}^{given_name}||{birth_date}|{sex}",
-        f"O|1|{sample_id}||{universal_tests}|||||||N||||{specimen_type}||||||||||O",
+        f"O|1|{sample_id}||{universal_tests}|R||||||N||||{specimen_type}||||||||||O",
         "L|1|N",
     ]
 
