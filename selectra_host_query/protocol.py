@@ -230,6 +230,19 @@ def build_order_variants(order: dict) -> list[tuple[str, list[str]]]:
          f"O|1|{sample_id}|||R||||||N||||{specimen_type}||||||||||F", l_record],
     ))
 
+    # 8: L record terminator "F" (Final) instead of "N" (No more batches
+    # coming, but not the last transaction of the session). Every real
+    # Selectra-originated transaction captured so far - result uploads,
+    # not order-downloads - ends in "L|1|F", never "L|1|N". We have never
+    # tried F as our own termination code; this is the last unexplored
+    # structural difference between what we send and what the Selectra
+    # itself sends, now that every O/H/P field combination has been tried
+    # with no effect.
+    variants.append((
+        "L record terminator F instead of N",
+        [h_baseline, p_record, f"O|1|{sample_id}|||R||||||N||||{specimen_type}||||||||||F", "L|1|F"],
+    ))
+
     return variants
 
 

@@ -185,7 +185,10 @@ class ReceivingMergeCase(unittest.TestCase):
         self.assertEqual([record[0] for record in response_records], ["H", "P", "O", "L"])
         self.assertIn("BENCH^PATIENT", response_records[1])
         self.assertIn("HQ-DEMO-6003", response_records[2])
-        self.assertIn("^^^Glucose pap sl\\^^^Creatinine", response_records[2])
+        # First query uses schema variant 0: universal test ID field left
+        # blank, matching every real O record this Selectra has been
+        # captured sending on its own (see protocol.build_order_variants).
+        self.assertEqual(response_records[2].split("|")[4], "")
 
 
 if __name__ == "__main__":

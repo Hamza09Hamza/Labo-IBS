@@ -86,22 +86,25 @@ class BenchCase(unittest.TestCase):
         events = self.store.list_events()
         self.assertTrue(any(event["kind"] == "query_unmatched" for event in events))
 
-    def test_armed_query_sends_every_brute_force_variant(self):
-        variant_count = len(protocol.build_order_variants(ORDER))
-        service = SelectraHostQueryServer(self.store, armed=True, variant_delay_seconds=0)
-        # Each variant transaction is ENQ + 4 frames = 5 ACKs.
-        connection = FakeConnection(bytes([protocol.ACK]) * (5 * variant_count))
+    def test_armed_query_sends_one_variant_and_advances_on_retry(self):
+        variants = protocol.build_order_variants(ORDER)
+        service = SelectraHostQueryServer(self.store, armed=True)
+
+        # First query: exactly one ASTM transaction, using variant 0.
+        connection = FakeConnection(bytes([protocol.ACK]) * 5)
         service._handle_records(connection, ["Q|1|^HQ-DEMO-001^"])
-        enq_count = connection.sent.count(protocol.B_ENQ)
-        eot_count = connection.sent.count(protocol.B_EOT)
-        self.assertEqual(enq_count, variant_count)
-        self.assertEqual(eot_count, variant_count)
-        # Every transaction still follows H, P or O, ..., L per variant.
-        frames = [chunk for chunk in connection.sent if chunk not in (protocol.B_ENQ, protocol.B_EOT)]
-        payloads = [protocol.decode_frame(frame) for frame in frames]
-        self.assertEqual(payloads[0][0], "H")
-        self.assertEqual(payloads[-1][0], "L")
+        self.assertEqual(connection.sent.count(protocol.B_ENQ), 1)
+        self.assertEqual(connection.sent.count(protocol.B_EOT), 1)
+        payloads = [protocol.decode_frame(frame) for frame in connection.sent[1:-1]]
+        self.assertEqual([payload[0] for payload in payloads], [record[0] for record in variants[0][1]])
         self.assertEqual(self.store.get_order("HQ-DEMO-001")["status"], "delivered")
+
+        # Retrying the same sample ID advances to the next variant.
+        connection2 = FakeConnection(bytes([protocol.ACK]) * 5)
+        service._handle_records(connection2, ["Q|1|^HQ-DEMO-001^"])
+        payloads2 = [protocol.decode_frame(frame) for frame in connection2.sent[1:-1]]
+        self.assertEqual([payload[0] for payload in payloads2], [record[0] for record in variants[1][1]])
+        self.assertEqual(self.store.get_order("HQ-DEMO-001")["query_count"], 2)
 
     def test_api_stages_and_simulates_an_exact_id(self):
         service = SelectraHostQueryServer(self.store, armed=False)
