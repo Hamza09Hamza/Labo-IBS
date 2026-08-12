@@ -12,7 +12,9 @@ param(
     [ValidateRange(64, 4096)]
     [int]$FileSizeMB = 512,
 
-    [switch]$StopOnly
+    [switch]$StopOnly,
+
+    [switch]$CaptureAll
 )
 
 $ErrorActionPreference = 'Stop'
@@ -38,6 +40,9 @@ function Start-ElevatedCopy {
     )
     if ($StopOnly) {
         $arguments += '-StopOnly'
+    }
+    if ($CaptureAll) {
+        $arguments += '-CaptureAll'
     }
     Start-Process -FilePath 'powershell.exe' -Verb RunAs -ArgumentList $arguments
 }
@@ -98,8 +103,9 @@ if ($statusText -match '(?im)^\s*Status\s*:\s*(Running|Started)\s*$') {
 
 $stamp = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')
 $safeIP = $TargetIP.Replace('.', '-')
-$outputDirectory = Join-Path $ScriptRoot "selectra_capture_${safeIP}_$stamp"
-$etlPath = Join-Path $outputDirectory "selectra_${safeIP}.etl"
+$captureLabel = if ($CaptureAll) { 'all' } else { $safeIP }
+$outputDirectory = Join-Path $ScriptRoot "selectra_capture_${captureLabel}_$stamp"
+$etlPath = Join-Path $outputDirectory "selectra_${captureLabel}.etl"
 $metadataPath = Join-Path $outputDirectory 'metadata.txt'
 $statusPath = Join-Path $outputDirectory 'pktmon_status.txt'
 $filtersBeforePath = Join-Path $outputDirectory 'pktmon_filters_before.txt'
@@ -111,7 +117,11 @@ New-Item -ItemType Directory -Path $outputDirectory -ErrorAction Stop | Out-Null
     "Capture started UTC: $((Get-Date).ToUniversalTime().ToString('o'))"
     "Target IP: $TargetIP"
     "LaboBridge Selectra port: $SelectraPort"
-    'Filters: suspected IP OR any TCP traffic on the Selectra listener port'
+    $(if ($CaptureAll) {
+        'Filters: NONE - every packet on every captured component (use only when the suspected IP/port filter might be wrong)'
+    } else {
+        'Filters: suspected IP OR any TCP traffic on the Selectra listener port'
+    })
     'Network components: all (physical NIC, TCP/IP stack, and Hyper-V paths)'
     'Packet length: full packet (--pkt-size 0)'
     "Server: $env:COMPUTERNAME"
@@ -131,24 +141,29 @@ $captureStarted = $false
 try {
     # Separate PktMon filters are OR conditions. This catches traffic using
     # either the suspected Selectra-PC IP or the configured LaboBridge port,
-    # even when the real source IP differs from the assumption.
+    # even when the real source IP differs from the assumption. -CaptureAll
+    # skips both filters entirely - useful when we don't trust the IP/port
+    # assumption at all (e.g. a reply landing somewhere unexpected).
     & pktmon.exe filter remove 2>&1 | Add-Content -LiteralPath $statusPath
     if ($LASTEXITCODE -ne 0) {
         throw 'Could not clear inactive PktMon filters.'
     }
 
-    & pktmon.exe filter add SelectraSuspectedIP -i $TargetIP 2>&1 | Add-Content -LiteralPath $statusPath
-    if ($LASTEXITCODE -ne 0) {
-        throw "Could not add the PktMon IP filter for $TargetIP."
-    }
+    if (-not $CaptureAll) {
+        & pktmon.exe filter add SelectraSuspectedIP -i $TargetIP 2>&1 | Add-Content -LiteralPath $statusPath
+        if ($LASTEXITCODE -ne 0) {
+            throw "Could not add the PktMon IP filter for $TargetIP."
+        }
 
-    & pktmon.exe filter add LaboBridgeSelectraPort -t TCP -p $SelectraPort 2>&1 | Add-Content -LiteralPath $statusPath
-    if ($LASTEXITCODE -ne 0) {
-        throw "Could not add the PktMon TCP-port filter for $SelectraPort."
+        & pktmon.exe filter add LaboBridgeSelectraPort -t TCP -p $SelectraPort 2>&1 | Add-Content -LiteralPath $statusPath
+        if ($LASTEXITCODE -ne 0) {
+            throw "Could not add the PktMon TCP-port filter for $SelectraPort."
+        }
     }
 
     $marker = @{
         target_ip = $TargetIP
+        capture_all = [bool]$CaptureAll
         output_directory = $outputDirectory
         etl_path = $etlPath
         started_utc = (Get-Date).ToUniversalTime().ToString('o')
@@ -157,7 +172,11 @@ try {
 
     Write-Host ''
     Write-Host 'Starting full-packet capture on the Windows server...' -ForegroundColor Cyan
-    Write-Host "Targets: IP $TargetIP OR TCP port $SelectraPort, both directions"
+    if ($CaptureAll) {
+        Write-Host 'Targets: EVERYTHING - no IP or port filter' -ForegroundColor Yellow
+    } else {
+        Write-Host "Targets: IP $TargetIP OR TCP port $SelectraPort, both directions"
+    }
     Write-Host 'Capture points: every Windows network component, including Hyper-V'
     Write-Host 'This does not bind a port and does not stop or restart run_all.' -ForegroundColor Green
 

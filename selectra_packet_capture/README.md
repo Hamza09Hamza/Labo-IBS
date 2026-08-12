@@ -45,6 +45,21 @@ For an automatic 30-minute capture:
 powershell.exe -ExecutionPolicy Bypass -File .\capture_selectra_windows.ps1 -DurationSeconds 1800
 ```
 
+## Unfiltered capture (everything, no IP/port assumption)
+
+Double-click `START_CAPTURE_ALL.bat`, or run:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\capture_selectra_windows.ps1 -CaptureAll
+```
+
+Skips the `10.10.12.52` IP filter and the `6003` port filter entirely -
+records every packet the server's PktMon can see, on every component.
+Use this when the suspected IP or port might be wrong (e.g. a Host Query
+reply going somewhere unexpected), not as the default - it produces much
+larger files and more traffic to sift through. Output goes to
+`selectra_capture_all_<timestamp>/` instead of the IP-named folder.
+
 ## What “everything” means on a switched network
 
 The PktMon filter matches `10.10.12.52` as either source or destination. NIC capture and `--pkt-size 0` retain full packets. No TCP/UDP port or IP protocol is excluded.
