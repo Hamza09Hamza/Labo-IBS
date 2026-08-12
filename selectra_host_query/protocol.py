@@ -243,6 +243,22 @@ def build_order_variants(order: dict) -> list[tuple[str, list[str]]]:
         [h_baseline, p_record, f"O|1|{sample_id}|||R||||||N||||{specimen_type}||||||||||F", "L|1|F"],
     ))
 
+    # 9: H record sender-name field [4] left blank. The Selectra's own Host
+    # Communication config screen shows "Identite dispositif: PROM" (the
+    # Selectra's own self-identity) alongside "Identification Hote: WINLAB"
+    # (confirmed to be the exact host name it expects - already used above).
+    # We don't know what, if anything, it expects from a HOST in that same
+    # slot on an incoming H record - "PROM" is the Selectra's own name, not
+    # ours, so copying it verbatim would be a guess. Blank is the safer
+    # untested option, in case a non-blank sender name in that field (any
+    # value) is itself what causes the Selectra to reject/ignore the batch,
+    # the same way "SELECTRA" in the receiving-application field was.
+    h_blank_sender = f"H|\\^&||||||||WINLAB||P|LIS2-A|{stamp}"
+    variants.append((
+        "H record with blank sender-name field [4]",
+        [h_blank_sender, p_record, f"O|1|{sample_id}|||R||||||N||||{specimen_type}||||||||||F", "L|1|F"],
+    ))
+
     return variants
 
 
