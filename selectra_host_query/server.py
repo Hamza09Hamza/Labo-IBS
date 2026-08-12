@@ -213,7 +213,8 @@ class SelectraHostQueryServer:
         if not query_records:
             if records:
                 self.store.add_event("system", "non_query_batch", None,
-                                     f"Received {len(records)} record(s), but no Q record; no order response sent")
+                                     f"Received {len(records)} record(s), but no Q record; no order response sent",
+                                     "\n".join(records))
             return
         candidates = []
         for record in query_records:
