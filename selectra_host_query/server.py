@@ -9,11 +9,12 @@ from . import protocol
 
 
 class SelectraHostQueryServer:
-    def __init__(self, store, host="0.0.0.0", port=6103, armed=False):
+    def __init__(self, store, host="0.0.0.0", port=6103, armed=False, embedded=False):
         self.store = store
         self.host = host
         self.port = int(port)
         self.armed = bool(armed)
+        self.embedded = bool(embedded)
         self._listener = None
         self._thread = None
         self._stop = threading.Event()
@@ -58,8 +59,42 @@ class SelectraHostQueryServer:
                 "armed": self.armed,
                 "connected_clients": self._clients,
                 "last_peer": self._last_peer,
-                "running": bool(self._thread and self._thread.is_alive()),
+                "running": self.embedded or bool(self._thread and self._thread.is_alive()),
             }
+
+    def set_armed(self, armed: bool):
+        """Enable or disable real order replies without restarting the bridge."""
+        with self._lock:
+            self.armed = bool(armed)
+        state = "ARMED" if self.armed else "DISARMED"
+        self.store.add_event(
+            "local", "live_response_mode", None,
+            f"Selectra exact-ID order replies are now {state}",
+        )
+        return self.armed
+
+    def set_instrument_port(self, port: int):
+        """Keep the page in sync when LaboBridge changes its live port."""
+        with self._lock:
+            self.port = int(port)
+
+    def client_connected(self, peer: str):
+        """Track a client owned by the production port-6003 listener."""
+        with self._lock:
+            self._clients += 1
+            self._last_peer = peer
+        self.store.add_event(
+            "instrument", "connected", None,
+            f"Selectra TCP client connected from {peer}",
+        )
+
+    def client_disconnected(self, peer: str):
+        with self._lock:
+            self._clients = max(0, self._clients - 1)
+        self.store.add_event(
+            "instrument", "disconnected", None,
+            f"Selectra TCP client disconnected: {peer}",
+        )
 
     def preview(self, sample_id: str, simulated=False):
         order = self.store.get_order(sample_id)
@@ -112,10 +147,7 @@ class SelectraHostQueryServer:
 
     def _handle_client(self, connection: socket.socket, address):
         peer = f"{address[0]}:{address[1]}"
-        with self._lock:
-            self._clients += 1
-            self._last_peer = peer
-        self.store.add_event("instrument", "connected", None, f"Selectra TCP client connected from {peer}")
+        self.client_connected(peer)
         connection.settimeout(90)
         buffer = b""
         records = []
@@ -135,7 +167,7 @@ class SelectraHostQueryServer:
                     elif first == protocol.EOT:
                         buffer = buffer[1:]
                         self.store.add_event("instrument", "eot", None, "Selectra completed its transaction", "<EOT>")
-                        self._handle_records(connection, records)
+                        self.handle_records(connection, records)
                         records = []
                     elif first == protocol.STX:
                         end = buffer.find(bytes([protocol.LF]))
@@ -168,11 +200,15 @@ class SelectraHostQueryServer:
                 connection.close()
             except OSError:
                 pass
-            with self._lock:
-                self._clients -= 1
-            self.store.add_event("instrument", "disconnected", None, f"Selectra TCP client disconnected: {peer}")
+            self.client_disconnected(peer)
 
-    def _handle_records(self, connection: socket.socket, records: list[str]):
+    def handle_records(self, connection: socket.socket, records: list[str]):
+        """Process one complete analyzer batch after its EOT.
+
+        In embedded mode ``connection`` is the existing production Selectra
+        socket accepted by LaboBridge on port 6003.  A reply is possible only
+        for an exact staged sample-ID match and only while explicitly armed.
+        """
         query_records = [record for record in records if record.lstrip("01234567").startswith("Q|")]
         if not query_records:
             if records:
@@ -183,6 +219,11 @@ class SelectraHostQueryServer:
         for record in query_records:
             candidates.extend(protocol.query_candidates(record))
         candidates = list(dict.fromkeys(candidates))
+        self.store.add_event(
+            "instrument", "query_received", None,
+            f"Selectra requested order data for candidates: {candidates}",
+            "\n".join(query_records),
+        )
         order = self.store.resolve_candidates(candidates)
         if not order:
             self.store.add_event("system", "query_unmatched", None,
@@ -206,6 +247,9 @@ class SelectraHostQueryServer:
             message = f"Host response failed: {exc}"
             self.store.mark_error(sample_id, message)
             self.store.add_event("system", "response_error", sample_id, message)
+
+    # Kept for callers/tests written before the production bridge integration.
+    _handle_records = handle_records
 
     def _recv_control(self, connection: socket.socket) -> int:
         while True:

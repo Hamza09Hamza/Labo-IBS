@@ -56,6 +56,16 @@ The default listener configuration lives in `labo_bridge/server.py`.
 
 The ports shown above are defaults. Runtime port selection and machine metadata are exposed through the administration layer and stored in PostgreSQL.
 
+The normal `run_all.py` process also serves:
+
+- Labo Bridge administration: `http://<server-IP>:5050/`
+- Selectra Host Query staging and trace: `http://<server-IP>:5052/`
+
+The Selectra continues to communicate on its existing listener port (`6003`
+unless changed in machine settings). Host Query replies start disarmed after
+every restart and require an exact sample-ID match against an order staged on
+the page.
+
 ## Main components
 
 ### TCP listeners and protocol dispatch

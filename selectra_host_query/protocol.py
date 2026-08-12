@@ -94,7 +94,7 @@ def build_order_records(order: dict) -> list[str]:
     tests = [_clean(code) for code in order.get("tests") or [] if _clean(code)]
     universal_tests = "\\".join(f"^^^{code}" for code in tests)
     return [
-        f"H|\\^&|||LABO-BRIDGE-HQ|||||SELECTRA||P|LIS2-A2|{stamp}",
+        f"H|\\^&|||LABO-BRIDGE-HQ|||||SELECTRA||P|LIS2-A|{stamp}",
         f"P|1||{patient_id}||{family_name}^{given_name}||{birth_date}|{sex}",
         f"O|1|{sample_id}||{universal_tests}|||||||N||||{specimen_type}||||||||||O",
         "L|1|N",
@@ -116,4 +116,3 @@ def visible_bytes(data: bytes) -> str:
         else:
             pieces.append(f"<0x{byte:02X}>")
     return "".join(pieces)
-

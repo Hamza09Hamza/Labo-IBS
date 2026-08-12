@@ -112,6 +112,15 @@ def create_app(store, service):
             return jsonify({"error": "no staged order exactly matches that sample ID"}), 404
         return jsonify({"ok": True, "sample_id": sample_id, "response_records": records})
 
+    @app.post("/api/live-responses")
+    def live_responses():
+        body = request.get_json(silent=True) or {}
+        armed = body.get("armed") is True
+        if armed and body.get("confirmation") != "ARM SELECTRA":
+            return jsonify({"error": "explicit ARM SELECTRA confirmation is required"}), 400
+        service.set_armed(armed)
+        return jsonify({"ok": True, "armed": service.armed})
+
     @app.get("/api/events")
     def events():
         try:
@@ -121,4 +130,3 @@ def create_app(store, service):
         return jsonify({"events": store.list_events(after=after)})
 
     return app
-

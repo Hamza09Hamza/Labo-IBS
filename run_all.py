@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
-Start EVERYTHING in one process: all five analyzer listeners (each on its
-own port) AND the admin web console (mapping editor, machine settings,
-API settings) at http://127.0.0.1:5050. This is the one command to run -
-no separate `python -m labo_bridge.admin` needed alongside it.
+Start EVERYTHING in one process: all analyzer listeners (each on its own
+port), the admin web console at http://127.0.0.1:5050, and the Selectra Host
+Query staging page at http://127.0.0.1:5052. This is the one command to run.
 
 Ports (see labo_bridge/server.py MACHINES for the source of truth):
     xn330      -> 6001
@@ -11,18 +10,40 @@ Ports (see labo_bridge/server.py MACHINES for the source of truth):
     selectra   -> 6003  (chemistry analyzer; runs the ELITech/LIS2-A software)
     cyanvision -> 6004
     xs500i     -> 6005  (via IPU on the machine's own PC)
+    minividas  -> 6006
     admin UI   -> http://127.0.0.1:5050
+    Selectra Host Query UI -> http://127.0.0.1:5052
 
 Every line printed is prefixed with the machine name, and every result
 actually written to the local database (labo_bridge.db) is printed alongside
 whether it was matched to a clinic labo_param or left pending for review.
 
-Ctrl+C stops both the listeners and the admin UI together.
+Ctrl+C stops the listeners and both web interfaces together.
 """
 import threading
+import os
 
 from labo_bridge import server
 from labo_bridge.admin import app as admin_app
+from selectra_host_query.app import create_app as create_selectra_query_app
+from selectra_host_query.server import SelectraHostQueryServer
+from selectra_host_query.store import BenchStore
+
+
+ROOT = os.path.dirname(os.path.abspath(__file__))
+SELECTRA_QUERY_DATA = os.path.join(ROOT, "selectra_host_query", "data", "host_query.db")
+
+# The page starts disarmed on every process restart.  Staging an order alone
+# does not transmit anything; the operator must explicitly arm exact-ID
+# replies from the page before the Selectra query arrives.
+selectra_query_store = BenchStore(SELECTRA_QUERY_DATA)
+selectra_query_service = SelectraHostQueryServer(
+    selectra_query_store, host="0.0.0.0", port=6003, armed=False, embedded=True,
+)
+selectra_query_app = create_selectra_query_app(
+    selectra_query_store, selectra_query_service,
+)
+server.configure_selectra_host_query(selectra_query_service)
 
 
 def _run_admin():
@@ -37,9 +58,22 @@ def _run_admin():
     admin_app.app.run(host="0.0.0.0", port=5050, debug=False, use_reloader=False, threaded=True)
 
 
+def _run_selectra_query_ui():
+    selectra_query_app.run(
+        host="0.0.0.0", port=5052, debug=False, use_reloader=False, threaded=True,
+    )
+
+
 if __name__ == "__main__":
     admin_thread = threading.Thread(target=_run_admin, name="admin-ui", daemon=True)
     admin_thread.start()
     print("[admin] Labo Bridge Admin running at http://127.0.0.1:5050\n")
+
+    selectra_query_thread = threading.Thread(
+        target=_run_selectra_query_ui, name="selectra-query-ui", daemon=True,
+    )
+    selectra_query_thread.start()
+    print("[selectra] Host Query staging page running at http://127.0.0.1:5052")
+    print("[selectra] Exact-ID order replies start DISARMED; instrument traffic remains on port 6003.\n")
 
     server.run_all()

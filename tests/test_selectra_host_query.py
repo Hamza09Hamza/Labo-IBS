@@ -74,6 +74,14 @@ class BenchCase(unittest.TestCase):
         events = self.store.list_events()
         self.assertTrue(any(event["kind"] == "response_blocked" for event in events))
 
+    def test_armed_unknown_id_sends_no_patient_or_order_data(self):
+        service = SelectraHostQueryServer(self.store, armed=True)
+        connection = FakeConnection()
+        service.handle_records(connection, ["Q|1|^UNKNOWN||ALL||||||||0"])
+        self.assertEqual(connection.sent, [])
+        events = self.store.list_events()
+        self.assertTrue(any(event["kind"] == "query_unmatched" for event in events))
+
     def test_armed_query_uses_astm_handshake(self):
         service = SelectraHostQueryServer(self.store, armed=True)
         connection = FakeConnection(bytes([protocol.ACK]) * 5)
@@ -102,6 +110,25 @@ class BenchCase(unittest.TestCase):
         self.assertEqual(invalid.status_code, 400)
         no_tests = client.post("/api/orders", json={**ORDER, "tests": []})
         self.assertEqual(no_tests.status_code, 400)
+
+    def test_api_requires_explicit_confirmation_to_arm_real_replies(self):
+        service = SelectraHostQueryServer(self.store, armed=False, embedded=True)
+        client = create_app(self.store, service).test_client()
+
+        rejected = client.post("/api/live-responses", json={"armed": True})
+        self.assertEqual(rejected.status_code, 400)
+        self.assertFalse(service.armed)
+
+        armed = client.post(
+            "/api/live-responses",
+            json={"armed": True, "confirmation": "ARM SELECTRA"},
+        )
+        self.assertEqual(armed.status_code, 200)
+        self.assertTrue(service.armed)
+
+        disarmed = client.post("/api/live-responses", json={"armed": False})
+        self.assertEqual(disarmed.status_code, 200)
+        self.assertFalse(service.armed)
 
 
 if __name__ == "__main__":

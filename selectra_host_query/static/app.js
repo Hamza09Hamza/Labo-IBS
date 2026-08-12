@@ -1,5 +1,6 @@
 const $ = (selector) => document.querySelector(selector);
 const state = { tests: [], eventsAfter: 0, ordersSignature: "" };
+let liveResponsesArmed = false;
 let toastTimer = null;
 
 function escapeHtml(value) {
@@ -65,12 +66,45 @@ async function loadStatus() {
   const pill = $("#modePill");
   pill.className = `mode-pill ${status.armed ? "armed" : "safe"}`;
   pill.querySelector("strong").textContent = status.armed ? "Live responses armed" : "Observation mode";
+  liveResponsesArmed = status.armed;
+  const armingPanel = $("#armingPanel");
+  const armingButton = $("#armingButton");
+  armingPanel.classList.toggle("armed", status.armed);
+  $("#armingTitle").textContent = status.armed ? "Waiting for an exact Selectra query" : "Replies are disarmed";
+  $("#armingCopy").textContent = status.armed
+    ? "If Selectra sends a Q record matching a staged sample ID, its patient details and requested tests will be transmitted immediately."
+    : "You can stage and preview orders safely. Arm only when the operator is ready to enter the test sample ID on the Selectra.";
+  armingButton.textContent = status.armed ? "Disarm replies" : "Arm exact-ID replies";
   $("#webEndpoint").textContent = location.host;
   $("#instrumentEndpoint").textContent = `<computer-IP>:${status.listener_port}`;
   $("#clientState").textContent = status.connected_clients
     ? `${status.connected_clients} connected`
     : status.last_peer ? `Last: ${status.last_peer}` : "Waiting";
   $("#orderCount").textContent = String(status.orders);
+}
+
+async function toggleLiveResponses() {
+  const nextArmed = !liveResponsesArmed;
+  if (nextArmed && !window.confirm(
+    "Arm real Selectra replies? An exact matching Q record will immediately receive the staged patient and tests."
+  )) return;
+  const button = $("#armingButton");
+  button.disabled = true;
+  try {
+    const result = await api("/api/live-responses", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        armed: nextArmed,
+        confirmation: nextArmed ? "ARM SELECTRA" : "",
+      }),
+    });
+    liveResponsesArmed = result.armed;
+    toast(result.armed ? "Exact-ID Selectra replies armed." : "Selectra replies disarmed.");
+    await Promise.all([loadStatus(), loadEvents()]);
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function eventClass(direction) {
@@ -187,6 +221,6 @@ $("#testCodeInput").addEventListener("keydown", (event) => {
   if (event.key === "Enter") { event.preventDefault(); addTest(); }
 });
 $("#orderForm").addEventListener("submit", stageOrder);
+$("#armingButton").addEventListener("click", () => toggleLiveResponses().catch((error) => toast(error.message)));
 renderTests();
 initialize().catch((error) => toast(`Bench failed to initialize: ${error.message}`));
-

@@ -23,10 +23,19 @@
   <main id="workspace">
     <section class="intro" aria-labelledby="pageTitle">
       <div>
-        <p class="eyebrow">Isolated LIS2-A test system</p>
+        <p class="eyebrow">Selectra LIS2-A order staging</p>
         <h1 id="pageTitle">Stage one order.<br>Ask for it by sample ID.</h1>
       </div>
-      <p class="intro-copy">No clinic database is connected. The Selectra receives only records entered on this page, and only after an exact sample-ID match.</p>
+      <p class="intro-copy">Prepare an order here, then wait. Nothing is returned until the Selectra sends a Host Query containing the exact staged sample ID.</p>
+    </section>
+
+    <section class="arming-panel" id="armingPanel" aria-label="Live response control">
+      <div>
+        <span class="arming-kicker">Live response control</span>
+        <strong id="armingTitle">Replies are disarmed</strong>
+        <p id="armingCopy">You can stage and preview orders safely. Arm only when the operator is ready to enter the test sample ID on the Selectra.</p>
+      </div>
+      <button type="button" id="armingButton">Arm exact-ID replies</button>
     </section>
 
     <section class="endpoint-strip" aria-label="Connection status">
@@ -72,7 +81,7 @@
 
       <section class="trace-panel panel" aria-labelledby="traceTitle">
         <header class="panel-head">
-          <div><span class="step">02</span><div><h2 id="traceTitle">Protocol trace</h2><p>Every control byte, query match, and response appears here.</p></div></div>
+          <div><span class="step">02</span><div><h2 id="traceTitle">Protocol trace</h2><p>Incoming queries, exact-ID matches, and outbound order frames appear here.</p></div></div>
           <span class="live-marker"><i></i>Live</span>
         </header>
         <div class="trace-legend"><span class="instrument-arrow">Selectra → Host</span><span class="host-arrow">Host → Selectra</span></div>
@@ -84,14 +93,14 @@
 
     <section class="orders-panel panel" aria-labelledby="ordersTitle">
       <header class="panel-head">
-        <div><span class="step">03</span><div><h2 id="ordersTitle">Staged orders</h2><p>Simulation exercises the lookup and record builder without sending network bytes.</p></div></div>
+        <div><span class="step">03</span><div><h2 id="ordersTitle">Staged orders</h2><p>The Selectra receives one only when its Q record exactly matches the sample ID and replies are armed.</p></div></div>
       </header>
       <div class="orders-list" id="ordersList"><div class="orders-empty">No orders staged yet.</div></div>
     </section>
 
     <aside class="safety-note">
-      <strong>Bench boundary</strong>
-      <p>This tool does not read clinic orders, post results, or modify the production Labo Bridge. Live replies require an explicit armed launch and exact sample-ID match.</p>
+      <strong>Controlled test</strong>
+      <p>This page uses its own staging database. It does not read clinic orders. A real H/P/O/L reply requires both an exact sample-ID match and explicit arming from this page.</p>
     </aside>
   </main>
 
@@ -99,4 +108,3 @@
   <script src="/app.js" defer></script>
 </body>
 </html>
-

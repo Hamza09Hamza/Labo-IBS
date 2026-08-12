@@ -40,6 +40,16 @@ CONNECTION_IDLE_TIMEOUT_SECONDS = 90
 # instead of relying on live terminal output nobody captured.
 RESULTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, "results"))
 
+# Optional Selectra Host Query service installed by run_all.py.  It shares
+# the production Selectra socket on port 6003; it never opens a second
+# instrument listener and never replies to an unmatched sample ID.
+_selectra_host_query_service = None
+
+
+def configure_selectra_host_query(service):
+    global _selectra_host_query_service
+    _selectra_host_query_service = service
+
 # machine -> config. Each machine listens on its own fixed port.
 # "selectra" is the chemistry analyzer's real machine name (ELITech is the
 # software/protocol stack it runs, not the machine itself).
@@ -396,8 +406,11 @@ def _handle_astm(conn, addr, cfg, machine, quiet):
                 buffer = buffer[1:]
             elif b0 == astm.EOT:
                 buffer = buffer[1:]
+                batch_records = list(session.raw_lines)
                 _flush_api_batch(session)
                 _write_session_file(session)
+                if machine == "selectra" and _selectra_host_query_service is not None:
+                    _selectra_host_query_service.handle_records(conn, batch_records)
                 # A single connection can carry multiple ENQ..EOT batches -
                 # reset per-batch accumulators so each file reflects only
                 # its own batch, not every batch seen on this connection.
@@ -533,6 +546,8 @@ def _serve_one_machine(machine: str, quiet: bool, stop_event: threading.Event):
     port = runtime_ports.get_port_for(machine, cfg["port"])
 
     sock = _bind_socket(machine, port)
+    if machine == "selectra" and _selectra_host_query_service is not None:
+        _selectra_host_query_service.set_instrument_port(port)
     print(f"[{machine}] listening on {HOST}:{port} ({cfg['protocol'].upper()}). "
           f"Storage: Postgres (labo_bridge schema)")
     live_status.set_listening(machine, datetime.now().isoformat(timespec="seconds"))
@@ -552,6 +567,8 @@ def _serve_one_machine(machine: str, quiet: bool, stop_event: threading.Event):
                 try:
                     sock = _bind_socket(machine, desired_port)
                     port = desired_port
+                    if machine == "selectra" and _selectra_host_query_service is not None:
+                        _selectra_host_query_service.set_instrument_port(port)
                     print(f"[{machine}] now listening on {HOST}:{port}.")
                 except OSError as e:
                     print(f"[{machine}] failed to bind port {desired_port} ({e}); "
@@ -576,11 +593,16 @@ def _serve_one_machine(machine: str, quiet: bool, stop_event: threading.Event):
             now_iso = datetime.now().isoformat(timespec="seconds")
             print(f"[{machine}] connected by {addr[0]}:{addr[1]} at {now_iso}")
             live_status.set_connected(machine, now_iso, addr[0])
+            query_peer = f"{addr[0]}:{addr[1]}"
+            if machine == "selectra" and _selectra_host_query_service is not None:
+                _selectra_host_query_service.client_connected(query_peer)
             try:
                 handler(conn, addr, cfg, machine, quiet)
             except Exception as e:
                 print(f"[{machine}] error handling connection: {e}")
             finally:
+                if machine == "selectra" and _selectra_host_query_service is not None:
+                    _selectra_host_query_service.client_disconnected(query_peer)
                 conn.close()
             print(f"[{machine}] ready for next connection.")
             live_status.set_listening(machine, datetime.now().isoformat(timespec="seconds"))

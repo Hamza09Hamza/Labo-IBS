@@ -1,14 +1,26 @@
 # Selectra Host Query Bench
 
-This is a small, isolated test harness for one workflow only:
+This is a small staging and trace page for one workflow only:
 
 1. Stage patient demographics, an exact sample ID, and requested tests in the web page.
 2. Have the Selectra send a Host Query for that ID.
-3. Inspect the query and the order response in the live protocol trace.
+3. Arm exact-ID replies from the page and inspect the real query/order response in the live protocol trace.
 
 It uses its own SQLite file. It does **not** read or write the clinic database, publish results, or import the production Labo Bridge server.
 
-## Start safely
+## Normal production-server test
+
+`run_all.py` starts this page automatically alongside the bridge:
+
+- Web page: `http://<server-IP>:5052/`
+- Selectra connection: the existing `<server-IP>:6003`
+- Staging database: `selectra_host_query/data/host_query.db`
+
+The page starts **disarmed after every service restart**. Stage an order, verify
+the H/P/O/L preview, click **Arm exact-ID replies**, and only then enter or scan
+that exact sample ID on the Selectra. Unknown IDs receive no order data.
+
+## Standalone isolated listener
 
 ```bash
 .venv/bin/python -u run_selectra_host_query.py
@@ -25,7 +37,7 @@ The default is **observation mode**. It accepts and acknowledges analyzer messag
 1. Stage a clearly non-production sample such as `HQ-DEMO-001` in the page.
 2. Add the exact Selectra assay/order codes to request.
 3. First click **Simulate exact-ID query** and inspect the generated H/P/O/L records.
-4. Configure a bench Selectra Host Query/LIS connection to the computer's LAN IP and TCP port `6103`. Do not point it at the production Selectra listener on `6003` for this test.
+4. For standalone testing only, configure a bench Selectra Host Query/LIS connection to the computer's LAN IP and TCP port `6103`. When using `run_all.py`, leave the Selectra on its existing production listener port `6003`.
 5. Scan or type exactly `HQ-DEMO-001` on the analyzer in the action that triggers Host Query.
 6. Confirm that a `Q` record appears in the protocol trace and matches the staged sample ID exactly.
 
