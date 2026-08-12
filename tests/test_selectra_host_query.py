@@ -163,17 +163,17 @@ class BenchCase(unittest.TestCase):
         self.assertEqual(disarmed.status_code, 200)
         self.assertFalse(service.armed)
 
-    def test_one_shot_probe_requires_confirmation_and_answers_next_unknown_q(self):
+    def test_continuous_probe_requires_confirmation_and_answers_every_unknown_q(self):
         self.assertEqual(PROBE_PATIENT_NAME, "APPELLE MANEL/FODHIL")
         self.assertEqual(len(PROBE_PATIENT_NAME), 20)
         service = SelectraHostQueryServer(self.store, armed=False, embedded=True)
         client = create_app(self.store, service).test_client()
-        rejected = client.post("/api/one-shot-probe", json={"armed": True})
+        rejected = client.post("/api/continuous-probe", json={"armed": True})
         self.assertEqual(rejected.status_code, 400)
 
         armed = client.post(
-            "/api/one-shot-probe",
-            json={"armed": True, "confirmation": "ARM ONE SHOT PROBE"},
+            "/api/continuous-probe",
+            json={"armed": True, "confirmation": "ARM CONTINUOUS PROBE"},
         )
         self.assertEqual(armed.status_code, 200)
         self.assertTrue(armed.get_json()["probe_armed"])
@@ -182,16 +182,27 @@ class BenchCase(unittest.TestCase):
 
         connection = FakeConnection(bytes([protocol.ACK]) * 2)
         service.handle_records(connection, ["Q|1|^REMOTE123||ALL||||||||0"])
-        self.assertFalse(service.status()["probe_armed"])
+        self.assertTrue(service.status()["probe_armed"])
         records = protocol.split_records(protocol.decode_frame(connection.sent[1]))
         self.assertIn("APPELLE MANEL/FODHIL", records[1])
         self.assertEqual(records[2].split("|")[2], "REMOTE123")
         self.assertEqual(len(records[2].split("|")[4].split("\\")), 3)
         self.assertEqual(self.store.get_order("REMOTE123")["status"], "delivered")
 
-        second_connection = FakeConnection()
+        second_connection = FakeConnection(bytes([protocol.ACK]) * 2)
         service.handle_records(second_connection, ["Q|1|^REMOTE124||ALL||||||||0"])
-        self.assertEqual(second_connection.sent, [])
+        self.assertEqual(len(second_connection.sent), 3)
+        second_records = protocol.split_records(protocol.decode_frame(second_connection.sent[1]))
+        self.assertIn("APPELLE MANEL/FODHIL", second_records[1])
+        self.assertEqual(second_records[2].split("|")[2], "REMOTE124")
+        self.assertTrue(service.status()["probe_armed"])
+
+        disarmed = client.post("/api/continuous-probe", json={"armed": False})
+        self.assertEqual(disarmed.status_code, 200)
+        self.assertFalse(service.status()["probe_armed"])
+        third_connection = FakeConnection()
+        service.handle_records(third_connection, ["Q|1|^REMOTE125||ALL||||||||0"])
+        self.assertEqual(third_connection.sent, [])
 
 
 if __name__ == "__main__":

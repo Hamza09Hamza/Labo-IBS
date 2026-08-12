@@ -35,7 +35,7 @@ SELECTRA_QUERY_DATA = os.path.join(ROOT, "selectra_host_query", "data", "host_qu
 
 # Both reply modes start disarmed on every process restart. Staging an order
 # alone does not transmit anything; the operator must explicitly arm either
-# exact-ID replies or the one-shot next-Q diagnostic probe from the page.
+# exact-ID replies or the continuous wildcard diagnostic probe from the page.
 selectra_query_store = BenchStore(SELECTRA_QUERY_DATA)
 selectra_query_service = SelectraHostQueryServer(
     selectra_query_store, host="0.0.0.0", port=6003, armed=False, embedded=True,
@@ -74,6 +74,6 @@ if __name__ == "__main__":
     )
     selectra_query_thread.start()
     print("[selectra] Host Query staging page running at http://127.0.0.1:5052")
-    print("[selectra] Exact-ID replies and the one-shot next-Q probe start DISARMED; instrument traffic remains on port 6003.\n")
+    print("[selectra] Exact-ID replies and the continuous wildcard probe start DISARMED; instrument traffic remains on port 6003.\n")
 
     server.run_all()

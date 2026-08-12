@@ -163,12 +163,12 @@ def create_app(store, service):
         service.set_armed(armed)
         return jsonify({"ok": True, "armed": service.armed})
 
-    @app.post("/api/one-shot-probe")
-    def one_shot_probe():
+    @app.post("/api/continuous-probe")
+    def continuous_probe():
         body = request.get_json(silent=True) or {}
         armed = body.get("armed") is True
-        if armed and body.get("confirmation") != "ARM ONE SHOT PROBE":
-            return jsonify({"error": "explicit ARM ONE SHOT PROBE confirmation is required"}), 400
+        if armed and body.get("confirmation") != "ARM CONTINUOUS PROBE":
+            return jsonify({"error": "explicit ARM CONTINUOUS PROBE confirmation is required"}), 400
         service.set_probe_armed(armed)
         return jsonify({**service.status(), "ok": True})
 

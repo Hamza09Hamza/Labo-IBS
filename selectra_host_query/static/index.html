@@ -38,17 +38,17 @@
       <button type="button" id="armingButton">Arm exact-ID replies</button>
     </section>
 
-    <section class="probe-panel" id="probePanel" aria-label="One-shot automatic probe">
+    <section class="probe-panel" id="probePanel" aria-label="Continuous automatic probe">
       <div class="probe-copy">
-        <span class="probe-kicker">One-shot remote probe</span>
+        <span class="probe-kicker">Continuous remote probe</span>
         <strong id="probeTitle">Automatic probe is disarmed</strong>
-        <p id="probeCopy">When armed, the next Selectra Q—regardless of sample ID—receives one alert order, then this probe switches itself off.</p>
+        <p id="probeCopy">When armed, every Selectra Q—regardless of sample ID—receives the alert order until you disarm this probe.</p>
       </div>
       <dl class="probe-payload">
         <div><dt>Patient name</dt><dd class="mono" id="probePatientName">APPELLE MANEL/FODHIL</dd></div>
         <div><dt>Tests</dt><dd class="mono" id="probeTests">Selected when armed</dd></div>
       </dl>
-      <button type="button" id="probeButton">Arm next-Q probe</button>
+      <button type="button" id="probeButton">Arm continuous probe</button>
     </section>
 
     <section class="endpoint-strip" aria-label="Connection status">
@@ -113,7 +113,7 @@
 
     <aside class="safety-note">
       <strong>Controlled test</strong>
-      <p>The one-shot probe can attach tests to the next sample queried by the analyzer and may start them if that sample is loaded. It automatically disarms after claiming one Q record.</p>
+      <p>The continuous probe can attach tests to every sample queried by the analyzer and may start them if a sample is loaded. It remains armed until you disarm it or restart LaboBridge.</p>
     </aside>
   </main>
 

@@ -88,7 +88,7 @@ class SelectraHostQueryServer:
         return self.armed
 
     def set_probe_armed(self, armed: bool):
-        """Arm a one-shot response to the next Selectra Q record."""
+        """Enable or disable wildcard diagnostic replies to every Selectra Q."""
         with self._lock:
             self._probe_armed = bool(armed)
             if self._probe_armed:
@@ -96,19 +96,18 @@ class SelectraHostQueryServer:
                     list(PROBE_TEST_POOL), PROBE_TEST_COUNT,
                 )
             tests = list(self._probe_tests)
-        state = "ARMED for the next Q only" if armed else "DISARMED"
+        state = "ARMED for every Q until manually disarmed" if armed else "DISARMED"
         self.store.add_event(
-            "local", "one_shot_probe_mode", None,
+            "local", "continuous_probe_mode", None,
             f"Automatic alert probe is {state}: {PROBE_PATIENT_NAME}; tests {tests}",
         )
         return self._probe_armed
 
-    def _claim_probe(self) -> tuple[bool, list[str]]:
-        """Atomically consume the one-shot before any network transmission."""
+    def _active_probe(self) -> tuple[bool, list[str]]:
+        """Read the persistent wildcard-probe state for the current query."""
         with self._lock:
             if not self._probe_armed:
                 return False, []
-            self._probe_armed = False
             return True, list(self._probe_tests)
 
     @staticmethod
@@ -274,23 +273,23 @@ class SelectraHostQueryServer:
             f"Selectra requested order data for candidates: {candidates}",
             "\n".join(query_records),
         )
-        probe_claimed, probe_tests = self._claim_probe()
+        probe_active, probe_tests = self._active_probe()
         is_probe = False
         order = None
-        if probe_claimed:
+        if probe_active:
             sample_id = next((value for value in candidates if 0 < len(value) <= 12), "")
             if not sample_id:
                 self.store.add_event(
-                    "system", "one_shot_probe_rejected", None,
-                    f"One-shot probe consumed but query has no valid 1-12 character sample ID: {candidates}",
+                    "system", "continuous_probe_rejected", None,
+                    f"Continuous probe ignored a query with no valid 1-12 character sample ID: {candidates}",
                     "\n".join(query_records),
                 )
                 return
             order = self.store.upsert_order(self._probe_order(sample_id, probe_tests))
             is_probe = True
             self.store.add_event(
-                "host", "one_shot_probe_triggered", sample_id,
-                f"Next-Q probe claimed sample {sample_id}; sending {PROBE_PATIENT_NAME} with tests {probe_tests}",
+                "host", "continuous_probe_triggered", sample_id,
+                f"Continuous probe is answering sample {sample_id}; sending {PROBE_PATIENT_NAME} with tests {probe_tests}",
             )
         else:
             order = self.store.resolve_candidates(candidates)
@@ -314,8 +313,8 @@ class SelectraHostQueryServer:
             self.store.mark_delivered(sample_id)
             if is_probe:
                 self.store.add_event(
-                    "host", "one_shot_probe_delivered", sample_id,
-                    "One-shot automatic probe delivered and automatically disarmed",
+                    "host", "continuous_probe_delivered", sample_id,
+                    "Continuous automatic probe delivered; it remains armed for later queries",
                 )
         except (TimeoutError, socket.timeout, ConnectionError, OSError) as exc:
             message = f"Host response failed: {exc}"

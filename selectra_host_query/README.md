@@ -20,30 +20,29 @@ The page starts **disarmed after every service restart**. Stage an order, verify
 the H/P/O/L preview, click **Arm exact-ID replies**, and only then enter or scan
 that exact sample ID on the Selectra. Unknown IDs receive no order data.
 
-## One-shot remote proof
+## Continuous remote proof
 
 When nobody is beside the analyzer to coordinate an exact sample ID, the page
-also has an explicitly armed **next-Q probe**. It is deliberately separate from
-normal exact-ID replies:
+also has an explicitly armed **continuous wildcard probe**. It is deliberately
+separate from normal exact-ID replies:
 
-1. Open `http://<server-IP>:5052/` and click **Arm next-Q probe**.
+1. Open `http://<server-IP>:5052/` and click **Arm continuous probe**.
 2. Confirm that the page shows `APPELLE MANEL/FODHIL` and three randomly chosen,
    installed Selectra test abbreviations.
-3. Leave the page open. The next valid Selectra `Q` record, for any 1–12
-   character sample ID, receives that alert name and those three tests.
-4. The probe claims that query and disarms itself **before** transmission, so it
-   cannot answer a second query even if delivery or acknowledgement fails.
-5. Check the trace for `one_shot_probe_triggered`, `frame_sent`,
-   `response_delivered`, and `one_shot_probe_delivered`.
+3. Every valid Selectra `Q` record, for any 1–12 character sample ID, receives
+   that alert name and those three tests while the probe remains armed.
+4. Click **Disarm continuous probe** to stop it. Restarting LaboBridge also
+   returns it to the disarmed state.
+5. Check the trace for `continuous_probe_triggered`, `frame_sent`,
+   `response_delivered`, and `continuous_probe_delivered` for each query.
 
 The alert is written as 20 characters because this analyzer's patient-name
 field is limited to 20. The three tests are selected when the probe is armed and
 remain visible in the page before the query arrives.
 
-**Safety:** the next query could belong to a loaded sample. Returning an order
-can attach or start the selected tests on that sample. Arm this only for the
-controlled diagnostic attempt and disarm it immediately if the attempt is
-cancelled.
+**Safety:** each query could belong to a loaded sample. Returning an order can
+attach or start the selected tests on every queried sample. Arm this only for
+the controlled diagnostic window and disarm it as soon as the test is over.
 
 ## Wire format used for replies
 
