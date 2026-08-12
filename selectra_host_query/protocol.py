@@ -114,9 +114,45 @@ def _clean(value: str) -> str:
     return str(value or "").replace("\r", " ").replace("\n", " ").strip()
 
 
+# Evidence log, most recent first. Every variant below is a genuine attempt,
+# not a guess pulled from generic LIS2-A docs (none exist for this model) -
+# each is either lifted directly from a real captured Selectra-originated
+# record, or is the one remaining unexplored slot in that same record shape.
+#   - 2026-08-12, samples 2003/2004: H record field [9]="SELECTRA" -> ACKed,
+#     no worklist effect. Real captured H records always say "WINLAB" there;
+#     switching to "WINLAB" is now baseline in every variant below.
+#   - 2026-08-12, samples 2007/2008: O record field [4] populated with
+#     "^^^SGPT^SGPT" / "^^^Calcium" -> ACKed, no worklist effect. Real
+#     captured O records always leave field [4] empty; blank field [4] is
+#     also now baseline below.
+#   - 2026-08-12, sample 2009: field [4] blank (as above) -> still ACKed,
+#     still no worklist effect. Confirms the blocker is not field [4] alone.
+#   - Real O record for reference: "O|1|339|||R||||||||||Normal||||||||||F"
+#     (result-upload direction; field [15]="Normal" not a specimen type,
+#     trailing field [25]="F" or "I", never "O").
+#   - Real H record for reference: "H|\^&|||PROM^4.3.13||||1.5|WINLAB||P|LIS2-A|<ts>"
+#     (field [8]="1.5", ours leaves it blank).
+# Since single-field changes have not worked, build_order_variants() below
+# generates several distinct whole-record shapes to try in sequence against
+# real hardware, rather than one more isolated guess.
 def build_order_records(order: dict) -> list[str]:
-    """Build a conservative LIS2-A H/P/O/L order-download transaction."""
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    """Build the baseline LIS2-A H/P/O/L order-download transaction (variant 0)."""
+    return build_order_variants(order)[0][1]
+
+
+def _stamp() -> str:
+    return datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+
+
+def build_order_variants(order: dict) -> list[tuple[str, list[str]]]:
+    """Build several distinct H/P/O/L record shapes to try against real hardware.
+
+    Returns a list of ``(label, records)`` pairs. Each variant changes more
+    than one field at once on purpose - single-field changes (WINLAB, R
+    priority, field [4] content) have already been tried individually against
+    real hardware without result, so this tries whole alternate shapes instead
+    of the next isolated tweak.
+    """
     sample_id = _clean(order["sample_id"])
     patient_id = _clean(order.get("patient_id") or sample_id)
     family_name = _clean(order.get("family_name"))
@@ -124,65 +160,77 @@ def build_order_records(order: dict) -> list[str]:
     birth_date = _clean(order.get("birth_date")).replace("-", "")
     sex = _clean(order.get("sex") or "U").upper()
     specimen_type = _clean(order.get("specimen_type") or "SERUM")
-    # O record field [5] (priority) is populated "R" (Routine) in every real
-    # O record this Selectra has been observed to send in its own R/result
-    # captures (e.g. "O|1|339|||R||||||||||Normal||||...") - confirmed via
-    # real capture, 2026-08-12. Leaving it blank (as before) is a real
-    # mismatch from what the machine's own usage of this record shape looks
-    # like, unlike patient_id in the P record below, which is correctly
-    # empty-by-default and only non-empty here because of what was typed
-    # into the web form's Patient ID field during testing.
-    #
-    # H record field [9] (receiving application) confirmed via real capture
-    # (2026-08-12) to be "WINLAB" in every H record this Selectra sends on
-    # its own uploads - e.g. "H|\^&|||PROM^4.3.13||||1.5|WINLAB||P|LIS2-A|...".
-    # Two real orders (samples 2003, 2004) were ACKed frame-by-frame at the
-    # ASTM level but produced zero visible reaction on the Selectra's own
-    # screen when this field said "SELECTRA" instead - consistent with the
-    # analyzer validating the receiving-application name and silently
-    # discarding anything not addressed to its own configured host name
-    # before the content ever reaches the worklist.
-    # KNOWN DISCREPANCY (2026-08-12, sample 2007) - order frames now ACK cleanly
-    # at the ASTM level (ENQ/ACK/4 frames/EOT all confirmed on real hardware),
-    # but the order still does not appear on the Selectra's own worklist screen.
-    # Re-checked every real O/P/H record this Selectra has been captured sending
-    # on its own (result-upload direction, pktmon capture 2026-08-11/12,
-    # samples 339/340/342/343) field-by-field against what we build here:
-    #   - Real O record: "O|1|339|||R||||||||||Normal||||||||||F"
-    #     -> field [4] (where we put the universal test ID) is ALWAYS EMPTY in
-    #        every real O record captured, even ones reporting a completed
-    #        result for a specific test. Field [15] (where we put specimen_type
-    #        "SERUM") instead holds "Normal" in every real record - i.e. field
-    #        [15] is not a specimen-type slot on this instrument, and this
-    #        Selectra's own field usage does not match the generic LIS2-A
-    #        numbering we assumed. Field [25] (trailing) is "F" or "I" in real
-    #        records, never the "O" we send.
-    #   - Real H record: "H|\^&|||PROM^4.3.13||||1.5|WINLAB||P|LIS2-A|<ts>"
-    #     -> field [8] (processing/version ID) is always "1.5" on real Selectra
-    #        output; ours leaves it empty. Untested whether this matters for
-    #        the host->instrument direction.
-    # UPDATE (2026-08-12, sample 2008 test) - a COM1 "Instrument communication
-    # handler" panel was checked live against a real order transmission to
-    # rule it out as related: that panel runs a constant ~5-10s heartbeat
-    # (FE-framed, not ASTM/LIS2-A) straight through the exact moment the order
-    # was sent, with zero change in rate, size, or content. Confirmed to be
-    # unrelated internal instrument traffic, not the host-query channel.
-    #
-    # Applying the field [4] fix below: every real O record this Selectra has
-    # been captured sending on its own leaves field [4] (universal test ID)
-    # completely empty, even when reporting a specific completed test result.
-    # Two live order attempts with a populated field [4] (samples 2007, 2008 -
-    # "^^^SGPT^SGPT" and "^^^Calcium") ACKed cleanly at the ASTM level but
-    # never appeared on the worklist screen. This is the strongest untested,
-    # evidence-backed candidate left: stop populating field [4] and match the
-    # instrument's own real usage exactly. Not yet confirmed on hardware -
-    # test with a fresh sample and report back whether it now appears.
-    return [
-        f"H|\\^&|||LABO-BRIDGE-HQ|||||WINLAB||P|LIS2-A|{stamp}",
-        f"P|1||{patient_id}||{family_name}^{given_name}||{birth_date}|{sex}",
-        f"O|1|{sample_id}|||R||||||N||||{specimen_type}||||||||||O",
-        "L|1|N",
-    ]
+    tests = [_clean(code) for code in order.get("tests") or [] if _clean(code)]
+    test_id = tests[0] if tests else ""
+    stamp = _stamp()
+
+    h_baseline = f"H|\\^&|||LABO-BRIDGE-HQ|||||WINLAB||P|LIS2-A|{stamp}"
+    h_version = f"H|\\^&|||LABO-BRIDGE-HQ|||||1.5|WINLAB||P|LIS2-A|{stamp}"
+    p_record = f"P|1||{patient_id}||{family_name}^{given_name}||{birth_date}|{sex}"
+    l_record = "L|1|N"
+
+    variants: list[tuple[str, list[str]]] = []
+
+    # 0: current baseline - field [4] blank, trailing status "O".
+    variants.append((
+        "baseline: blank test-id field, trailing O",
+        [h_baseline, p_record, f"O|1|{sample_id}|||R||||||N||||{specimen_type}||||||||||O", l_record],
+    ))
+
+    # 1: trailing status "F" (Final) instead of "O" - matches every real
+    # captured O record's own trailing field, never tested in this position.
+    variants.append((
+        "trailing status F instead of O",
+        [h_baseline, p_record, f"O|1|{sample_id}|||R||||||N||||{specimen_type}||||||||||F", l_record],
+    ))
+
+    # 2: trailing status blank entirely.
+    variants.append((
+        "trailing status blank",
+        [h_baseline, p_record, f"O|1|{sample_id}|||R||||||N||||{specimen_type}|||||||||||", l_record],
+    ))
+
+    # 3: H record field [8]="1.5" (matches real captured H records exactly,
+    # including the version field we've left blank so far).
+    variants.append((
+        "H field [8]=1.5 (full real H-record match)",
+        [h_version, p_record, f"O|1|{sample_id}|||R||||||N||||{specimen_type}||||||||||F", l_record],
+    ))
+
+    # 4: bare-minimum O record - only sample ID and priority, everything else
+    # blank (mirrors how sparse real O records actually are: mostly empty
+    # fields with only [2] and [5] populated).
+    variants.append((
+        "minimal O record (sample id + priority only)",
+        [h_baseline, p_record, f"O|1|{sample_id}||||R", l_record],
+    ))
+
+    # 5: test name back in field [4], plain (no short code, no ^^^ prefix) -
+    # untested exact shape, in case the leading ^^^ component markers (not
+    # the presence of a test name) were the actual problem.
+    variants.append((
+        "plain test name in field [4], no ^^^ prefix",
+        [h_baseline, p_record,
+         f"O|1|{sample_id}||{test_id}|R||||||N||||{specimen_type}||||||||||F", l_record],
+    ))
+
+    # 6: no P record at all - some ASTM hosts send H/O/L only for a query
+    # response and treat P as upload-direction only; untested here.
+    variants.append((
+        "no P record (H/O/L only)",
+        [h_baseline, f"O|1|{sample_id}|||R||||||N||||{specimen_type}||||||||||F", l_record],
+    ))
+
+    # 7: patient ID left blank in P record (real captured P records from this
+    # Selectra always leave patient ID blank - see "P|1||||BOUCHEROUR|||M" -
+    # our staged patient_id may itself be a rejected/unexpected value).
+    variants.append((
+        "P record with blank patient id (matches real captures)",
+        [h_baseline, f"P|1||||{family_name}^{given_name}||{birth_date}|{sex}",
+         f"O|1|{sample_id}|||R||||||N||||{specimen_type}||||||||||F", l_record],
+    ))
+
+    return variants
 
 
 def visible_bytes(data: bytes) -> str:

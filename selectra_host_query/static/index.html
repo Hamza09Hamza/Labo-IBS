@@ -53,20 +53,20 @@
 
         <form id="orderForm" novalidate>
           <div class="form-grid">
-            <label class="field field-wide"><span>Sample ID</span><input id="sampleId" name="sample_id" required autocomplete="off" placeholder="e.g. HQ-DEMO-001"><small>This must exactly match what you type or scan on the Selectra.</small></label>
-            <label class="field"><span>Patient ID</span><input id="patientId" name="patient_id" required autocomplete="off" placeholder="DEMO-PAT-001"></label>
+            <label class="field field-wide"><span>Sample ID</span><input id="sampleId" name="sample_id" required autocomplete="off" placeholder="e.g. HQ-DEMO-001"><small>This must exactly match what you type or scan on the Selectra. Everything else below is optional — leave it blank and it's auto-filled with random non-clinical placeholder data.</small></label>
+            <label class="field"><span>Patient ID</span><input id="patientId" name="patient_id" autocomplete="off" placeholder="auto-filled if blank"></label>
             <label class="field"><span>Specimen</span><select id="specimenType" name="specimen_type"><option value="SERUM">Serum</option><option value="PLASMA">Plasma</option><option value="URINE">Urine</option><option value="WHOLE BLOOD">Whole blood</option></select></label>
-            <label class="field"><span>Family name</span><input id="familyName" name="family_name" required autocomplete="off" placeholder="TEST"></label>
-            <label class="field"><span>Given name</span><input id="givenName" name="given_name" required autocomplete="off" placeholder="PATIENT"></label>
-            <label class="field"><span>Birth date</span><input id="birthDate" name="birth_date" type="date"></label>
-            <label class="field"><span>Sex</span><select id="patientSex" name="sex"><option value="U">Unspecified</option><option value="F">Female</option><option value="M">Male</option></select></label>
+            <label class="field"><span>Family name</span><input id="familyName" name="family_name" autocomplete="off" placeholder="auto-filled if blank"></label>
+            <label class="field"><span>Given name</span><input id="givenName" name="given_name" autocomplete="off" placeholder="auto-filled if blank"></label>
+            <label class="field"><span>Birth date</span><input id="birthDate" name="birth_date" type="date"><small>Auto-filled with a random date if left blank.</small></label>
+            <label class="field"><span>Sex</span><select id="patientSex" name="sex"><option value="">Random if blank</option><option value="U">Unspecified</option><option value="F">Female</option><option value="M">Male</option></select></label>
           </div>
 
           <div class="test-builder">
-            <div class="field-label"><span>Selectra test codes</span><small>Candidate codes from received results; verify outbound names on the instrument.</small></div>
+            <div class="field-label"><span>Selectra test codes</span><small>Candidate codes from received results; verify outbound names on the instrument. Leave empty and a random test is picked for you.</small></div>
             <div class="test-entry"><input id="testCodeInput" list="assaySuggestions" autocomplete="off" placeholder="Type a code, then Add"><button id="addTest" type="button">Add</button></div>
             <datalist id="assaySuggestions"></datalist>
-            <div class="test-chips" id="testChips"><span class="empty-tests">No tests selected</span></div>
+            <div class="test-chips" id="testChips"><span class="empty-tests">No tests selected — a random test will be used</span></div>
           </div>
 
           <div class="form-alert" id="formAlert" role="alert" hidden></div>

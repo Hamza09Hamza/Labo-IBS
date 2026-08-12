@@ -86,14 +86,21 @@ class BenchCase(unittest.TestCase):
         events = self.store.list_events()
         self.assertTrue(any(event["kind"] == "query_unmatched" for event in events))
 
-    def test_armed_query_uses_astm_handshake(self):
-        service = SelectraHostQueryServer(self.store, armed=True)
-        connection = FakeConnection(bytes([protocol.ACK]) * 5)
+    def test_armed_query_sends_every_brute_force_variant(self):
+        variant_count = len(protocol.build_order_variants(ORDER))
+        service = SelectraHostQueryServer(self.store, armed=True, variant_delay_seconds=0)
+        # Each variant transaction is ENQ + 4 frames = 5 ACKs.
+        connection = FakeConnection(bytes([protocol.ACK]) * (5 * variant_count))
         service._handle_records(connection, ["Q|1|^HQ-DEMO-001^"])
-        self.assertEqual(connection.sent[0], protocol.B_ENQ)
-        self.assertEqual(connection.sent[-1], protocol.B_EOT)
-        payloads = [protocol.decode_frame(frame) for frame in connection.sent[1:-1]]
-        self.assertEqual([payload[0] for payload in payloads], ["H", "P", "O", "L"])
+        enq_count = connection.sent.count(protocol.B_ENQ)
+        eot_count = connection.sent.count(protocol.B_EOT)
+        self.assertEqual(enq_count, variant_count)
+        self.assertEqual(eot_count, variant_count)
+        # Every transaction still follows H, P or O, ..., L per variant.
+        frames = [chunk for chunk in connection.sent if chunk not in (protocol.B_ENQ, protocol.B_EOT)]
+        payloads = [protocol.decode_frame(frame) for frame in frames]
+        self.assertEqual(payloads[0][0], "H")
+        self.assertEqual(payloads[-1][0], "L")
         self.assertEqual(self.store.get_order("HQ-DEMO-001")["status"], "delivered")
 
     def test_api_stages_and_simulates_an_exact_id(self):
@@ -107,13 +114,30 @@ class BenchCase(unittest.TestCase):
         missing = client.post("/api/simulate-query", json={"sample_id": "UNKNOWN"})
         self.assertEqual(missing.status_code, 404)
 
-    def test_api_rejects_delimiters_and_empty_tests(self):
+    def test_api_rejects_delimiters_but_auto_fills_empty_tests(self):
         service = SelectraHostQueryServer(self.store, armed=False)
         client = create_app(self.store, service).test_client()
         invalid = client.post("/api/orders", json={**ORDER, "sample_id": "BAD|ID"})
         self.assertEqual(invalid.status_code, 400)
-        no_tests = client.post("/api/orders", json={**ORDER, "tests": []})
-        self.assertEqual(no_tests.status_code, 400)
+        # Leaving tests empty no longer rejects the order: a random test is
+        # auto-filled so an operator only has to type the sample ID.
+        no_tests = client.post("/api/orders", json={**ORDER, "sample_id": "HQ-DEMO-003", "tests": []})
+        self.assertEqual(no_tests.status_code, 201)
+        self.assertEqual(len(no_tests.get_json()["order"]["tests"]), 1)
+
+    def test_api_auto_fills_demographics_when_only_sample_id_given(self):
+        service = SelectraHostQueryServer(self.store, armed=False)
+        client = create_app(self.store, service).test_client()
+        response = client.post("/api/orders", json={"sample_id": "HQ-DEMO-004"})
+        self.assertEqual(response.status_code, 201)
+        order = response.get_json()["order"]
+        self.assertEqual(order["sample_id"], "HQ-DEMO-004")
+        self.assertTrue(order["patient_id"])
+        self.assertTrue(order["family_name"])
+        self.assertTrue(order["given_name"])
+        self.assertTrue(order["birth_date"])
+        self.assertIn(order["sex"], {"M", "F"})
+        self.assertEqual(len(order["tests"]), 1)
 
     def test_api_requires_explicit_confirmation_to_arm_real_replies(self):
         service = SelectraHostQueryServer(self.store, armed=False, embedded=True)

@@ -4,17 +4,20 @@ from __future__ import annotations
 
 import socket
 import threading
+import time
 
 from . import protocol
 
 
 class SelectraHostQueryServer:
-    def __init__(self, store, host="0.0.0.0", port=6103, armed=False, embedded=False):
+    def __init__(self, store, host="0.0.0.0", port=6103, armed=False, embedded=False,
+                 variant_delay_seconds=1.0):
         self.store = store
         self.host = host
         self.port = int(port)
         self.armed = bool(armed)
         self.embedded = bool(embedded)
+        self.variant_delay_seconds = float(variant_delay_seconds)
         self._listener = None
         self._thread = None
         self._stop = threading.Event()
@@ -235,19 +238,32 @@ class SelectraHostQueryServer:
         self.store.mark_query(sample_id)
         self.store.add_event("instrument", "query_matched", sample_id,
                              f"Matched exact sample ID {sample_id}", "\n".join(query_records))
-        response = protocol.build_order_records(order)
+        variants = protocol.build_order_variants(order)
         if not self.armed:
             self.store.add_event("host", "response_blocked", sample_id,
-                                 "Order response built but not sent because live responses are disarmed",
-                                 "\n".join(response))
+                                 f"{len(variants)} order-record variant(s) built but not sent because live responses are disarmed",
+                                 "\n\n".join(f"--- {label} ---\n" + "\n".join(records) for label, records in variants))
             return
-        try:
-            self._send_transaction(connection, response, sample_id)
-            self.store.mark_delivered(sample_id)
-        except (TimeoutError, socket.timeout, ConnectionError, OSError) as exc:
-            message = f"Host response failed: {exc}"
-            self.store.mark_error(sample_id, message)
-            self.store.add_event("system", "response_error", sample_id, message)
+        # Send every candidate schema variant, one full ASTM transaction each,
+        # back to back on this same connection, with a 1s pause between them
+        # so an operator watching the Selectra's screen can see exactly when
+        # each variant lands and tell which one (if any) actually changes
+        # anything. Each variant is clearly labeled in the trace so it's easy
+        # to match "what appeared on screen" to "which shape caused it".
+        for variant_index, (label, response) in enumerate(variants):
+            self.store.add_event("host", "variant_attempt", sample_id,
+                                 f"Sending brute-force schema variant {variant_index + 1}/{len(variants)}: {label}",
+                                 "\n".join(response))
+            try:
+                self._send_transaction(connection, response, sample_id)
+            except (TimeoutError, socket.timeout, ConnectionError, OSError) as exc:
+                message = f"Variant {variant_index + 1}/{len(variants)} ({label}) failed: {exc}"
+                self.store.mark_error(sample_id, message)
+                self.store.add_event("system", "response_error", sample_id, message)
+                return
+            if variant_index < len(variants) - 1 and self.variant_delay_seconds > 0:
+                time.sleep(self.variant_delay_seconds)
+        self.store.mark_delivered(sample_id)
 
     # Kept for callers/tests written before the production bridge integration.
     _handle_records = handle_records
