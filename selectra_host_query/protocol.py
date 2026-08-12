@@ -101,8 +101,18 @@ def build_order_records(order: dict) -> list[str]:
     # like, unlike patient_id in the P record below, which is correctly
     # empty-by-default and only non-empty here because of what was typed
     # into the web form's Patient ID field during testing.
+    #
+    # H record field [9] (receiving application) confirmed via real capture
+    # (2026-08-12) to be "WINLAB" in every H record this Selectra sends on
+    # its own uploads - e.g. "H|\^&|||PROM^4.3.13||||1.5|WINLAB||P|LIS2-A|...".
+    # Two real orders (samples 2003, 2004) were ACKed frame-by-frame at the
+    # ASTM level but produced zero visible reaction on the Selectra's own
+    # screen when this field said "SELECTRA" instead - consistent with the
+    # analyzer validating the receiving-application name and silently
+    # discarding anything not addressed to its own configured host name
+    # before the content ever reaches the worklist.
     return [
-        f"H|\\^&|||LABO-BRIDGE-HQ|||||SELECTRA||P|LIS2-A|{stamp}",
+        f"H|\\^&|||LABO-BRIDGE-HQ|||||WINLAB||P|LIS2-A|{stamp}",
         f"P|1||{patient_id}||{family_name}^{given_name}||{birth_date}|{sex}",
         f"O|1|{sample_id}||{universal_tests}|R||||||N||||{specimen_type}||||||||||O",
         "L|1|N",
