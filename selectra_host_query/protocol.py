@@ -12,6 +12,45 @@ import re
 from datetime import datetime, timezone
 
 
+# Real test-name -> short-code mapping, decoded from an actual M (method
+# master list) record this Selectra sent on its own during a live capture
+# (2026-08-12), e.g. "26^SGOT^SGOT^1^^^19006" -> short code "SGOT" for full
+# name "SGOT", "28^ALP^Phosphatase ALP^1^^^78" -> short code "ALP" for full
+# name "Phosphatase ALP". Four real host-query order attempts (samples
+# 2003-2006) using ONLY the full name in the O record's universal-test-ID
+# field were all ACKed at the ASTM frame level but produced zero visible
+# effect on the Selectra's screen. Generic LIS2-A/Vitalab documentation
+# (unverified, low-medium confidence - see selectra_host_query/README.md)
+# suggests this field's expected shape is "^^^<short_code>^<full_name>",
+# not the full name alone - this map supplies the short-code half from
+# real evidence, not a guess. Only entries actually observed on THIS
+# instrument's own M record are here; any other test code falls back to
+# sending the full name alone (old behavior) since no confirmed short
+# code exists for it yet.
+KNOWN_SHORT_CODES = {
+    "Glucose pap sl": "Gly",
+    "Uree uv sl": "Uree",
+    "Creatinine": "Crea",
+    "Acide Urique": "AU",
+    "Cholesterol": "Chol",
+    "Triglycerides": "Trig",
+    "Cholesterol HDL": "HDL",
+    "Albumine": "Alb",
+    "CK NAK": "CPK",
+    "CRP IP v3": "CRP3",
+    "CAL elitech": "cal",
+    "Phosphore": "Phos",
+    "BILI TOTAL BIO": "BILT",
+    "BILI DIRECT BIO": "BILD",
+    "LDH-L SL": "LDHL",
+    "Proteine totale": "Prot",
+    "SGOT": "SGOT",
+    "SGPT": "SGPT",
+    "Phosphatase ALP": "ALP",
+    "GGT": "G GT",
+    "Proteines U": "PrtU",
+}
+
 ENQ = 0x05
 ACK = 0x06
 NAK = 0x15
@@ -81,6 +120,20 @@ def _clean(value: str) -> str:
     return str(value or "").replace("\r", " ").replace("\n", " ").strip()
 
 
+def _universal_test_id(full_name: str) -> str:
+    """Build one O-record universal-test-ID component for a requested test.
+
+    Uses this Selectra's own confirmed short code when known (see
+    KNOWN_SHORT_CODES); falls back to the full name alone for anything not
+    yet observed on this instrument's own M record, rather than guessing a
+    short code that was never confirmed.
+    """
+    short_code = KNOWN_SHORT_CODES.get(full_name)
+    if short_code:
+        return f"^^^{short_code}^{full_name}"
+    return f"^^^{full_name}"
+
+
 def build_order_records(order: dict) -> list[str]:
     """Build a conservative LIS2-A H/P/O/L order-download transaction."""
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
@@ -92,7 +145,7 @@ def build_order_records(order: dict) -> list[str]:
     sex = _clean(order.get("sex") or "U").upper()
     specimen_type = _clean(order.get("specimen_type") or "SERUM")
     tests = [_clean(code) for code in order.get("tests") or [] if _clean(code)]
-    universal_tests = "\\".join(f"^^^{code}" for code in tests)
+    universal_tests = "\\".join(_universal_test_id(code) for code in tests)
     # O record field [5] (priority) is populated "R" (Routine) in every real
     # O record this Selectra has been observed to send in its own R/result
     # captures (e.g. "O|1|339|||R||||||||||Normal||||...") - confirmed via

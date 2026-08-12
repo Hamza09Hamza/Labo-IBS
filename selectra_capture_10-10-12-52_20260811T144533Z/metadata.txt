@@ -1,0 +1,51 @@
+﻿Selectra Windows full-packet capture
+Capture started UTC: 2026-08-11T14:45:33.4815706Z
+Target IP: 10.10.12.52
+LaboBridge Selectra port: 6003
+Filters: suspected IP OR any TCP traffic on the Selectra listener port
+Network components: all (physical NIC, TCP/IP stack, and Hyper-V paths)
+Packet length: full packet (--pkt-size 0)
+Server: WIN-5RUG48NBS3L
+Windows: Microsoft Windows NT 10.0.17763.0
+PowerShell: 5.1.17763.6189
+Maximum ETL segment: 512 MB
+
+[IPv4 addresses]
+
+InterfaceAlias              IPAddress      PrefixLength
+--------------              ---------      ------------
+NIC1                        172.16.2.4               24
+NIC4                        169.254.202.97           16
+Ethernet                    169.254.1.2              24
+Loopback Pseudo-Interface 1 127.0.0.1                 8
+
+
+
+[IPv4 routes]
+
+InterfaceAlias              DestinationPrefix  NextHop      RouteMetric
+--------------              -----------------  -------      -----------
+Ethernet                    169.254.1.255/32   0.0.0.0              256
+Ethernet                    169.254.1.2/32     0.0.0.0              256
+NIC1                        172.16.2.4/32      0.0.0.0              256
+NIC1                        172.16.2.0/24      0.0.0.0              256
+Ethernet                    169.254.1.0/24     0.0.0.0              256
+Loopback Pseudo-Interface 1 127.0.0.0/8        0.0.0.0              256
+NIC1                        0.0.0.0/0          172.16.2.254         256
+Loopback Pseudo-Interface 1 127.255.255.255/32 0.0.0.0              256
+Loopback Pseudo-Interface 1 127.0.0.1/32       0.0.0.0              256
+Ethernet                    255.255.255.255/32 0.0.0.0              256
+Loopback Pseudo-Interface 1 255.255.255.255/32 0.0.0.0              256
+NIC4                        255.255.255.255/32 0.0.0.0              256
+NIC1                        255.255.255.255/32 0.0.0.0              256
+NIC4                        224.0.0.0/4        0.0.0.0              256
+Loopback Pseudo-Interface 1 224.0.0.0/4        0.0.0.0              256
+NIC1                        172.16.2.255/32    0.0.0.0              256
+NIC1                        224.0.0.0/4        0.0.0.0              256
+Ethernet                    224.0.0.0/4        0.0.0.0              256
+
+
+
+
+Capture stopped UTC: 2026-08-12T07:59:46.4175636Z
+ETL segments: 1

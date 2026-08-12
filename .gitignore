@@ -1,6 +1,7 @@
 results/
 cyanvision_captures/
 captures/
+old_local_versions/
 clinical_portal/captures/
 selectra_host_query/data/
 selectra_packet_capture/.selectra_pktmon_active.json

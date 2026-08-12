@@ -64,7 +64,9 @@ class BenchCase(unittest.TestCase):
         self.assertIn("P-DEMO-001", records[1])
         self.assertIn("BENCH^PATIENT", records[1])
         self.assertIn("HQ-DEMO-001", records[2])
-        self.assertIn("^^^Glucose pap sl\\^^^Creatinine", records[2])
+        # Known short codes (from this Selectra's own real M-record capture,
+        # see protocol.KNOWN_SHORT_CODES) are sent alongside the full name.
+        self.assertIn("^^^Gly^Glucose pap sl\\^^^Crea^Creatinine", records[2])
 
     def test_disarmed_query_builds_but_sends_nothing(self):
         service = SelectraHostQueryServer(self.store, armed=False)
