@@ -1,6 +1,7 @@
 const $ = (selector) => document.querySelector(selector);
 const state = { tests: [], eventsAfter: 0, ordersSignature: "" };
 let liveResponsesArmed = false;
+let oneShotProbeArmed = false;
 let toastTimer = null;
 
 function escapeHtml(value) {
@@ -64,8 +65,11 @@ function formatTime(value) {
 async function loadStatus() {
   const status = await api("/api/status");
   const pill = $("#modePill");
-  pill.className = `mode-pill ${status.armed ? "armed" : "safe"}`;
-  pill.querySelector("strong").textContent = status.armed ? "Live responses armed" : "Observation mode";
+  const anyArmed = status.armed || status.probe_armed;
+  pill.className = `mode-pill ${anyArmed ? "armed" : "safe"}`;
+  pill.querySelector("strong").textContent = status.probe_armed
+    ? "One-shot probe armed"
+    : status.armed ? "Live responses armed" : "Observation mode";
   liveResponsesArmed = status.armed;
   const armingPanel = $("#armingPanel");
   const armingButton = $("#armingButton");
@@ -75,12 +79,50 @@ async function loadStatus() {
     ? "If Selectra sends a Q record matching a staged sample ID, its patient details and requested tests will be transmitted immediately."
     : "You can stage and preview orders safely. Arm only when the operator is ready to enter the test sample ID on the Selectra.";
   armingButton.textContent = status.armed ? "Disarm replies" : "Arm exact-ID replies";
+  oneShotProbeArmed = status.probe_armed;
+  const probePanel = $("#probePanel");
+  probePanel.classList.toggle("armed", status.probe_armed);
+  $("#probeTitle").textContent = status.probe_armed
+    ? "Waiting for the next Selectra Q"
+    : "Automatic probe is disarmed";
+  $("#probeCopy").textContent = status.probe_armed
+    ? "The next query will receive this payload. The probe is consumed before transmission and cannot answer a second query."
+    : "When armed, the next Selectra Q—regardless of sample ID—receives one alert order, then this probe switches itself off.";
+  $("#probePatientName").textContent = status.probe_patient_name;
+  $("#probeTests").textContent = (status.probe_tests || []).join(" · ");
+  $("#probeButton").textContent = status.probe_armed ? "Cancel one-shot probe" : "Arm next-Q probe";
   $("#webEndpoint").textContent = location.host;
   $("#instrumentEndpoint").textContent = `<computer-IP>:${status.listener_port}`;
   $("#clientState").textContent = status.connected_clients
     ? `${status.connected_clients} connected`
     : status.last_peer ? `Last: ${status.last_peer}` : "Waiting";
   $("#orderCount").textContent = String(status.orders);
+}
+
+async function toggleOneShotProbe() {
+  const nextArmed = !oneShotProbeArmed;
+  if (nextArmed && !window.confirm(
+    "Arm the next-Q probe? The next Selectra sample query will receive APPELLE MANEL/FODHIL and three installed tests, then the probe will disarm automatically."
+  )) return;
+  const button = $("#probeButton");
+  button.disabled = true;
+  try {
+    const result = await api("/api/one-shot-probe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        armed: nextArmed,
+        confirmation: nextArmed ? "ARM ONE SHOT PROBE" : "",
+      }),
+    });
+    oneShotProbeArmed = result.probe_armed;
+    toast(result.probe_armed
+      ? "One-shot probe armed for the next Selectra Q."
+      : "One-shot probe cancelled.");
+    await Promise.all([loadStatus(), loadEvents()]);
+  } finally {
+    button.disabled = false;
+  }
 }
 
 async function toggleLiveResponses() {
@@ -222,5 +264,6 @@ $("#testCodeInput").addEventListener("keydown", (event) => {
 });
 $("#orderForm").addEventListener("submit", stageOrder);
 $("#armingButton").addEventListener("click", () => toggleLiveResponses().catch((error) => toast(error.message)));
+$("#probeButton").addEventListener("click", () => toggleOneShotProbe().catch((error) => toast(error.message)));
 renderTests();
 initialize().catch((error) => toast(`Bench failed to initialize: ${error.message}`));
