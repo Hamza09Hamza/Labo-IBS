@@ -64,9 +64,11 @@ class BenchCase(unittest.TestCase):
         self.assertIn("P-DEMO-001", records[1])
         self.assertIn("BENCH^PATIENT", records[1])
         self.assertIn("HQ-DEMO-001", records[2])
-        # Known short codes (from this Selectra's own real M-record capture,
-        # see protocol.KNOWN_SHORT_CODES) are sent alongside the full name.
-        self.assertIn("^^^Gly^Glucose pap sl\\^^^Crea^Creatinine", records[2])
+        # Universal test ID field (O record field [4]) is left blank: every
+        # real O record this Selectra has been captured sending on its own
+        # leaves this field empty, even when reporting a specific completed
+        # test result (see protocol.build_order_records for the evidence).
+        self.assertEqual(records[2].split("|")[4], "")
 
     def test_disarmed_query_builds_but_sends_nothing(self):
         service = SelectraHostQueryServer(self.store, armed=False)

@@ -16,17 +16,11 @@ from datetime import datetime, timezone
 # master list) record this Selectra sent on its own during a live capture
 # (2026-08-12), e.g. "26^SGOT^SGOT^1^^^19006" -> short code "SGOT" for full
 # name "SGOT", "28^ALP^Phosphatase ALP^1^^^78" -> short code "ALP" for full
-# name "Phosphatase ALP". Four real host-query order attempts (samples
-# 2003-2006) using ONLY the full name in the O record's universal-test-ID
-# field were all ACKed at the ASTM frame level but produced zero visible
-# effect on the Selectra's screen. Generic LIS2-A/Vitalab documentation
-# (unverified, low-medium confidence - see selectra_host_query/README.md)
-# suggests this field's expected shape is "^^^<short_code>^<full_name>",
-# not the full name alone - this map supplies the short-code half from
-# real evidence, not a guess. Only entries actually observed on THIS
-# instrument's own M record are here; any other test code falls back to
-# sending the full name alone (old behavior) since no confirmed short
-# code exists for it yet.
+# name "Phosphatase ALP". Kept as reference data only: the O record's
+# universal-test-ID field turned out to be unused by this Selectra (see the
+# field [4] evidence in build_order_records below), so this map is not
+# currently consumed anywhere. Left here in case a future format change
+# needs the short-code vocabulary again.
 KNOWN_SHORT_CODES = {
     "Glucose pap sl": "Gly",
     "Uree uv sl": "Uree",
@@ -120,20 +114,6 @@ def _clean(value: str) -> str:
     return str(value or "").replace("\r", " ").replace("\n", " ").strip()
 
 
-def _universal_test_id(full_name: str) -> str:
-    """Build one O-record universal-test-ID component for a requested test.
-
-    Uses this Selectra's own confirmed short code when known (see
-    KNOWN_SHORT_CODES); falls back to the full name alone for anything not
-    yet observed on this instrument's own M record, rather than guessing a
-    short code that was never confirmed.
-    """
-    short_code = KNOWN_SHORT_CODES.get(full_name)
-    if short_code:
-        return f"^^^{short_code}^{full_name}"
-    return f"^^^{full_name}"
-
-
 def build_order_records(order: dict) -> list[str]:
     """Build a conservative LIS2-A H/P/O/L order-download transaction."""
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
@@ -144,8 +124,6 @@ def build_order_records(order: dict) -> list[str]:
     birth_date = _clean(order.get("birth_date")).replace("-", "")
     sex = _clean(order.get("sex") or "U").upper()
     specimen_type = _clean(order.get("specimen_type") or "SERUM")
-    tests = [_clean(code) for code in order.get("tests") or [] if _clean(code)]
-    universal_tests = "\\".join(_universal_test_id(code) for code in tests)
     # O record field [5] (priority) is populated "R" (Routine) in every real
     # O record this Selectra has been observed to send in its own R/result
     # captures (e.g. "O|1|339|||R||||||||||Normal||||...") - confirmed via
@@ -164,10 +142,45 @@ def build_order_records(order: dict) -> list[str]:
     # analyzer validating the receiving-application name and silently
     # discarding anything not addressed to its own configured host name
     # before the content ever reaches the worklist.
+    # KNOWN DISCREPANCY (2026-08-12, sample 2007) - order frames now ACK cleanly
+    # at the ASTM level (ENQ/ACK/4 frames/EOT all confirmed on real hardware),
+    # but the order still does not appear on the Selectra's own worklist screen.
+    # Re-checked every real O/P/H record this Selectra has been captured sending
+    # on its own (result-upload direction, pktmon capture 2026-08-11/12,
+    # samples 339/340/342/343) field-by-field against what we build here:
+    #   - Real O record: "O|1|339|||R||||||||||Normal||||||||||F"
+    #     -> field [4] (where we put the universal test ID) is ALWAYS EMPTY in
+    #        every real O record captured, even ones reporting a completed
+    #        result for a specific test. Field [15] (where we put specimen_type
+    #        "SERUM") instead holds "Normal" in every real record - i.e. field
+    #        [15] is not a specimen-type slot on this instrument, and this
+    #        Selectra's own field usage does not match the generic LIS2-A
+    #        numbering we assumed. Field [25] (trailing) is "F" or "I" in real
+    #        records, never the "O" we send.
+    #   - Real H record: "H|\^&|||PROM^4.3.13||||1.5|WINLAB||P|LIS2-A|<ts>"
+    #     -> field [8] (processing/version ID) is always "1.5" on real Selectra
+    #        output; ours leaves it empty. Untested whether this matters for
+    #        the host->instrument direction.
+    # UPDATE (2026-08-12, sample 2008 test) - a COM1 "Instrument communication
+    # handler" panel was checked live against a real order transmission to
+    # rule it out as related: that panel runs a constant ~5-10s heartbeat
+    # (FE-framed, not ASTM/LIS2-A) straight through the exact moment the order
+    # was sent, with zero change in rate, size, or content. Confirmed to be
+    # unrelated internal instrument traffic, not the host-query channel.
+    #
+    # Applying the field [4] fix below: every real O record this Selectra has
+    # been captured sending on its own leaves field [4] (universal test ID)
+    # completely empty, even when reporting a specific completed test result.
+    # Two live order attempts with a populated field [4] (samples 2007, 2008 -
+    # "^^^SGPT^SGPT" and "^^^Calcium") ACKed cleanly at the ASTM level but
+    # never appeared on the worklist screen. This is the strongest untested,
+    # evidence-backed candidate left: stop populating field [4] and match the
+    # instrument's own real usage exactly. Not yet confirmed on hardware -
+    # test with a fresh sample and report back whether it now appears.
     return [
         f"H|\\^&|||LABO-BRIDGE-HQ|||||WINLAB||P|LIS2-A|{stamp}",
         f"P|1||{patient_id}||{family_name}^{given_name}||{birth_date}|{sex}",
-        f"O|1|{sample_id}||{universal_tests}|R||||||N||||{specimen_type}||||||||||O",
+        f"O|1|{sample_id}|||R||||||N||||{specimen_type}||||||||||O",
         "L|1|N",
     ]
 
