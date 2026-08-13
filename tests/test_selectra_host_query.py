@@ -4,7 +4,7 @@ import unittest
 
 from selectra_host_query import protocol
 from selectra_host_query.app import create_app
-from selectra_host_query.server import SelectraHostQueryServer
+from selectra_host_query.server import PROBE_PATIENT_NAME, SelectraHostQueryServer
 from selectra_host_query.store import BenchStore
 
 
@@ -46,8 +46,9 @@ class BenchCase(unittest.TestCase):
         self.temp.cleanup()
 
     def test_astm_frame_round_trip_and_checksum_rejection(self):
-        frame = protocol.build_frame(1, "Q|1|^HQ-DEMO-001^")
-        self.assertEqual(protocol.decode_frame(frame), "Q|1|^HQ-DEMO-001^")
+        message = "H|\\^&\rQ|1|^HQ-DEMO-001^\rL|1|F"
+        frame = protocol.build_frame(1, message)
+        self.assertEqual(protocol.decode_frame(frame), message)
         damaged = frame[:5] + b"X" + frame[6:]
         with self.assertRaisesRegex(ValueError, "checksum mismatch"):
             protocol.decode_frame(damaged)
@@ -61,14 +62,15 @@ class BenchCase(unittest.TestCase):
     def test_order_records_contain_demographics_sample_and_tests(self):
         records = protocol.build_order_records(ORDER)
         self.assertEqual([record[0] for record in records], ["H", "P", "O", "L"])
-        self.assertIn("P-DEMO-001", records[1])
-        self.assertIn("BENCH^PATIENT", records[1])
+        self.assertIn("BENCH PATIENT", records[1])
         self.assertIn("HQ-DEMO-001", records[2])
-        # Universal test ID field (O record field [4]) is left blank: every
-        # real O record this Selectra has been captured sending on its own
-        # leaves this field empty, even when reporting a specific completed
-        # test result (see protocol.build_order_records for the evidence).
-        self.assertEqual(records[2].split("|")[4], "")
+        fields = records[2].split("|")
+        self.assertEqual(fields[4], "^^^Gly\\^^^Crea")
+        self.assertEqual(fields[5], "R")
+        self.assertEqual(fields[11], "N")
+        self.assertEqual(fields[25], "Q")
+        self.assertIn("|||WINLAB|||||PROM||P|LIS2-A|", records[0])
+        self.assertEqual(records[3], "L|1|F")
 
     def test_disarmed_query_builds_but_sends_nothing(self):
         service = SelectraHostQueryServer(self.store, armed=False)
@@ -86,25 +88,16 @@ class BenchCase(unittest.TestCase):
         events = self.store.list_events()
         self.assertTrue(any(event["kind"] == "query_unmatched" for event in events))
 
-    def test_armed_query_sends_one_variant_and_advances_on_retry(self):
-        variants = protocol.build_order_variants(ORDER)
+    def test_armed_query_sends_one_complete_message_frame(self):
         service = SelectraHostQueryServer(self.store, armed=True)
-
-        # First query: exactly one ASTM transaction, using variant 0.
-        connection = FakeConnection(bytes([protocol.ACK]) * 5)
+        connection = FakeConnection(bytes([protocol.ACK]) * 2)
         service._handle_records(connection, ["Q|1|^HQ-DEMO-001^"])
-        self.assertEqual(connection.sent.count(protocol.B_ENQ), 1)
-        self.assertEqual(connection.sent.count(protocol.B_EOT), 1)
-        payloads = [protocol.decode_frame(frame) for frame in connection.sent[1:-1]]
-        self.assertEqual([payload[0] for payload in payloads], [record[0] for record in variants[0][1]])
+        self.assertEqual(len(connection.sent), 3)
+        self.assertEqual(connection.sent[0], protocol.B_ENQ)
+        self.assertEqual(connection.sent[-1], protocol.B_EOT)
+        records = protocol.split_records(protocol.decode_frame(connection.sent[1]))
+        self.assertEqual([record[0] for record in records], ["H", "P", "O", "L"])
         self.assertEqual(self.store.get_order("HQ-DEMO-001")["status"], "delivered")
-
-        # Retrying the same sample ID advances to the next variant.
-        connection2 = FakeConnection(bytes([protocol.ACK]) * 5)
-        service._handle_records(connection2, ["Q|1|^HQ-DEMO-001^"])
-        payloads2 = [protocol.decode_frame(frame) for frame in connection2.sent[1:-1]]
-        self.assertEqual([payload[0] for payload in payloads2], [record[0] for record in variants[1][1]])
-        self.assertEqual(self.store.get_order("HQ-DEMO-001")["query_count"], 2)
 
     def test_api_stages_and_simulates_an_exact_id(self):
         service = SelectraHostQueryServer(self.store, armed=False)
@@ -113,7 +106,10 @@ class BenchCase(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         simulation = client.post("/api/simulate-query", json={"sample_id": "HQ-DEMO-002"})
         self.assertEqual(simulation.status_code, 200)
-        self.assertEqual(simulation.get_json()["response_records"][-1], "L|1|N")
+        self.assertEqual(simulation.get_json()["response_records"][-1], "L|1|F")
+        simulated_order = self.store.get_order("HQ-DEMO-002")
+        self.assertEqual(simulated_order["query_count"], 0)
+        self.assertEqual(simulated_order["status"], "staged")
         missing = client.post("/api/simulate-query", json={"sample_id": "UNKNOWN"})
         self.assertEqual(missing.status_code, 404)
 
@@ -122,6 +118,12 @@ class BenchCase(unittest.TestCase):
         client = create_app(self.store, service).test_client()
         invalid = client.post("/api/orders", json={**ORDER, "sample_id": "BAD|ID"})
         self.assertEqual(invalid.status_code, 400)
+        too_long = client.post("/api/orders", json={**ORDER, "sample_id": "1234567890123"})
+        self.assertEqual(too_long.status_code, 400)
+        unknown_test = client.post(
+            "/api/orders", json={**ORDER, "sample_id": "HQ-UNKNOWN", "tests": ["NOT-INSTALLED"]}
+        )
+        self.assertEqual(unknown_test.status_code, 400)
         # Leaving tests empty no longer rejects the order: a random test is
         # auto-filled so an operator only has to type the sample ID.
         no_tests = client.post("/api/orders", json={**ORDER, "sample_id": "HQ-DEMO-003", "tests": []})
@@ -160,6 +162,47 @@ class BenchCase(unittest.TestCase):
         disarmed = client.post("/api/live-responses", json={"armed": False})
         self.assertEqual(disarmed.status_code, 200)
         self.assertFalse(service.armed)
+
+    def test_continuous_probe_requires_confirmation_and_answers_every_unknown_q(self):
+        self.assertEqual(PROBE_PATIENT_NAME, "APPELLE MANEL/FODHIL")
+        self.assertEqual(len(PROBE_PATIENT_NAME), 20)
+        service = SelectraHostQueryServer(self.store, armed=False, embedded=True)
+        client = create_app(self.store, service).test_client()
+        rejected = client.post("/api/continuous-probe", json={"armed": True})
+        self.assertEqual(rejected.status_code, 400)
+
+        armed = client.post(
+            "/api/continuous-probe",
+            json={"armed": True, "confirmation": "ARM CONTINUOUS PROBE"},
+        )
+        self.assertEqual(armed.status_code, 200)
+        self.assertTrue(armed.get_json()["probe_armed"])
+        selected_tests = armed.get_json()["probe_tests"]
+        self.assertEqual(len(selected_tests), 3)
+
+        connection = FakeConnection(bytes([protocol.ACK]) * 2)
+        service.handle_records(connection, ["Q|1|^REMOTE123||ALL||||||||0"])
+        self.assertTrue(service.status()["probe_armed"])
+        records = protocol.split_records(protocol.decode_frame(connection.sent[1]))
+        self.assertIn("APPELLE MANEL/FODHIL", records[1])
+        self.assertEqual(records[2].split("|")[2], "REMOTE123")
+        self.assertEqual(len(records[2].split("|")[4].split("\\")), 3)
+        self.assertEqual(self.store.get_order("REMOTE123")["status"], "delivered")
+
+        second_connection = FakeConnection(bytes([protocol.ACK]) * 2)
+        service.handle_records(second_connection, ["Q|1|^REMOTE124||ALL||||||||0"])
+        self.assertEqual(len(second_connection.sent), 3)
+        second_records = protocol.split_records(protocol.decode_frame(second_connection.sent[1]))
+        self.assertIn("APPELLE MANEL/FODHIL", second_records[1])
+        self.assertEqual(second_records[2].split("|")[2], "REMOTE124")
+        self.assertTrue(service.status()["probe_armed"])
+
+        disarmed = client.post("/api/continuous-probe", json={"armed": False})
+        self.assertEqual(disarmed.status_code, 200)
+        self.assertFalse(service.status()["probe_armed"])
+        third_connection = FakeConnection()
+        service.handle_records(third_connection, ["Q|1|^REMOTE125||ALL||||||||0"])
+        self.assertEqual(third_connection.sent, [])
 
 
 if __name__ == "__main__":

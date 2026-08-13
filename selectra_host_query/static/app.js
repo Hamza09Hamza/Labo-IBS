@@ -1,6 +1,7 @@
 const $ = (selector) => document.querySelector(selector);
 const state = { tests: [], eventsAfter: 0, ordersSignature: "" };
 let liveResponsesArmed = false;
+let continuousProbeArmed = false;
 let toastTimer = null;
 
 function escapeHtml(value) {
@@ -64,8 +65,11 @@ function formatTime(value) {
 async function loadStatus() {
   const status = await api("/api/status");
   const pill = $("#modePill");
-  pill.className = `mode-pill ${status.armed ? "armed" : "safe"}`;
-  pill.querySelector("strong").textContent = status.armed ? "Live responses armed" : "Observation mode";
+  const anyArmed = status.armed || status.probe_armed;
+  pill.className = `mode-pill ${anyArmed ? "armed" : "safe"}`;
+  pill.querySelector("strong").textContent = status.probe_armed
+    ? "Continuous probe armed"
+    : status.armed ? "Live responses armed" : "Observation mode";
   liveResponsesArmed = status.armed;
   const armingPanel = $("#armingPanel");
   const armingButton = $("#armingButton");
@@ -75,12 +79,50 @@ async function loadStatus() {
     ? "If Selectra sends a Q record matching a staged sample ID, its patient details and requested tests will be transmitted immediately."
     : "You can stage and preview orders safely. Arm only when the operator is ready to enter the test sample ID on the Selectra.";
   armingButton.textContent = status.armed ? "Disarm replies" : "Arm exact-ID replies";
+  continuousProbeArmed = status.probe_armed;
+  const probePanel = $("#probePanel");
+  probePanel.classList.toggle("armed", status.probe_armed);
+  $("#probeTitle").textContent = status.probe_armed
+    ? "Answering every Selectra Q"
+    : "Automatic probe is disarmed";
+  $("#probeCopy").textContent = status.probe_armed
+    ? "Every valid query receives this payload. It stays armed until you disarm it or restart LaboBridge."
+    : "When armed, every Selectra Q—regardless of sample ID—receives the alert order until you disarm this probe.";
+  $("#probePatientName").textContent = status.probe_patient_name;
+  $("#probeTests").textContent = (status.probe_tests || []).join(" · ");
+  $("#probeButton").textContent = status.probe_armed ? "Disarm continuous probe" : "Arm continuous probe";
   $("#webEndpoint").textContent = location.host;
   $("#instrumentEndpoint").textContent = `<computer-IP>:${status.listener_port}`;
   $("#clientState").textContent = status.connected_clients
     ? `${status.connected_clients} connected`
     : status.last_peer ? `Last: ${status.last_peer}` : "Waiting";
   $("#orderCount").textContent = String(status.orders);
+}
+
+async function toggleContinuousProbe() {
+  const nextArmed = !continuousProbeArmed;
+  if (nextArmed && !window.confirm(
+    "Arm continuous probe? EVERY Selectra sample query will receive APPELLE MANEL/FODHIL and three installed tests until you manually disarm it or restart LaboBridge."
+  )) return;
+  const button = $("#probeButton");
+  button.disabled = true;
+  try {
+    const result = await api("/api/continuous-probe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        armed: nextArmed,
+        confirmation: nextArmed ? "ARM CONTINUOUS PROBE" : "",
+      }),
+    });
+    continuousProbeArmed = result.probe_armed;
+    toast(result.probe_armed
+      ? "Continuous probe armed for every Selectra Q."
+      : "Continuous probe disarmed.");
+    await Promise.all([loadStatus(), loadEvents()]);
+  } finally {
+    button.disabled = false;
+  }
 }
 
 async function toggleLiveResponses() {
@@ -222,5 +264,6 @@ $("#testCodeInput").addEventListener("keydown", (event) => {
 });
 $("#orderForm").addEventListener("submit", stageOrder);
 $("#armingButton").addEventListener("click", () => toggleLiveResponses().catch((error) => toast(error.message)));
+$("#probeButton").addEventListener("click", () => toggleContinuousProbe().catch((error) => toast(error.message)));
 renderTests();
 initialize().catch((error) => toast(`Bench failed to initialize: ${error.message}`));

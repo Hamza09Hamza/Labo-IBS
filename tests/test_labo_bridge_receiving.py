@@ -97,9 +97,11 @@ class ReceivingMergeCase(unittest.TestCase):
         query = "Q|1|^HQ-DEMO-001||ALL||||||||0"
         incoming = (
             astm.B_ENQ
-            + astm.build_frame(1, "H|\\^&|||PROM^4.3.13||||1.5|WINLAB||P|LIS2-A")
-            + astm.build_frame(2, query)
-            + astm.build_frame(3, "L|1|N")
+            + astm.build_frame(
+                1,
+                "H|\\^&|||PROM^4.3.13||||1.5|WINLAB||P|LIS2-A"
+                f"\r{query}\rL|1|F",
+            )
             + astm.B_EOT
         )
         connection = FakeAstmConnection(incoming)
@@ -120,7 +122,7 @@ class ReceivingMergeCase(unittest.TestCase):
 
         self.assertEqual(len(recorder.calls), 1)
         self.assertIn(query, recorder.calls[0][1])
-        self.assertEqual(connection.sent, [astm.B_ACK] * 4)
+        self.assertEqual(connection.sent, [astm.B_ACK] * 2)
 
     def test_full_port_6003_query_and_order_download_handshake(self):
         order = {
@@ -156,25 +158,24 @@ class ReceivingMergeCase(unittest.TestCase):
             worker = threading.Thread(target=serve, daemon=True)
             worker.start()
             try:
-                for payload in (
-                    astm.B_ENQ,
-                    astm.build_frame(1, "H|\\^&|||PROM^4.3.13||||1.5|WINLAB||P|LIS2-A"),
-                    astm.build_frame(2, "Q|1|^HQ-DEMO-6003||ALL||||||||0"),
-                    astm.build_frame(3, "L|1|N"),
-                ):
+                query_message = (
+                    "H|\\^&|||PROM^4.3.13||||1.5|WINLAB||P|LIS2-A"
+                    "\rQ|1|^HQ-DEMO-6003||ALL||||||||0\rL|1|F"
+                )
+                for payload in (astm.B_ENQ, astm.build_frame(1, query_message)):
                     instrument_socket.sendall(payload)
                     self.assertEqual(instrument_socket.recv(1), astm.B_ACK)
                 instrument_socket.sendall(astm.B_EOT)
 
                 self.assertEqual(instrument_socket.recv(1), astm.B_ENQ)
                 instrument_socket.sendall(astm.B_ACK)
-                response_records = []
-                for _ in range(4):
-                    frame = b""
-                    while not frame.endswith(bytes([astm.CR, astm.LF])):
-                        frame += instrument_socket.recv(4096)
-                    response_records.append(host_query_protocol.decode_frame(frame))
-                    instrument_socket.sendall(astm.B_ACK)
+                frame = b""
+                while not frame.endswith(bytes([astm.CR, astm.LF])):
+                    frame += instrument_socket.recv(4096)
+                response_records = host_query_protocol.split_records(
+                    host_query_protocol.decode_frame(frame)
+                )
+                instrument_socket.sendall(astm.B_ACK)
                 self.assertEqual(instrument_socket.recv(1), astm.B_EOT)
             finally:
                 instrument_socket.close()
@@ -183,12 +184,10 @@ class ReceivingMergeCase(unittest.TestCase):
                 server.configure_selectra_host_query(previous)
 
         self.assertEqual([record[0] for record in response_records], ["H", "P", "O", "L"])
-        self.assertIn("BENCH^PATIENT", response_records[1])
+        self.assertIn("BENCH PATIENT", response_records[1])
         self.assertIn("HQ-DEMO-6003", response_records[2])
-        # First query uses schema variant 0: universal test ID field left
-        # blank, matching every real O record this Selectra has been
-        # captured sending on its own (see protocol.build_order_variants).
-        self.assertEqual(response_records[2].split("|")[4], "")
+        self.assertEqual(response_records[2].split("|")[4], "^^^Gly\\^^^Crea")
+        self.assertEqual(response_records[2].split("|")[25], "Q")
 
 
 if __name__ == "__main__":

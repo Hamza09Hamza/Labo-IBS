@@ -20,6 +20,42 @@ The page starts **disarmed after every service restart**. Stage an order, verify
 the H/P/O/L preview, click **Arm exact-ID replies**, and only then enter or scan
 that exact sample ID on the Selectra. Unknown IDs receive no order data.
 
+## Continuous remote proof
+
+When nobody is beside the analyzer to coordinate an exact sample ID, the page
+also has an explicitly armed **continuous wildcard probe**. It is deliberately
+separate from normal exact-ID replies:
+
+1. Open `http://<server-IP>:5052/` and click **Arm continuous probe**.
+2. Confirm that the page shows `APPELLE MANEL/FODHIL` and three randomly chosen,
+   installed Selectra test abbreviations.
+3. Every valid Selectra `Q` record, for any 1–12 character sample ID, receives
+   that alert name and those three tests while the probe remains armed.
+4. Click **Disarm continuous probe** to stop it. Restarting LaboBridge also
+   returns it to the disarmed state.
+5. Check the trace for `continuous_probe_triggered`, `frame_sent`,
+   `response_delivered`, and `continuous_probe_delivered` for each query.
+
+The alert is written as 20 characters because this analyzer's patient-name
+field is limited to 20. The three tests are selected when the probe is armed and
+remain visible in the page before the query arrives.
+
+**Safety:** each query could belong to a loaded sample. Returning an order can
+attach or start the selected tests on every queried sample. Arm this only for
+the controlled diagnostic window and disarm it as soon as the test is over.
+
+## Wire format used for replies
+
+The Selectra's captured Host Query places `H`, `Q`, and `L` records together in
+one ASTM frame. The host mirrors that structure: one `ENQ`, one complete ASTM
+frame containing `H<CR>P<CR>O<CR>L`, one analyzer `ACK`, then `EOT`. This avoids
+the previous behavior where four separately acknowledged frames were still four
+incomplete application messages and were ignored by the analyzer.
+
+Outbound order records identify `WINLAB` as the host and `PROM` as the analyzer,
+use the analyzer's captured case-sensitive installed method abbreviations, set
+the order report type to `Q`, and terminate with `L|1|F`.
+
 ## Standalone isolated listener
 
 ```bash

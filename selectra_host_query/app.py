@@ -9,7 +9,7 @@ from datetime import date, timedelta
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from .protocol import build_order_records
+from .protocol import build_order_records, test_abbreviation
 
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -69,7 +69,7 @@ def _validate_text(name, value, required=True, maximum=80):
 def _validated_order(body):
     # Only sample_id is required from the operator. Every other field is
     # auto-filled with random non-clinical placeholder data when left blank,
-    # so staging an order for a brute-force test doesn't require typing
+    # so staging a controlled bench order doesn't require typing
     # demographics by hand each time.
     tests = body.get("tests") or []
     if isinstance(tests, str):
@@ -79,6 +79,8 @@ def _validated_order(body):
         tests = [_random_test()]
     if len(tests) > 40:
         raise ValueError("no more than 40 tests can be staged in one order")
+    for test in tests:
+        test_abbreviation(test)
     birth_date = str(body.get("birth_date") or "").strip() or _random_birth_date()
     try:
         date.fromisoformat(birth_date)
@@ -87,7 +89,7 @@ def _validated_order(body):
     sex = str(body.get("sex") or "").upper() or _random_sex()
     if sex not in {"M", "F", "U"}:
         raise ValueError("sex must be M, F, or U")
-    sample_id = _validate_text("sample ID", body.get("sample_id"), maximum=64)
+    sample_id = _validate_text("sample ID", body.get("sample_id"), maximum=12)
     family_name = str(body.get("family_name") or "").strip() or random.choice(_RANDOM_FAMILY_NAMES)
     given_name = str(body.get("given_name") or "").strip() or random.choice(_RANDOM_GIVEN_NAMES)
     return {
@@ -160,6 +162,15 @@ def create_app(store, service):
             return jsonify({"error": "explicit ARM SELECTRA confirmation is required"}), 400
         service.set_armed(armed)
         return jsonify({"ok": True, "armed": service.armed})
+
+    @app.post("/api/continuous-probe")
+    def continuous_probe():
+        body = request.get_json(silent=True) or {}
+        armed = body.get("armed") is True
+        if armed and body.get("confirmation") != "ARM CONTINUOUS PROBE":
+            return jsonify({"error": "explicit ARM CONTINUOUS PROBE confirmation is required"}), 400
+        service.set_probe_armed(armed)
+        return jsonify({**service.status(), "ok": True})
 
     @app.get("/api/events")
     def events():

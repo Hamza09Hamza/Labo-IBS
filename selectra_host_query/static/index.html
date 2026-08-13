@@ -38,6 +38,19 @@
       <button type="button" id="armingButton">Arm exact-ID replies</button>
     </section>
 
+    <section class="probe-panel" id="probePanel" aria-label="Continuous automatic probe">
+      <div class="probe-copy">
+        <span class="probe-kicker">Continuous remote probe</span>
+        <strong id="probeTitle">Automatic probe is disarmed</strong>
+        <p id="probeCopy">When armed, every Selectra Q—regardless of sample ID—receives the alert order until you disarm this probe.</p>
+      </div>
+      <dl class="probe-payload">
+        <div><dt>Patient name</dt><dd class="mono" id="probePatientName">APPELLE MANEL/FODHIL</dd></div>
+        <div><dt>Tests</dt><dd class="mono" id="probeTests">Selected when armed</dd></div>
+      </dl>
+      <button type="button" id="probeButton">Arm continuous probe</button>
+    </section>
+
     <section class="endpoint-strip" aria-label="Connection status">
       <div><span>Web console</span><strong class="mono" id="webEndpoint">—</strong></div>
       <div><span>Selectra endpoint</span><strong class="mono" id="instrumentEndpoint">—</strong></div>
@@ -100,7 +113,7 @@
 
     <aside class="safety-note">
       <strong>Controlled test</strong>
-      <p>This page uses its own staging database. It does not read clinic orders. A real H/P/O/L reply requires both an exact sample-ID match and explicit arming from this page.</p>
+      <p>The continuous probe can attach tests to every sample queried by the analyzer and may start them if a sample is loaded. It remains armed until you disarm it or restart LaboBridge.</p>
     </aside>
   </main>
 

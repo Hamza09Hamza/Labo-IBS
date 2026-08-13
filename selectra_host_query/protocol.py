@@ -12,15 +12,9 @@ import re
 from datetime import datetime, timezone
 
 
-# Real test-name -> short-code mapping, decoded from an actual M (method
-# master list) record this Selectra sent on its own during a live capture
-# (2026-08-12), e.g. "26^SGOT^SGOT^1^^^19006" -> short code "SGOT" for full
-# name "SGOT", "28^ALP^Phosphatase ALP^1^^^78" -> short code "ALP" for full
-# name "Phosphatase ALP". Kept as reference data only: the O record's
-# universal-test-ID field turned out to be unused by this Selectra (see the
-# field [4] evidence in build_order_records below), so this map is not
-# currently consumed anywhere. Left here in case a future format change
-# needs the short-code vocabulary again.
+# Real test-name -> abbreviated-code mapping decoded from this Selectra's own
+# M (installed-method list) records.  Host-to-analyser O-5 requires these
+# case-sensitive abbreviations (maximum four characters), not display names.
 KNOWN_SHORT_CODES = {
     "Glucose pap sl": "Gly",
     "Uree uv sl": "Uree",
@@ -43,6 +37,12 @@ KNOWN_SHORT_CODES = {
     "Phosphatase ALP": "ALP",
     "GGT": "G GT",
     "Proteines U": "PrtU",
+    # Alternate labels already exposed by the staging page.
+    "Phosphatase Alc": "PAL",
+    "Calcium": "CAL",
+    "CALCUIM": "CA2+",
+    "CRP IP V3": "CRP3",
+    "CK-NAC": "CPK",
 }
 
 ENQ = 0x05
@@ -69,7 +69,7 @@ def checksum(payload_through_terminator: bytes) -> bytes:
 
 
 def build_frame(frame_number: int, text: str, final: bool = True) -> bytes:
-    """Build one ASTM frame with a single LIS2-A record."""
+    """Build one ASTM frame containing one complete LIS2-A message."""
     terminator = ETX if final else ETB
     body = f"{frame_number % 8}{text}\r".encode("ascii", errors="strict")
     checked = body + bytes([terminator])
@@ -114,152 +114,59 @@ def _clean(value: str) -> str:
     return str(value or "").replace("\r", " ").replace("\n", " ").strip()
 
 
-# Evidence log, most recent first. Every variant below is a genuine attempt,
-# not a guess pulled from generic LIS2-A docs (none exist for this model) -
-# each is either lifted directly from a real captured Selectra-originated
-# record, or is the one remaining unexplored slot in that same record shape.
-#   - 2026-08-12, samples 2003/2004: H record field [9]="SELECTRA" -> ACKed,
-#     no worklist effect. Real captured H records always say "WINLAB" there;
-#     switching to "WINLAB" is now baseline in every variant below.
-#   - 2026-08-12, samples 2007/2008: O record field [4] populated with
-#     "^^^SGPT^SGPT" / "^^^Calcium" -> ACKed, no worklist effect. Real
-#     captured O records always leave field [4] empty; blank field [4] is
-#     also now baseline below.
-#   - 2026-08-12, sample 2009: field [4] blank (as above) -> still ACKed,
-#     still no worklist effect. Confirms the blocker is not field [4] alone.
-#   - Real O record for reference: "O|1|339|||R||||||||||Normal||||||||||F"
-#     (result-upload direction; field [15]="Normal" not a specimen type,
-#     trailing field [25]="F" or "I", never "O").
-#   - Real H record for reference: "H|\^&|||PROM^4.3.13||||1.5|WINLAB||P|LIS2-A|<ts>"
-#     (field [8]="1.5", ours leaves it blank).
-# Since single-field changes have not worked, build_order_variants() below
-# generates several distinct whole-record shapes to try in sequence against
-# real hardware, rather than one more isolated guess.
-def build_order_records(order: dict) -> list[str]:
-    """Build the baseline LIS2-A H/P/O/L order-download transaction (variant 0)."""
-    return build_order_variants(order)[0][1]
-
-
 def _stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
 
 
-def build_order_variants(order: dict) -> list[tuple[str, list[str]]]:
-    """Build several distinct H/P/O/L record shapes to try against real hardware.
+def test_abbreviation(value: str) -> str:
+    """Return this analyser's installed, case-sensitive test abbreviation."""
+    clean = _clean(value)
+    if clean in KNOWN_SHORT_CODES:
+        return KNOWN_SHORT_CODES[clean]
+    if clean in set(KNOWN_SHORT_CODES.values()) and len(clean) <= 4:
+        return clean
+    raise ValueError(f"unknown Selectra order test {clean!r}; use an installed method")
 
-    Returns a list of ``(label, records)`` pairs. Each variant changes more
-    than one field at once on purpose - single-field changes (WINLAB, R
-    priority, field [4] content) have already been tried individually against
-    real hardware without result, so this tries whole alternate shapes instead
-    of the next isolated tweak.
+
+def build_order_records(order: dict) -> list[str]:
+    """Build one protocol-aligned host response to a Selectra Q record.
+
+    Direction matters: fields observed in analyser result uploads are not
+    copied blindly into a host order.  H-5 identifies the configured host
+    (WINLAB), H-10 identifies this device (PROM), O-5 contains installed test
+    abbreviations, O-26 marks a query response, and L terminates the message.
+    The caller must place all returned records in ONE ASTM frame.
     """
     sample_id = _clean(order["sample_id"])
-    patient_id = _clean(order.get("patient_id") or sample_id)
+    if not sample_id or len(sample_id) > 12:
+        raise ValueError("Selectra sample ID must contain 1 to 12 characters")
     family_name = _clean(order.get("family_name"))
     given_name = _clean(order.get("given_name"))
+    patient_name = " ".join(part for part in (family_name, given_name) if part)[:20]
     birth_date = _clean(order.get("birth_date")).replace("-", "")
     sex = _clean(order.get("sex") or "U").upper()
-    specimen_type = _clean(order.get("specimen_type") or "SERUM")
-    tests = [_clean(code) for code in order.get("tests") or [] if _clean(code)]
-    test_id = tests[0] if tests else ""
-    stamp = _stamp()
+    if sex not in {"M", "F", "U"}:
+        sex = "U"
+    tests = [test_abbreviation(code) for code in order.get("tests") or []]
+    if not tests:
+        raise ValueError("at least one installed Selectra test is required")
+    universal_tests = "\\".join(f"^^^{code}" for code in dict.fromkeys(tests))
 
-    h_baseline = f"H|\\^&|||LABO-BRIDGE-HQ|||||WINLAB||P|LIS2-A|{stamp}"
-    h_version = f"H|\\^&|||LABO-BRIDGE-HQ|||||1.5|WINLAB||P|LIS2-A|{stamp}"
-    p_record = f"P|1||{patient_id}||{family_name}^{given_name}||{birth_date}|{sex}"
-    l_record = "L|1|N"
+    order_fields = [""] * 26
+    order_fields[0] = "O"
+    order_fields[1] = "1"
+    order_fields[2] = sample_id
+    order_fields[4] = universal_tests
+    order_fields[5] = "R"
+    order_fields[11] = "N"
+    order_fields[25] = "Q"
 
-    variants: list[tuple[str, list[str]]] = []
-
-    # 0: current baseline - field [4] blank, trailing status "O".
-    variants.append((
-        "baseline: blank test-id field, trailing O",
-        [h_baseline, p_record, f"O|1|{sample_id}|||R||||||N||||{specimen_type}||||||||||O", l_record],
-    ))
-
-    # 1: trailing status "F" (Final) instead of "O" - matches every real
-    # captured O record's own trailing field, never tested in this position.
-    variants.append((
-        "trailing status F instead of O",
-        [h_baseline, p_record, f"O|1|{sample_id}|||R||||||N||||{specimen_type}||||||||||F", l_record],
-    ))
-
-    # 2: trailing status blank entirely.
-    variants.append((
-        "trailing status blank",
-        [h_baseline, p_record, f"O|1|{sample_id}|||R||||||N||||{specimen_type}|||||||||||", l_record],
-    ))
-
-    # 3: H record field [8]="1.5" (matches real captured H records exactly,
-    # including the version field we've left blank so far).
-    variants.append((
-        "H field [8]=1.5 (full real H-record match)",
-        [h_version, p_record, f"O|1|{sample_id}|||R||||||N||||{specimen_type}||||||||||F", l_record],
-    ))
-
-    # 4: bare-minimum O record - only sample ID and priority, everything else
-    # blank (mirrors how sparse real O records actually are: mostly empty
-    # fields with only [2] and [5] populated).
-    variants.append((
-        "minimal O record (sample id + priority only)",
-        [h_baseline, p_record, f"O|1|{sample_id}||||R", l_record],
-    ))
-
-    # 5: test name back in field [4], plain (no short code, no ^^^ prefix) -
-    # untested exact shape, in case the leading ^^^ component markers (not
-    # the presence of a test name) were the actual problem.
-    variants.append((
-        "plain test name in field [4], no ^^^ prefix",
-        [h_baseline, p_record,
-         f"O|1|{sample_id}||{test_id}|R||||||N||||{specimen_type}||||||||||F", l_record],
-    ))
-
-    # 6: no P record at all - some ASTM hosts send H/O/L only for a query
-    # response and treat P as upload-direction only; untested here.
-    variants.append((
-        "no P record (H/O/L only)",
-        [h_baseline, f"O|1|{sample_id}|||R||||||N||||{specimen_type}||||||||||F", l_record],
-    ))
-
-    # 7: patient ID left blank in P record (real captured P records from this
-    # Selectra always leave patient ID blank - see "P|1||||BOUCHEROUR|||M" -
-    # our staged patient_id may itself be a rejected/unexpected value).
-    variants.append((
-        "P record with blank patient id (matches real captures)",
-        [h_baseline, f"P|1||||{family_name}^{given_name}||{birth_date}|{sex}",
-         f"O|1|{sample_id}|||R||||||N||||{specimen_type}||||||||||F", l_record],
-    ))
-
-    # 8: L record terminator "F" (Final) instead of "N" (No more batches
-    # coming, but not the last transaction of the session). Every real
-    # Selectra-originated transaction captured so far - result uploads,
-    # not order-downloads - ends in "L|1|F", never "L|1|N". We have never
-    # tried F as our own termination code; this is the last unexplored
-    # structural difference between what we send and what the Selectra
-    # itself sends, now that every O/H/P field combination has been tried
-    # with no effect.
-    variants.append((
-        "L record terminator F instead of N",
-        [h_baseline, p_record, f"O|1|{sample_id}|||R||||||N||||{specimen_type}||||||||||F", "L|1|F"],
-    ))
-
-    # 9: H record sender-name field [4] left blank. The Selectra's own Host
-    # Communication config screen shows "Identite dispositif: PROM" (the
-    # Selectra's own self-identity) alongside "Identification Hote: WINLAB"
-    # (confirmed to be the exact host name it expects - already used above).
-    # We don't know what, if anything, it expects from a HOST in that same
-    # slot on an incoming H record - "PROM" is the Selectra's own name, not
-    # ours, so copying it verbatim would be a guess. Blank is the safer
-    # untested option, in case a non-blank sender name in that field (any
-    # value) is itself what causes the Selectra to reject/ignore the batch,
-    # the same way "SELECTRA" in the receiving-application field was.
-    h_blank_sender = f"H|\\^&||||||||WINLAB||P|LIS2-A|{stamp}"
-    variants.append((
-        "H record with blank sender-name field [4]",
-        [h_blank_sender, p_record, f"O|1|{sample_id}|||R||||||N||||{specimen_type}||||||||||F", "L|1|F"],
-    ))
-
-    return variants
+    return [
+        f"H|\\^&|||WINLAB|||||PROM||P|LIS2-A|{_stamp()}",
+        f"P|1||||{patient_name}||{birth_date}|{sex}",
+        "|".join(order_fields),
+        "L|1|F",
+    ]
 
 
 def visible_bytes(data: bytes) -> str:

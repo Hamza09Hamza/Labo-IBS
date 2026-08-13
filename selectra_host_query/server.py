@@ -4,8 +4,17 @@ from __future__ import annotations
 
 import socket
 import threading
+from random import SystemRandom
 
 from . import protocol
+
+
+PROBE_PATIENT_NAME = "APPELLE MANEL/FODHIL"  # exactly 20 chars: analyser limit
+PROBE_TEST_POOL = (
+    "SGOT", "SGPT", "Phosphatase ALP", "Creatinine",
+    "Glucose pap sl", "Uree uv sl", "Cholesterol", "GGT",
+)
+PROBE_TEST_COUNT = 3
 
 
 class SelectraHostQueryServer:
@@ -23,6 +32,8 @@ class SelectraHostQueryServer:
         self._lock = threading.Lock()
         self._clients = 0
         self._last_peer = None
+        self._probe_armed = False
+        self._probe_tests = list(PROBE_TEST_POOL[:PROBE_TEST_COUNT])
 
     def start(self):
         if self._thread and self._thread.is_alive():
@@ -57,6 +68,9 @@ class SelectraHostQueryServer:
                 "listener_host": self.host,
                 "listener_port": self.port,
                 "armed": self.armed,
+                "probe_armed": self._probe_armed,
+                "probe_patient_name": PROBE_PATIENT_NAME,
+                "probe_tests": list(self._probe_tests),
                 "connected_clients": self._clients,
                 "last_peer": self._last_peer,
                 "running": self.embedded or bool(self._thread and self._thread.is_alive()),
@@ -72,6 +86,42 @@ class SelectraHostQueryServer:
             f"Selectra exact-ID order replies are now {state}",
         )
         return self.armed
+
+    def set_probe_armed(self, armed: bool):
+        """Enable or disable wildcard diagnostic replies to every Selectra Q."""
+        with self._lock:
+            self._probe_armed = bool(armed)
+            if self._probe_armed:
+                self._probe_tests = SystemRandom().sample(
+                    list(PROBE_TEST_POOL), PROBE_TEST_COUNT,
+                )
+            tests = list(self._probe_tests)
+        state = "ARMED for every Q until manually disarmed" if armed else "DISARMED"
+        self.store.add_event(
+            "local", "continuous_probe_mode", None,
+            f"Automatic alert probe is {state}: {PROBE_PATIENT_NAME}; tests {tests}",
+        )
+        return self._probe_armed
+
+    def _active_probe(self) -> tuple[bool, list[str]]:
+        """Read the persistent wildcard-probe state for the current query."""
+        with self._lock:
+            if not self._probe_armed:
+                return False, []
+            return True, list(self._probe_tests)
+
+    @staticmethod
+    def _probe_order(sample_id: str, tests: list[str]) -> dict:
+        return {
+            "sample_id": sample_id,
+            "patient_id": "CALL-TECH",
+            "family_name": PROBE_PATIENT_NAME,
+            "given_name": "",
+            "birth_date": "",
+            "sex": "M",
+            "specimen_type": "Normal",
+            "tests": tests,
+        }
 
     def set_instrument_port(self, port: int):
         """Keep the page in sync when LaboBridge changes its live port."""
@@ -102,8 +152,6 @@ class SelectraHostQueryServer:
             raise KeyError(sample_id)
         records = protocol.build_order_records(order)
         if simulated:
-            self.store.mark_query(sample_id)
-            self.store.mark_delivered(sample_id, simulated=True)
             self.store.add_event("simulator", "query", sample_id,
                                  "Simulated an exact-ID Selectra query", f"Q|1|^{sample_id}^")
             self.store.add_event("host", "response_preview", sample_id,
@@ -225,7 +273,26 @@ class SelectraHostQueryServer:
             f"Selectra requested order data for candidates: {candidates}",
             "\n".join(query_records),
         )
-        order = self.store.resolve_candidates(candidates)
+        probe_active, probe_tests = self._active_probe()
+        is_probe = False
+        order = None
+        if probe_active:
+            sample_id = next((value for value in candidates if 0 < len(value) <= 12), "")
+            if not sample_id:
+                self.store.add_event(
+                    "system", "continuous_probe_rejected", None,
+                    f"Continuous probe ignored a query with no valid 1-12 character sample ID: {candidates}",
+                    "\n".join(query_records),
+                )
+                return
+            order = self.store.upsert_order(self._probe_order(sample_id, probe_tests))
+            is_probe = True
+            self.store.add_event(
+                "host", "continuous_probe_triggered", sample_id,
+                f"Continuous probe is answering sample {sample_id}; sending {PROBE_PATIENT_NAME} with tests {probe_tests}",
+            )
+        else:
+            order = self.store.resolve_candidates(candidates)
         if not order:
             self.store.add_event("system", "query_unmatched", None,
                                  f"No single staged order exactly matched query candidates: {candidates}",
@@ -235,22 +302,8 @@ class SelectraHostQueryServer:
         self.store.mark_query(sample_id)
         self.store.add_event("instrument", "query_matched", sample_id,
                              f"Matched exact sample ID {sample_id}", "\n".join(query_records))
-        variants = protocol.build_order_variants(order)
-        # Send ONE schema variant per query, advancing to the next variant
-        # each time the SAME sample ID is queried again (query_count already
-        # tracks how many times this order has been queried, and "order" was
-        # fetched before mark_query incremented it, so the very first query
-        # uses variant 0). Retype/rescan the same sample ID on the Selectra
-        # to step through the remaining variants one at a time - watch the
-        # screen after each single attempt instead of a fast batch, so it's
-        # obvious exactly which shape (if any) causes a change. Wraps around
-        # if queried more times than there are variants.
-        variant_index = (order.get("query_count") or 0) % len(variants)
-        label, response = variants[variant_index]
-        self.store.add_event("host", "variant_selected", sample_id,
-                             f"Schema variant {variant_index + 1}/{len(variants)} for this query: {label}",
-                             "\n".join(response))
-        if not self.armed:
+        response = protocol.build_order_records(order)
+        if not self.armed and not is_probe:
             self.store.add_event("host", "response_blocked", sample_id,
                                  "Order response built but not sent because live responses are disarmed",
                                  "\n".join(response))
@@ -258,6 +311,11 @@ class SelectraHostQueryServer:
         try:
             self._send_transaction(connection, response, sample_id)
             self.store.mark_delivered(sample_id)
+            if is_probe:
+                self.store.add_event(
+                    "host", "continuous_probe_delivered", sample_id,
+                    "Continuous automatic probe delivered; it remains armed for later queries",
+                )
         except (TimeoutError, socket.timeout, ConnectionError, OSError) as exc:
             message = f"Host response failed: {exc}"
             self.store.mark_error(sample_id, message)
@@ -282,18 +340,25 @@ class SelectraHostQueryServer:
         self.store.add_event("host", "enq", sample_id, "Requested the LIS2-A line", "<ENQ>")
         if self._recv_control(connection) != protocol.ACK:
             raise ConnectionError("Selectra rejected host ENQ")
-        for index, record in enumerate(records, start=1):
-            frame = protocol.build_frame(index, record)
-            acknowledged = False
-            for attempt in range(1, 4):
-                connection.sendall(frame)
-                self.store.add_event("host", "frame_sent", sample_id,
-                                     f"Sent order frame {index}/{len(records)} (attempt {attempt})", record)
-                if self._recv_control(connection) == protocol.ACK:
-                    acknowledged = True
-                    break
-            if not acknowledged:
-                raise ConnectionError(f"Selectra rejected order frame {index} three times")
+        # This Selectra carries the complete LIS2-A message in one frame. Its
+        # real Q capture is one H/Q/L frame; sending H, P, O and L as four
+        # independent frames yields four incomplete application messages that
+        # can be ACKed at the transport layer and still be silently ignored.
+        message = "\r".join(records)
+        frame = protocol.build_frame(1, message)
+        acknowledged = False
+        for attempt in range(1, 4):
+            connection.sendall(frame)
+            self.store.add_event(
+                "host", "frame_sent", sample_id,
+                f"Sent complete H/P/O/L message in one ASTM frame (attempt {attempt})",
+                "\n".join(records),
+            )
+            if self._recv_control(connection) == protocol.ACK:
+                acknowledged = True
+                break
+        if not acknowledged:
+            raise ConnectionError("Selectra rejected the complete order frame three times")
         connection.sendall(protocol.B_EOT)
         self.store.add_event("host", "response_delivered", sample_id,
-                             f"Delivered {len(records)} order records and released the line", "<EOT>")
+                             f"Delivered {len(records)} records in one message frame and released the line", "<EOT>")
