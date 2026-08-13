@@ -19,26 +19,8 @@ This API does not push a connection to either analyzer:
 
 ## Authentication
 
-Set a separate secret in the Windows service environment before starting the
-bridge:
-
-```text
-LABO_ORDER_API_TOKEN=<a-long-random-secret>
-```
-
-For the NSSM service, open its editor and add the variable under the
-**Environment** tab, then restart the service:
-
-```powershell
-C:\nssm\win64\nssm.exe edit LaboBridge
-C:\nssm\win64\nssm.exe restart LaboBridge
-```
-
-The startup console reports either `orders-api ENABLED` or explains that the
-token is missing. The secret is read when `run_all.py` starts, so changing it
-always requires a service restart.
-
-Every order API request must include:
+Every endpoint in this document requires the private token configured during
+bridge setup. Every order API request must include:
 
 ```http
 X-API-TOKEN: <the-same-secret>
@@ -46,9 +28,9 @@ Content-Type: application/json
 ```
 
 If the variable is absent, the endpoints return `503`. A missing or incorrect
-header returns `401`. Do not reuse the outbound result API token. Put TLS and
-network access control in front of port 5052 whenever requests cross an
-untrusted network.
+header returns `401`. Token generation, NSSM configuration, firewall setup,
+deployment, and connection testing are documented separately in
+`ORDER_DOWNLOAD_SETUP.md`.
 
 ## Selectra
 
@@ -153,7 +135,3 @@ curl -X POST "http://172.16.2.4:5052/api/v1/orders/selectra" \
 A successful stage returns HTTP `201`, `state: "ready"`, the persisted order,
 and a protocol preview. Validation failures return `400` and do not store or
 arm anything.
-
-The durable order and event database is
-`selectra_host_query/data/host_query.db`. It can contain patient identifiers;
-keep it out of Git and include it in the server's protected backup policy.
