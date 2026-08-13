@@ -1,4 +1,4 @@
-"""Private SQLite staging store for the Selectra Host Query bench."""
+"""Durable SQLite order staging and protocol-event audit store."""
 
 from __future__ import annotations
 
@@ -57,6 +57,27 @@ class BenchStore:
                     updated_at TEXT NOT NULL,
                     last_query_at TEXT,
                     last_delivery_at TEXT,
+                    last_error TEXT,
+                    source TEXT NOT NULL DEFAULT 'manual',
+                    ready INTEGER NOT NULL DEFAULT 0,
+                    external_order_id TEXT
+                );
+                CREATE TABLE IF NOT EXISTS cyanvision_orders (
+                    sample_id TEXT PRIMARY KEY,
+                    given_name TEXT NOT NULL,
+                    family_name TEXT NOT NULL,
+                    birth_date TEXT NOT NULL,
+                    sex TEXT NOT NULL,
+                    test_code TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'staged',
+                    source TEXT NOT NULL DEFAULT 'manual',
+                    ready INTEGER NOT NULL DEFAULT 1,
+                    external_order_id TEXT,
+                    query_count INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    last_query_at TEXT,
+                    last_delivery_at TEXT,
                     last_error TEXT
                 );
                 CREATE TABLE IF NOT EXISTS events (
@@ -70,6 +91,19 @@ class BenchStore:
                 );
                 """
             )
+            # Existing installations predate API-fed orders. SQLite's
+            # CREATE TABLE IF NOT EXISTS does not add new columns, so apply
+            # the small migration in place without deleting staged history.
+            order_columns = {
+                row[1] for row in connection.execute("PRAGMA table_info(orders)").fetchall()
+            }
+            for column, definition in (
+                ("source", "TEXT NOT NULL DEFAULT 'manual'"),
+                ("ready", "INTEGER NOT NULL DEFAULT 0"),
+                ("external_order_id", "TEXT"),
+            ):
+                if column not in order_columns:
+                    connection.execute(f"ALTER TABLE orders ADD COLUMN {column} {definition}")
 
     @staticmethod
     def _order(row):
@@ -77,17 +111,19 @@ class BenchStore:
             return None
         value = dict(row)
         value["tests"] = json.loads(value.pop("tests_json"))
+        value["ready"] = bool(value.get("ready"))
         return value
 
-    def upsert_order(self, order: dict) -> dict:
+    def upsert_order(self, order: dict, source="manual", ready=False) -> dict:
         now = utc_now()
         with self._session() as connection:
             connection.execute(
                 """
                 INSERT INTO orders
                     (sample_id, patient_id, family_name, given_name, birth_date,
-                     sex, specimen_type, tests_json, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'staged', ?, ?)
+                     sex, specimen_type, tests_json, status, source, ready,
+                     external_order_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'staged', ?, ?, ?, ?, ?)
                 ON CONFLICT(sample_id) DO UPDATE SET
                     patient_id=excluded.patient_id,
                     family_name=excluded.family_name,
@@ -97,6 +133,9 @@ class BenchStore:
                     specimen_type=excluded.specimen_type,
                     tests_json=excluded.tests_json,
                     status='staged',
+                    source=excluded.source,
+                    ready=excluded.ready,
+                    external_order_id=excluded.external_order_id,
                     updated_at=excluded.updated_at,
                     last_error=NULL
                 """,
@@ -104,11 +143,13 @@ class BenchStore:
                     order["sample_id"], order["patient_id"], order["family_name"],
                     order["given_name"], order.get("birth_date", ""), order.get("sex", "U"),
                     order.get("specimen_type", "SERUM"), json.dumps(order["tests"], ensure_ascii=True),
-                    now, now,
+                    source, int(bool(ready)), order.get("external_order_id"), now, now,
                 ),
             )
-        self.add_event("local", "order_staged", order["sample_id"],
-                       f"Staged {len(order['tests'])} test(s) for exact sample ID {order['sample_id']}")
+        direction = "api" if source == "api" else "local"
+        self.add_event(direction, "order_staged", order["sample_id"],
+                       f"Staged {len(order['tests'])} test(s) for exact sample ID {order['sample_id']}"
+                       + ("; API order is ready for Selectra" if ready else ""))
         return self.get_order(order["sample_id"])
 
     def get_order(self, sample_id: str):
@@ -144,7 +185,7 @@ class BenchStore:
         now = utc_now()
         with self._session() as connection:
             connection.execute(
-                "UPDATE orders SET status=?, last_delivery_at=?, updated_at=?, last_error=NULL WHERE sample_id=?",
+                "UPDATE orders SET status=?, ready=0, last_delivery_at=?, updated_at=?, last_error=NULL WHERE sample_id=?",
                 ("transport_acknowledged", now, now, sample_id),
             )
 
@@ -161,6 +202,128 @@ class BenchStore:
                 "UPDATE orders SET status='error', last_error=?, updated_at=? WHERE sample_id=?",
                 (message, utc_now(), sample_id),
             )
+
+    def cancel_order(self, sample_id: str) -> bool:
+        with self._session() as connection:
+            cursor = connection.execute(
+                "UPDATE orders SET status='cancelled', ready=0, updated_at=? WHERE sample_id=?",
+                (utc_now(), sample_id),
+            )
+        return cursor.rowcount > 0
+
+    @staticmethod
+    def _cyanvision_order(row):
+        if row is None:
+            return None
+        value = dict(row)
+        value["ready"] = bool(value["ready"])
+        return value
+
+    def upsert_cyanvision_order(self, order: dict, source="manual", ready=True) -> dict:
+        now = utc_now()
+        with self._session() as connection:
+            connection.execute(
+                """
+                INSERT INTO cyanvision_orders
+                    (sample_id, given_name, family_name, birth_date, sex,
+                     test_code, status, source, ready, external_order_id,
+                     created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, 'staged', ?, ?, ?, ?, ?)
+                ON CONFLICT(sample_id) DO UPDATE SET
+                    given_name=excluded.given_name,
+                    family_name=excluded.family_name,
+                    birth_date=excluded.birth_date,
+                    sex=excluded.sex,
+                    test_code=excluded.test_code,
+                    status='staged',
+                    source=excluded.source,
+                    ready=excluded.ready,
+                    external_order_id=excluded.external_order_id,
+                    updated_at=excluded.updated_at,
+                    last_error=NULL
+                """,
+                (
+                    order["sample_id"], order["given_name"], order["family_name"],
+                    order["birth_date"], order["sex"], order["test_code"],
+                    source, int(bool(ready)), order.get("external_order_id"), now, now,
+                ),
+            )
+        direction = "api" if source == "api" else "local"
+        self.add_event(
+            direction, "cyanvision_order_staged", order["sample_id"],
+            f"Staged CYANVision test {order['test_code']} for sample {order['sample_id']}"
+            + ("; ready for Load from LIS" if ready else ""),
+        )
+        return self.get_cyanvision_order(order["sample_id"])
+
+    def get_cyanvision_order(self, sample_id: str):
+        with self._session() as connection:
+            row = connection.execute(
+                "SELECT * FROM cyanvision_orders WHERE sample_id=?", (sample_id,),
+            ).fetchone()
+        return self._cyanvision_order(row)
+
+    def list_ready_cyanvision_orders(self, limit=100):
+        with self._session() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM cyanvision_orders
+                WHERE ready=1
+                ORDER BY created_at, sample_id
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [self._cyanvision_order(row) for row in rows]
+
+    def mark_cyanvision_query(self, sample_id: str):
+        now = utc_now()
+        with self._session() as connection:
+            connection.execute(
+                """
+                UPDATE cyanvision_orders
+                SET status='queried', query_count=query_count+1,
+                    last_query_at=?, updated_at=?
+                WHERE sample_id=?
+                """,
+                (now, now, sample_id),
+            )
+
+    def mark_cyanvision_delivered(self, sample_id: str):
+        now = utc_now()
+        with self._session() as connection:
+            connection.execute(
+                """
+                UPDATE cyanvision_orders
+                SET status='acknowledged', ready=0, last_delivery_at=?,
+                    updated_at=?, last_error=NULL
+                WHERE sample_id=?
+                """,
+                (now, now, sample_id),
+            )
+
+    def mark_cyanvision_rejected(self, sample_id: str, message: str):
+        with self._session() as connection:
+            connection.execute(
+                """
+                UPDATE cyanvision_orders
+                SET status='rejected', ready=0, last_error=?, updated_at=?
+                WHERE sample_id=?
+                """,
+                (message, utc_now(), sample_id),
+            )
+
+    def cancel_cyanvision_order(self, sample_id: str) -> bool:
+        with self._session() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE cyanvision_orders
+                SET status='cancelled', ready=0, updated_at=?
+                WHERE sample_id=?
+                """,
+                (utc_now(), sample_id),
+            )
+        return cursor.rowcount > 0
 
     def add_event(self, direction: str, kind: str, sample_id: str | None, message: str, raw_text: str = ""):
         with self._session() as connection:

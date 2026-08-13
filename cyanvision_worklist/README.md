@@ -29,6 +29,9 @@ The outgoing message contains the manual's exact positional data records:
 - empty `DSC`: final dataset, with no continuation page
 
 The web form is served by `run_all.py` at `http://<server-IP>:5052/`.
-Staged CYANVision work is intentionally memory-only and starts empty/disarmed
-after every bridge restart. Result upload in the opposite direction remains
-handled by the existing CYANVision decoder and receives the normal HL7 ACK.
+Manual CYANVision work starts disarmed after every bridge restart. Orders
+received through the authenticated order API are stored in SQLite and remain
+ready across restarts. Multiple ready API items use the documented
+`DSR^Q03 -> ACK^Q03` continuation loop; an empty `DSC` marks the final item.
+Result upload in the opposite direction remains handled by the existing
+CYANVision decoder and receives the normal HL7 ACK.

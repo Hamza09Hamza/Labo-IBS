@@ -45,6 +45,7 @@ def build_dsr(
     query_segments: list[str],
     response_control_id: str,
     query_control_id: str,
+    continuation_pointer: str = "",
 ) -> list[str]:
     """Build the single final DSR^Q03 dataset described in CY014 section 3."""
     stamp = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -83,7 +84,7 @@ def build_dsr(
             "DSP|7||1|||",
             f"DSP|8||{_clean(order['test_code'])}|||",
         ])
-    records.append("DSC||")
+    records.append(f"DSC|{_clean(continuation_pointer)}|")
     return records
 
 

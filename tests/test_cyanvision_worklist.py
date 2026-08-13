@@ -152,7 +152,10 @@ class CyanVisionWorklistCase(unittest.TestCase):
         self.assertEqual(staged.status_code, 201)
         body = staged.get_json()
         self.assertTrue(body["armed"])
-        self.assertEqual(body["order"], ORDER)
+        self.assertEqual(
+            {key: body["order"][key] for key in ORDER},
+            ORDER,
+        )
         self.assertEqual(body["response_preview"][-1], "DSC||")
 
         disarmed = client.delete("/api/cyanvision/worklist")

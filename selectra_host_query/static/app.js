@@ -137,6 +137,8 @@ async function loadCyanvision() {
         : status.armed
           ? `Now ask the operator to open Patient Worklist and press Load from LIS. Only ${status.order.sample_id} will be offered.`
           : `Last prepared worklist: ${status.order.sample_id}.`;
+  } else if (status.api_ready_orders) {
+    $("#cyanvisionInstruction").textContent = `${status.api_ready_orders} API worklist item${status.api_ready_orders === 1 ? " is" : "s are"} ready. CYANVision will download the queue when the operator presses Load from LIS.`;
   }
 }
 

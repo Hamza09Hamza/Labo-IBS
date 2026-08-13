@@ -83,6 +83,11 @@ received in `labo_bridge_results` and `pending_params`. The API applies the
 same allow-list when arming, preventing a mistyped or invented `DSP|8` value
 even if a request bypasses the browser.
 
+An authenticated inbound order API is also served on port `5052`. A clinic
+server can stage persistent, analyzer-ready orders for Selectra or CYANVision;
+see `ORDER_DOWNLOAD_API.md` for request schemas, authentication, lifecycle,
+and examples. API orders are separate from the manually armed test controls.
+
 ## Main components
 
 ### TCP listeners and protocol dispatch

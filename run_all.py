@@ -34,9 +34,9 @@ from cyanvision_worklist.service import CyanVisionWorklistService
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SELECTRA_QUERY_DATA = os.path.join(ROOT, "selectra_host_query", "data", "host_query.db")
 
-# Both reply modes start disarmed on every process restart. Staging an order
-# alone does not transmit anything; the operator must explicitly arm either
-# exact-ID replies or the continuous wildcard diagnostic probe from the page.
+# Manual diagnostic reply modes start disarmed on every process restart.
+# Authenticated API orders have their own persisted ready flag and remain
+# available to the analyzers until delivered or cancelled.
 selectra_query_store = BenchStore(SELECTRA_QUERY_DATA)
 selectra_query_service = SelectraHostQueryServer(
     selectra_query_store, host="0.0.0.0", port=6003, armed=False, embedded=True,
@@ -81,5 +81,7 @@ if __name__ == "__main__":
     print("[orders] Selectra + CYANVision order console running at http://127.0.0.1:5052")
     print("[selectra] Exact-ID replies and the continuous wildcard probe start DISARMED; instrument traffic remains on port 6003.\n")
     print("[cyanvision] One-load worklist starts DISARMED; queries and results remain on port 6004.\n")
+    api_state = "ENABLED" if os.environ.get("LABO_ORDER_API_TOKEN", "").strip() else "DISABLED (set LABO_ORDER_API_TOKEN)"
+    print(f"[orders-api] {api_state}; authenticated orders on port 5052 persist and are automatically ready.\n")
 
     server.run_all()
