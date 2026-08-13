@@ -19,18 +19,18 @@ This API does not push a connection to either analyzer:
 
 ## Authentication
 
-Every endpoint in this document requires the private token configured during
-bridge setup. Every order API request must include:
+Every endpoint in this document requires the private token generated locally
+by the bridge during setup. Every order API request must include:
 
 ```http
 X-API-TOKEN: <the-same-secret>
 Content-Type: application/json
 ```
 
-If the variable is absent, the endpoints return `503`. A missing or incorrect
-header returns `401`. Token generation, NSSM configuration, firewall setup,
+If bridge authentication is unavailable, the endpoints return `503`. A missing
+or incorrect header returns `401`. Local token retrieval, firewall setup,
 deployment, and connection testing are documented separately in
-`ORDER_DOWNLOAD_SETUP.md`.
+`ORDER_DOWNLOAD_SETUP.md`. The real token must never be added to this file.
 
 ## Selectra
 

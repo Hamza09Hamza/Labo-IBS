@@ -9,6 +9,7 @@ from cyanvision_worklist.service import CyanVisionWorklistService
 from labo_bridge.protocols import hl7_mllp
 from selectra_host_query import protocol as selectra_protocol
 from selectra_host_query.app import create_app
+from selectra_host_query.order_api_auth import load_or_create_order_api_token
 from selectra_host_query.server import SelectraHostQueryServer
 from selectra_host_query.store import BenchStore
 
@@ -80,6 +81,16 @@ class OrderApiCase(unittest.TestCase):
 
     def tearDown(self):
         self.temp.cleanup()
+
+    def test_local_order_api_token_is_generated_once_and_reused(self):
+        token_path = os.path.join(self.temp.name, "runtime", "order_api_token.txt")
+        first = load_or_create_order_api_token(token_path)
+        second = load_or_create_order_api_token(token_path)
+
+        self.assertGreaterEqual(len(first), 32)
+        self.assertEqual(second, first)
+        with open(token_path, encoding="ascii") as token_file:
+            self.assertEqual(token_file.read().strip(), first)
 
     def test_order_api_requires_a_separate_token(self):
         missing = self.client.post("/api/v1/orders/selectra", json=SELECTRA_ORDER)
