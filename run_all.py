@@ -40,8 +40,8 @@ ORDER_API_TOKEN_PATH = os.path.join(
 ORDER_API_TOKEN = load_or_create_order_api_token(ORDER_API_TOKEN_PATH)
 
 # Manual diagnostic reply modes start disarmed on every process restart.
-# Authenticated API orders have their own persisted ready flag and remain
-# available to the analyzers until delivered or cancelled.
+# Authenticated API orders have a persisted per-order ready flag. Selectra
+# orders start inactive and must be armed from the local 5052 console.
 selectra_query_store = BenchStore(SELECTRA_QUERY_DATA)
 selectra_query_service = SelectraHostQueryServer(
     selectra_query_store, host="0.0.0.0", port=6003, armed=False, embedded=True,
@@ -89,7 +89,7 @@ if __name__ == "__main__":
     print("[orders] Selectra + CYANVision order console running at http://127.0.0.1:5052")
     print("[selectra] Exact-ID replies and the continuous wildcard probe start DISARMED; instrument traffic remains on port 6003.\n")
     print("[cyanvision] One-load worklist starts DISARMED; queries and results remain on port 6004.\n")
-    print("[orders-api] ENABLED; authenticated orders on port 5052 persist and are automatically ready.")
+    print("[orders-api] ENABLED; Selectra API orders persist and require manual arming on port 5052.")
     print(f"[orders-api] The private token is stored locally at {ORDER_API_TOKEN_PATH}.\n")
 
     server.run_all()

@@ -211,6 +211,29 @@ class BenchStore:
             )
         return cursor.rowcount > 0
 
+    def set_order_ready(self, sample_id: str, ready: bool):
+        """Arm or disarm one API order without changing its clinical data."""
+        with self._session() as connection:
+            row = connection.execute(
+                "SELECT status, source FROM orders WHERE sample_id=?", (sample_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            if row["source"] != "api":
+                raise ValueError("only orders received through the API use per-order arming")
+            if ready and row["status"] not in {"staged", "queried", "error"}:
+                raise ValueError(f"an order in state {row['status']} cannot be armed")
+            connection.execute(
+                """
+                UPDATE orders
+                SET ready=?, status=?, updated_at=?, last_error=NULL
+                WHERE sample_id=?
+                """,
+                (int(bool(ready)), "staged" if ready or row["status"] == "queried" else row["status"],
+                 utc_now(), sample_id),
+            )
+        return self.get_order(sample_id)
+
     @staticmethod
     def _cyanvision_order(row):
         if row is None:

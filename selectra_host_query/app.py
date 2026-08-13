@@ -245,7 +245,7 @@ def _validated_selectra_api_order(body):
         "birth_date": birth_date,
         "sex": sex,
         "specimen_type": _validate_text(
-            "Selectra specimen type", body.get("specimen_type"), maximum=32,
+            "Selectra specimen type", body.get("specimen_type") or "UNSPECIFIED", maximum=32,
         ),
         "tests": tests,
         "external_order_id": _validate_text(
@@ -373,9 +373,17 @@ def create_app(store, service, cyanvision_service=None, order_api_token=None):
     @app.get("/api/status")
     def status():
         cyanvision = cyanvision_service.status() if cyanvision_service else None
+        active_orders = [
+            order for order in store.list_orders()
+            if order.get("status") != "cancelled"
+        ]
         return jsonify({
             **service.status(),
-            "orders": len(store.list_orders()),
+            "orders": len(active_orders),
+            "api_armed_orders": len([
+                order for order in active_orders
+                if order.get("source") == "api" and order.get("ready")
+            ]),
             "cyanvision": cyanvision,
         })
 
@@ -434,14 +442,12 @@ def create_app(store, service, cyanvision_service=None, order_api_token=None):
             order, resolved_tests = _validated_selectra_api_order(body)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
-        saved = store.upsert_order(order, source="api", ready=True)
+        saved = store.upsert_order(order, source="api", ready=False)
         return jsonify({
             "ok": True,
             "analyzer": "selectra",
-            "state": "ready",
-            "order": saved,
-            "resolved_tests": resolved_tests,
-            "response_preview": build_order_records(saved),
+            "sample_id": saved["sample_id"],
+            "state": "staged",
         }), 201
 
     @app.get("/api/v1/orders/selectra/<sample_id>")
@@ -449,7 +455,15 @@ def create_app(store, service, cyanvision_service=None, order_api_token=None):
         order = store.get_order(sample_id)
         if not order or order.get("source") != "api":
             return jsonify({"error": "Selectra API order not found"}), 404
-        return jsonify({"analyzer": "selectra", "order": order})
+        return jsonify({
+            "analyzer": "selectra",
+            "sample_id": order["sample_id"],
+            "state": order["status"],
+            "armed": order["ready"],
+            "query_count": order["query_count"],
+            "updated_at": order["updated_at"],
+            "last_error": order["last_error"],
+        })
 
     @app.delete("/api/v1/orders/selectra/<sample_id>")
     def api_cancel_selectra_order(sample_id):
@@ -485,9 +499,7 @@ def create_app(store, service, cyanvision_service=None, order_api_token=None):
             "ok": True,
             "analyzer": "cyanvision",
             "state": "ready",
-            "order": saved,
-            "resolved_test": resolved_test,
-            "response_preview": cyanvision_service.preview(saved),
+            "sample_id": saved["sample_id"],
         }), 201
 
     @app.get("/api/v1/orders/cyanvision/<sample_id>")
@@ -495,7 +507,15 @@ def create_app(store, service, cyanvision_service=None, order_api_token=None):
         order = store.get_cyanvision_order(sample_id)
         if not order or order.get("source") != "api":
             return jsonify({"error": "CYANVision API order not found"}), 404
-        return jsonify({"analyzer": "cyanvision", "order": order})
+        return jsonify({
+            "analyzer": "cyanvision",
+            "sample_id": order["sample_id"],
+            "state": order["status"],
+            "ready": order["ready"],
+            "query_count": order["query_count"],
+            "updated_at": order["updated_at"],
+            "last_error": order["last_error"],
+        })
 
     @app.delete("/api/v1/orders/cyanvision/<sample_id>")
     def api_cancel_cyanvision_order(sample_id):
@@ -512,7 +532,54 @@ def create_app(store, service, cyanvision_service=None, order_api_token=None):
 
     @app.get("/api/orders")
     def orders():
-        return jsonify({"orders": store.list_orders()})
+        return jsonify({
+            "orders": [
+                order for order in store.list_orders()
+                if order.get("status") != "cancelled"
+            ],
+        })
+
+    @app.post("/api/orders/<sample_id>/arm")
+    def arm_api_order(sample_id):
+        body = request.get_json(silent=True) or {}
+        if body.get("confirmation") != "ARM SELECTRA ORDER":
+            return jsonify({"error": "explicit ARM SELECTRA ORDER confirmation is required"}), 400
+        order = store.get_order(sample_id)
+        if not order or order.get("source") != "api":
+            return jsonify({"error": "staged API order not found"}), 404
+        try:
+            saved = store.set_order_ready(sample_id, True)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 409
+        store.add_event(
+            "local", "api_order_armed", sample_id,
+            "API order manually armed; waiting for an exact Selectra query",
+        )
+        return jsonify({"ok": True, "sample_id": sample_id, "state": "armed", "armed": saved["ready"]})
+
+    @app.delete("/api/orders/<sample_id>/arm")
+    def disarm_api_order(sample_id):
+        order = store.get_order(sample_id)
+        if not order or order.get("source") != "api":
+            return jsonify({"error": "staged API order not found"}), 404
+        saved = store.set_order_ready(sample_id, False)
+        store.add_event(
+            "local", "api_order_disarmed", sample_id,
+            "API order manually disarmed; Selectra queries will not receive it",
+        )
+        return jsonify({"ok": True, "sample_id": sample_id, "state": "staged", "armed": saved["ready"]})
+
+    @app.delete("/api/orders/<sample_id>")
+    def remove_staged_order(sample_id):
+        order = store.get_order(sample_id)
+        if not order or order.get("status") == "cancelled":
+            return jsonify({"error": "staged order not found"}), 404
+        store.cancel_order(sample_id)
+        store.add_event(
+            "local", "order_removed", sample_id,
+            "Order removed from the active staging queue",
+        )
+        return jsonify({"ok": True, "sample_id": sample_id, "state": "cancelled"})
 
     @app.post("/api/orders")
     def stage_order():

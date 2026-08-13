@@ -134,18 +134,38 @@ class OrderApiCase(unittest.TestCase):
         self.assertFalse(migrated["ready"])
         self.assertEqual(migrated["tests"], ["Creatinine"])
 
-    def test_selectra_api_order_persists_and_answers_while_manual_mode_is_disarmed(self):
+    def test_selectra_api_order_requires_per_order_manual_arming(self):
         staged = self.client.post(
             "/api/v1/orders/selectra", json=SELECTRA_ORDER, headers=HEADERS,
         )
         self.assertEqual(staged.status_code, 201)
-        self.assertTrue(staged.get_json()["order"]["ready"])
-        self.assertEqual(staged.get_json()["order"]["source"], "api")
+        self.assertEqual(staged.get_json(), {
+            "ok": True,
+            "analyzer": "selectra",
+            "sample_id": "SEL-API-001",
+            "state": "staged",
+        })
+        stored = self.store.get_order("SEL-API-001")
+        self.assertFalse(stored["ready"])
+        self.assertEqual(stored["source"], "api")
 
         restarted_store = BenchStore(self.db_path)
         restarted_service = SelectraHostQueryServer(
             restarted_store, armed=False, embedded=True,
         )
+        blocked = FakeConnection(selectra_protocol.B_ACK * 2)
+        restarted_service.handle_records(
+            blocked, ["Q|1|^SEL-API-001||ALL||||||||0"],
+        )
+        self.assertEqual(blocked.sent, [])
+
+        armed = self.client.post(
+            "/api/orders/SEL-API-001/arm",
+            json={"confirmation": "ARM SELECTRA ORDER"},
+        )
+        self.assertEqual(armed.status_code, 200)
+        self.assertTrue(armed.get_json()["armed"])
+
         connection = FakeConnection(selectra_protocol.B_ACK * 2)
         restarted_service.handle_records(
             connection, ["Q|1|^SEL-API-001||ALL||||||||0"],
@@ -181,14 +201,20 @@ class OrderApiCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 201)
         payload = response.get_json()
-        self.assertEqual(
-            [item["machine_code"] for item in payload["resolved_tests"]],
-            ["Crea", "SGPT", "ALP"],
-        )
-        self.assertEqual(payload["order"]["tests"], [
+        self.assertEqual(payload, {
+            "ok": True,
+            "analyzer": "selectra",
+            "sample_id": "SEL-ID-001",
+            "state": "staged",
+        })
+        stored = self.store.get_order("SEL-ID-001")
+        self.assertEqual(stored["tests"], [
             "Creatinine", "SGPT", "Phosphatase ALP",
         ])
-        self.assertIn("^^^Crea\\^^^SGPT\\^^^ALP", payload["response_preview"][2])
+        self.assertIn(
+            "^^^Crea\\^^^SGPT\\^^^ALP",
+            selectra_protocol.build_order_records(stored)[2],
+        )
 
     def test_selectra_api_rejects_ambiguous_or_unknown_clinic_ids(self):
         ambiguous = self.client.post(
@@ -262,8 +288,15 @@ class OrderApiCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 201)
         payload = response.get_json()
-        self.assertEqual(payload["resolved_test"]["machine_code"], "ALP")
-        self.assertEqual(payload["order"]["test_code"], "ALP")
+        self.assertEqual(payload, {
+            "ok": True,
+            "analyzer": "cyanvision",
+            "sample_id": "CYAN-ID-001",
+            "state": "ready",
+        })
+        self.assertEqual(
+            self.store.get_cyanvision_order("CYAN-ID-001")["test_code"], "ALP",
+        )
 
     @patch("selectra_host_query.app.pg.list_observed_test_codes", return_value=[])
     def test_api_status_and_cancellation(self, _observed):
@@ -284,6 +317,27 @@ class OrderApiCase(unittest.TestCase):
         )
         self.assertEqual(cyan_cancelled.status_code, 200)
         self.assertFalse(self.store.get_cyanvision_order("CYAN-API-001")["ready"])
+
+    def test_console_can_disarm_and_remove_a_staged_api_order(self):
+        self.client.post(
+            "/api/v1/orders/selectra", json=SELECTRA_ORDER, headers=HEADERS,
+        )
+        missing_confirmation = self.client.post("/api/orders/SEL-API-001/arm", json={})
+        self.assertEqual(missing_confirmation.status_code, 400)
+
+        self.client.post(
+            "/api/orders/SEL-API-001/arm",
+            json={"confirmation": "ARM SELECTRA ORDER"},
+        )
+        disarmed = self.client.delete("/api/orders/SEL-API-001/arm")
+        self.assertEqual(disarmed.status_code, 200)
+        self.assertFalse(self.store.get_order("SEL-API-001")["ready"])
+
+        removed = self.client.delete("/api/orders/SEL-API-001")
+        self.assertEqual(removed.status_code, 200)
+        self.assertEqual(self.store.get_order("SEL-API-001")["status"], "cancelled")
+        visible = self.client.get("/api/orders").get_json()["orders"]
+        self.assertNotIn("SEL-API-001", [order["sample_id"] for order in visible])
 
 
 if __name__ == "__main__":

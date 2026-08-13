@@ -335,7 +335,7 @@ class SelectraHostQueryServer:
         may_send = is_probe or api_ready or (self.armed and not is_api_order)
         if not may_send:
             reason = (
-                "API order is no longer ready (already delivered, cancelled, or rejected)"
+                "API order has not been manually armed, or is no longer ready"
                 if is_api_order else "live responses are disarmed"
             )
             self.store.add_event("host", "response_blocked", sample_id,

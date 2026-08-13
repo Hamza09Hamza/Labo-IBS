@@ -1,8 +1,7 @@
 # Analyzer order download API
 
-The order API accepts work from another authorized server, validates it,
-stores it in the local SQLite database, and marks it ready for an analyzer to
-pull. It is served by `run_all.py` on:
+The order API accepts work from another authorized server, validates it, and
+stores it in the local SQLite database. It is served by `run_all.py` on:
 
 ```text
 http://<bridge-IP>:5052/api/v1/orders/
@@ -10,8 +9,8 @@ http://<bridge-IP>:5052/api/v1/orders/
 
 This API does not push a connection to either analyzer:
 
-- Selectra sends a Host Query containing a sample ID. The bridge returns the
-  exact ready Selectra order with that sample ID.
+- Selectra orders remain inactive until a local operator arms the exact sample
+  on the `5052` console. A matching Host Query can then receive it.
 - CYANVision sends `QRY^Q02` when the operator presses **Patient Worklist ->
   Load from LIS**. The bridge returns the ready CYANVision queue in creation
   order, waiting for `ACK^Q03` between `DSR^Q03` items. The final item has an
@@ -49,7 +48,6 @@ POST /api/v1/orders/selectra
   "given_name": "PATIENT",
   "birth_date": "1980-06-15",
   "sex": "F",
-  "specimen_type": "SERUM",
   "tests": [
     {"service_tarification_id": 392},
     {"param_id": 99953, "service_tarification_id": 528}
@@ -72,12 +70,17 @@ Rules:
 - Unknown or ambiguous identifiers return HTTP `400`; LaboBridge never guesses
   a clinical test. Legacy method-name strings remain accepted temporarily for
   compatibility, but new integrations should use identifiers.
-- Reposting the same `sample_id` replaces the stored content and makes it
-  ready again. `external_order_id` is optional correlation metadata.
+- Selectra specimen type is not part of this API. The optional LIS2-A O-16
+  descriptor requires an exact, case-sensitive analyzer configuration name;
+  it remains blank until those local names are confirmed.
+- Reposting the same `sample_id` replaces the stored content and returns it to
+  the inactive staged state. `external_order_id` is optional correlation
+  metadata.
 
-An API order does not require the manual **Arm exact-ID replies** switch. It is
-individually ready and survives a LaboBridge restart. Once Selectra transport-
-ACKs the response, it becomes `transport_acknowledged` and is no longer ready.
+The API only stages the order. It remains inactive until a local operator opens
+the `5052` console and clicks **Arm for Selectra** on that exact sample. Once
+armed, it survives a LaboBridge restart. After Selectra transport-ACKs the
+response, it becomes `transport_acknowledged` and is no longer armed.
 
 ### Read status or cancel
 
@@ -141,9 +144,19 @@ DELETE /api/v1/orders/cyanvision/<sample_id>
 curl -X POST "http://172.16.2.4:5052/api/v1/orders/selectra" \
   -H "Content-Type: application/json" \
   -H "X-API-TOKEN: replace-with-the-configured-secret" \
-  --data '{"external_order_id":"LIS-ORDER-7812","sample_id":"2608130012","patient_id":"PAT-4821","family_name":"BENCH","given_name":"PATIENT","birth_date":"1980-06-15","sex":"F","specimen_type":"SERUM","tests":[{"service_tarification_id":392},{"param_id":99953,"service_tarification_id":528}]}'
+  --data '{"external_order_id":"LIS-ORDER-7812","sample_id":"2608130012","patient_id":"PAT-4821","family_name":"BENCH","given_name":"PATIENT","birth_date":"1980-06-15","sex":"F","tests":[{"service_tarification_id":392},{"param_id":99953,"service_tarification_id":528}]}'
 ```
 
-A successful stage returns HTTP `201`, `state: "ready"`, the persisted order,
-the `resolved_tests`/`resolved_test` mapping decision, and a protocol preview.
-Validation failures return `400` and do not store or arm anything.
+A successful Selectra stage returns only a small acknowledgement:
+
+```json
+{"analyzer":"selectra","ok":true,"sample_id":"2608130012","state":"staged"}
+```
+
+Patient data, database timestamps, and raw protocol frames are deliberately not
+echoed to the sending server. Validation failures return `400` and do not store
+or arm anything.
+
+CYANVision staging uses the same compact acknowledgement shape, with
+`"state":"ready"` because its queue is delivered through the operator's
+explicit **Load from LIS** action on the analyzer.

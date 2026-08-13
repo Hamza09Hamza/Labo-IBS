@@ -65,9 +65,11 @@ function formatTime(value) {
 async function loadStatus() {
   const status = await api("/api/status");
   const pill = $("#modePill");
-  const anyArmed = status.armed || status.probe_armed || status.cyanvision?.armed;
+  const anyArmed = status.api_armed_orders || status.armed || status.probe_armed || status.cyanvision?.armed;
   pill.className = `mode-pill ${anyArmed ? "armed" : "safe"}`;
-  pill.querySelector("strong").textContent = status.cyanvision?.armed
+  pill.querySelector("strong").textContent = status.api_armed_orders
+    ? `${status.api_armed_orders} Selectra order${status.api_armed_orders === 1 ? "" : "s"} armed`
+    : status.cyanvision?.armed
     ? "CYANVision load armed"
     : status.probe_armed
     ? "Continuous probe armed"
@@ -76,11 +78,11 @@ async function loadStatus() {
   const armingPanel = $("#armingPanel");
   const armingButton = $("#armingButton");
   armingPanel.classList.toggle("armed", status.armed);
-  $("#armingTitle").textContent = status.armed ? "Waiting for an exact Selectra query" : "Replies are disarmed";
+  $("#armingTitle").textContent = status.armed ? "Manual replies are armed" : "Manual replies are disarmed";
   $("#armingCopy").textContent = status.armed
-    ? "If Selectra sends a Q record matching a staged sample ID, its patient details and requested tests will be transmitted immediately."
-    : "You can stage and preview orders safely. Arm only when the operator is ready to enter the test sample ID on the Selectra.";
-  armingButton.textContent = status.armed ? "Disarm replies" : "Arm exact-ID replies";
+    ? "A matching query can receive a manually created development order. Server orders still use their own card controls."
+    : "This global switch applies only to manually created development orders.";
+  armingButton.textContent = status.armed ? "Disarm manual replies" : "Arm manual replies";
   continuousProbeArmed = status.probe_armed;
   const probePanel = $("#probePanel");
   probePanel.classList.toggle("armed", status.probe_armed);
@@ -232,7 +234,7 @@ async function toggleContinuousProbe() {
 async function toggleLiveResponses() {
   const nextArmed = !liveResponsesArmed;
   if (nextArmed && !window.confirm(
-    "Arm real Selectra replies? An exact matching Q record will immediately receive the staged patient and tests."
+    "Arm manual Selectra replies? A matching query can immediately receive a manually created development order."
   )) return;
   const button = $("#armingButton");
   button.disabled = true;
@@ -246,7 +248,7 @@ async function toggleLiveResponses() {
       }),
     });
     liveResponsesArmed = result.armed;
-    toast(result.armed ? "Exact-ID Selectra replies armed." : "Selectra replies disarmed.");
+    toast(result.armed ? "Manual Selectra replies armed." : "Manual Selectra replies disarmed.");
     await Promise.all([loadStatus(), loadEvents()]);
   } finally {
     button.disabled = false;
@@ -286,15 +288,55 @@ async function loadEvents() {
 
 function orderCard(order) {
   const statusClass = ["error", "rejected"].includes(order.status) ? "error" : "";
+  const canArm = order.source === "api" && ["staged", "queried", "error"].includes(order.status);
+  const displayStatus = order.source === "api" && canArm
+    ? (order.ready ? "armed" : "awaiting arm")
+    : order.status;
   return `
-    <article class="order-card">
-      <div class="order-card-head"><h3>${escapeHtml(order.sample_id)}</h3><span class="order-status ${statusClass}">${escapeHtml(order.status)}</span></div>
+    <article class="order-card ${order.ready ? "is-armed" : ""}">
+      <div class="order-card-head"><h3>${escapeHtml(order.sample_id)}</h3><span class="order-status ${statusClass}">${escapeHtml(displayStatus)}</span></div>
       <p class="order-person">${escapeHtml(order.family_name)} ${escapeHtml(order.given_name)} · ${escapeHtml(order.patient_id)}</p>
       <div class="order-tests">${order.tests.map(escapeHtml).join(" · ")}</div>
-      <div class="order-meta"><span>${escapeHtml(order.specimen_type)}</span><span>${order.query_count} quer${order.query_count === 1 ? "y" : "ies"}</span><span>${escapeHtml(formatTime(order.updated_at))}</span></div>
-      <button class="simulate-button" type="button" data-simulate="${escapeHtml(order.sample_id)}">Simulate exact-ID query</button>
+      <div class="order-meta"><span>${order.source === "api" ? "Server order" : "Local order"}</span><span>${order.query_count} quer${order.query_count === 1 ? "y" : "ies"}</span><span>${escapeHtml(formatTime(order.updated_at))}</span></div>
+      <div class="order-actions">
+        ${canArm ? `<button class="arm-order-button" type="button" data-${order.ready ? "disarm" : "arm"}="${escapeHtml(order.sample_id)}">${order.ready ? "Disarm" : "Arm for Selectra"}</button>` : ""}
+        <button class="simulate-button" type="button" data-simulate="${escapeHtml(order.sample_id)}">Simulate query</button>
+        <button class="remove-order-button" type="button" data-remove-order="${escapeHtml(order.sample_id)}">Remove</button>
+      </div>
     </article>
   `;
+}
+
+async function setOrderArmed(sampleId, armed, button) {
+  if (armed && !window.confirm(
+    `Arm order ${sampleId}? The next exact Selectra query for this ID will receive its patient and tests.`
+  )) return;
+  button.disabled = true;
+  try {
+    await api(`/api/orders/${encodeURIComponent(sampleId)}/arm`, {
+      method: armed ? "POST" : "DELETE",
+      headers: armed ? { "Content-Type": "application/json" } : undefined,
+      body: armed ? JSON.stringify({ confirmation: "ARM SELECTRA ORDER" }) : undefined,
+    });
+    toast(`Order ${sampleId} ${armed ? "armed for Selectra" : "disarmed"}.`);
+    state.ordersSignature = "";
+    await Promise.all([loadOrders(), loadEvents(), loadStatus()]);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function removeOrder(sampleId, button) {
+  if (!window.confirm(`Remove staged order ${sampleId}? It will no longer be available to Selectra.`)) return;
+  button.disabled = true;
+  try {
+    await api(`/api/orders/${encodeURIComponent(sampleId)}`, { method: "DELETE" });
+    toast(`Order ${sampleId} removed from staging.`);
+    state.ordersSignature = "";
+    await Promise.all([loadOrders(), loadEvents(), loadStatus()]);
+  } finally {
+    button.disabled = false;
+  }
 }
 
 async function simulate(sampleId) {
@@ -318,6 +360,15 @@ async function loadOrders() {
     : '<div class="orders-empty">No orders staged yet.</div>';
   container.querySelectorAll("[data-simulate]").forEach((button) => {
     button.addEventListener("click", () => simulate(button.dataset.simulate).catch((error) => toast(error.message)));
+  });
+  container.querySelectorAll("[data-arm]").forEach((button) => {
+    button.addEventListener("click", () => setOrderArmed(button.dataset.arm, true, button).catch((error) => toast(error.message)));
+  });
+  container.querySelectorAll("[data-disarm]").forEach((button) => {
+    button.addEventListener("click", () => setOrderArmed(button.dataset.disarm, false, button).catch((error) => toast(error.message)));
+  });
+  container.querySelectorAll("[data-remove-order]").forEach((button) => {
+    button.addEventListener("click", () => removeOrder(button.dataset.removeOrder, button).catch((error) => toast(error.message)));
   });
 }
 
@@ -364,6 +415,33 @@ async function initialize() {
   setInterval(() => loadCyanvisionTests().catch(() => {}), 30000);
 }
 
+function setConsoleView(name, updateHash = true) {
+  const valid = ["selectra", "cyanvision", "diagnostics"];
+  const selected = valid.includes(name) ? name : "selectra";
+  document.querySelectorAll("[data-console-tab]").forEach((button) => {
+    const active = button.dataset.consoleTab === selected;
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
+  });
+  document.querySelectorAll("[data-console-view]").forEach((view) => {
+    view.hidden = view.dataset.consoleView !== selected;
+  });
+  if (updateHash) history.replaceState(null, "", `#${selected}`);
+}
+
+document.querySelectorAll("[data-console-tab]").forEach((button) => {
+  button.addEventListener("click", () => setConsoleView(button.dataset.consoleTab));
+  button.addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+    event.preventDefault();
+    const tabs = [...document.querySelectorAll("[data-console-tab]")];
+    const direction = event.key === "ArrowRight" ? 1 : -1;
+    const next = tabs[(tabs.indexOf(button) + direction + tabs.length) % tabs.length];
+    next.focus();
+    setConsoleView(next.dataset.consoleTab);
+  });
+});
+
 $("#addTest").addEventListener("click", addTest);
 $("#testCodeInput").addEventListener("keydown", (event) => {
   if (event.key === "Enter") { event.preventDefault(); addTest(); }
@@ -374,4 +452,5 @@ $("#probeButton").addEventListener("click", () => toggleContinuousProbe().catch(
 $("#cyanvisionForm").addEventListener("submit", stageCyanvision);
 $("#cyanDisarmButton").addEventListener("click", () => disarmCyanvision().catch((error) => toast(error.message)));
 renderTests();
+setConsoleView(location.hash.slice(1), false);
 initialize().catch((error) => toast(`Bench failed to initialize: ${error.message}`));

@@ -3,149 +3,152 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#102a35">
-  <title>Analyzer Order Console</title>
+  <meta name="theme-color" content="#0c2930">
+  <title>Labo Bridge · Order Queue</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <a class="skip-link" href="#workspace">Skip to order staging</a>
+  <a class="skip-link" href="#workspace">Skip to order queue</a>
 
   <header class="topbar">
-    <a class="brand" href="/" aria-label="Analyzer Order Console home">
-      <span class="brand-device" aria-hidden="true">
-        <svg viewBox="0 0 32 32" fill="none"><path d="M5 8h22v15H5z" stroke="currentColor" stroke-width="1.7"/><path d="M9 12h7M9 16h11M9 20h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M23 12v8" stroke="currentColor" stroke-width="1.7"/><circle cx="23" cy="12" r="1.4" fill="currentColor"/></svg>
+    <a class="brand" href="/" aria-label="Labo Bridge order queue">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32" fill="none"><path d="M7 5h18v22H7zM11 10h10M11 15h10M11 20h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="22" cy="21" r="2" fill="currentColor"/></svg>
       </span>
-      <span><strong>Labo Bridge</strong><small>Analyzer Order Console</small></span>
+      <span><strong>Labo Bridge</strong><small>Analyzer order queue</small></span>
     </a>
-    <div class="mode-pill" id="modePill"><span></span><strong>Checking mode…</strong></div>
+    <div class="mode-pill" id="modePill"><span></span><strong>Checking systems…</strong></div>
   </header>
 
   <main id="workspace">
-    <section class="intro" aria-labelledby="pageTitle">
+    <section class="workspace-head" aria-labelledby="pageTitle">
       <div>
-        <p class="eyebrow">Bidirectional analyzer order staging</p>
-        <h1 id="pageTitle">Prepare the order.<br>Let the analyzer pull it.</h1>
+        <p class="eyebrow">Order download · port 5052</p>
+        <h1 id="pageTitle">Review what the analyzers will receive.</h1>
+        <p>Server orders arrive safely staged. A local operator decides exactly what is armed, removed, or left waiting.</p>
       </div>
-      <p class="intro-copy">CYANVision downloads one armed worklist through “Load from LIS.” Selectra remains available below with its separate exact-ID query flow.</p>
+      <div class="queue-total"><span>Active orders</span><strong class="mono" id="orderCount">0</strong></div>
     </section>
 
-    <section class="arming-panel" id="armingPanel" aria-label="Live response control">
-      <div>
-        <span class="arming-kicker">Live response control</span>
-        <strong id="armingTitle">Replies are disarmed</strong>
-        <p id="armingCopy">You can stage and preview orders safely. Arm only when the operator is ready to enter the test sample ID on the Selectra.</p>
-      </div>
-      <button type="button" id="armingButton">Arm exact-ID replies</button>
-    </section>
+    <ol class="handoff-rail" aria-label="Order delivery workflow">
+      <li><span>1</span><div><strong>Receive</strong><small>The clinic server stages an order.</small></div></li>
+      <li><span>2</span><div><strong>Review and arm</strong><small>Confirm the sample ID and tests locally.</small></div></li>
+      <li><span>3</span><div><strong>Analyzer pulls</strong><small>The exact query receives the order.</small></div></li>
+    </ol>
 
-    <section class="probe-panel" id="probePanel" aria-label="Continuous automatic probe">
-      <div class="probe-copy">
-        <span class="probe-kicker">Continuous remote probe</span>
-        <strong id="probeTitle">Automatic probe is disarmed</strong>
-        <p id="probeCopy">When armed, every Selectra Q—regardless of sample ID—receives the alert order until you disarm this probe.</p>
-      </div>
-      <dl class="probe-payload">
-        <div><dt>Order notice (O-17)</dt><dd class="mono" id="probePatientName">APPELLE MANEL/FODHIL</dd></div>
-        <div><dt>Tests</dt><dd class="mono" id="probeTests">Selected when armed</dd></div>
-      </dl>
-      <button type="button" id="probeButton">Arm continuous probe</button>
-    </section>
+    <nav class="view-tabs" aria-label="Analyzer console sections" role="tablist">
+      <button id="selectraTab" type="button" role="tab" aria-controls="selectraView" aria-selected="true" data-console-tab="selectra">Selectra orders</button>
+      <button id="cyanvisionTab" type="button" role="tab" aria-controls="cyanvisionView" aria-selected="false" data-console-tab="cyanvision">CYANVision worklist</button>
+      <button id="diagnosticsTab" type="button" role="tab" aria-controls="diagnosticsView" aria-selected="false" data-console-tab="diagnostics">Diagnostics</button>
+    </nav>
 
-    <section class="endpoint-strip" aria-label="Connection status">
-      <div><span>Web console</span><strong class="mono" id="webEndpoint">—</strong></div>
-      <div><span>Selectra endpoint</span><strong class="mono" id="instrumentEndpoint">—</strong></div>
-      <div><span>TCP client</span><strong id="clientState">Waiting</strong></div>
-      <div><span>Staged orders</span><strong class="mono" id="orderCount">0</strong></div>
-    </section>
-
-    <section class="cyanvision-worklist panel" id="cyanvisionPanel" aria-labelledby="cyanvisionTitle">
-      <header class="cyanvision-head">
-        <div>
-          <span class="cyanvision-kicker">CYANVision · HL7 v2.3.1 · one-load worklist</span>
-          <h2 id="cyanvisionTitle">Prepare one sample for “Load from LIS”</h2>
-          <p>Arm one patient and one exact CYANVision test code. Nothing is transmitted until the analyzer sends QRY^Q02 on port <span class="mono" id="cyanvisionPort">6004</span>.</p>
-        </div>
-        <div class="cyanvision-state" id="cyanvisionState"><i></i><span>Draft</span></div>
-      </header>
-      <div class="cyanvision-grid">
-        <form id="cyanvisionForm" class="cyanvision-form" novalidate>
-          <div class="form-grid">
-            <label class="field field-wide"><span>Sample / patient ID</span><input id="cyanSampleId" required maxlength="20" autocomplete="off" placeholder="e.g. CYAN-DEMO-01"><small>This becomes DSP line 1 and must identify the worklist sample.</small></label>
-            <label class="field"><span>Given name</span><input id="cyanGivenName" required maxlength="80" autocomplete="off" placeholder="MANEL"></label>
-            <label class="field"><span>Family name</span><input id="cyanFamilyName" required maxlength="80" autocomplete="off" placeholder="APPELLE FODHIL"></label>
-            <label class="field"><span>Birth date</span><input id="cyanBirthDate" type="date" required></label>
-            <label class="field"><span>Sex</span><select id="cyanSex"><option value="M">Male</option><option value="F">Female</option></select></label>
-            <label class="field field-wide"><span>CYANVision test</span><select id="cyanTestCode" required disabled><option value="">Loading exact analyzer codes…</option></select><small id="cyanTestHelp">Only codes already mapped or received from CYANVision are available. The selected code is sent in DSP line 8.</small></label>
+    <section class="console-view" id="selectraView" role="tabpanel" aria-labelledby="selectraTab" data-console-view="selectra">
+      <section class="queue-panel panel" aria-labelledby="ordersTitle">
+        <header class="section-head">
+          <div>
+            <span class="section-kicker">Selectra · exact-ID delivery</span>
+            <h2 id="ordersTitle">Orders waiting on this bridge</h2>
+            <p>Amber orders are inactive. Arm only the sample the operator is about to run.</p>
           </div>
-          <div class="form-alert" id="cyanFormAlert" role="alert" hidden></div>
-          <button class="primary-action cyanvision-action" type="submit" id="cyanArmButton"><span>Stage and arm one load</span><small>Wait for Patient Worklist → Load from LIS</small></button>
-          <button class="cyanvision-disarm" type="button" id="cyanDisarmButton" hidden>Disarm without sending</button>
-        </form>
-        <section class="cyanvision-preview" aria-label="CYANVision outbound preview">
-          <div class="preview-head"><strong>DSR^Q03 preview</strong><span>VT / HL7 / FS CR</span></div>
-          <div class="cyanvision-instruction" id="cyanvisionInstruction">Fill the form, verify the exact analyzer program code, then arm it.</div>
-          <pre id="cyanResponseRecords">No worklist prepared.</pre>
-        </section>
-      </div>
-    </section>
-
-    <div class="bench-layout">
-      <section class="staging-panel panel" aria-labelledby="stageTitle">
-        <header class="panel-head">
-          <div><span class="step">01</span><div><h2 id="stageTitle">Stage a test order</h2><p>Use a non-production patient until the Selectra format is validated.</p></div></div>
+          <span class="connection-note"><i></i> Queue refreshes automatically</span>
         </header>
+        <div class="orders-list" id="ordersList"><div class="orders-empty"><strong>No active Selectra orders</strong><span>Orders sent by the clinic server will appear here.</span></div></div>
+      </section>
 
-        <form id="orderForm" novalidate>
-          <div class="form-grid">
-            <label class="field field-wide"><span>Sample ID</span><input id="sampleId" name="sample_id" required autocomplete="off" placeholder="e.g. HQ-DEMO-001"><small>This must exactly match what you type or scan on the Selectra. Everything else below is optional — leave it blank and it's auto-filled with random non-clinical placeholder data.</small></label>
-            <label class="field"><span>Patient ID</span><input id="patientId" name="patient_id" autocomplete="off" placeholder="auto-filled if blank"></label>
-            <label class="field"><span>Specimen</span><select id="specimenType" name="specimen_type"><option value="SERUM">Serum</option><option value="PLASMA">Plasma</option><option value="URINE">Urine</option><option value="WHOLE BLOOD">Whole blood</option></select></label>
-            <label class="field"><span>Family name</span><input id="familyName" name="family_name" autocomplete="off" placeholder="auto-filled if blank"></label>
-            <label class="field"><span>Given name</span><input id="givenName" name="given_name" autocomplete="off" placeholder="auto-filled if blank"></label>
-            <label class="field"><span>Birth date</span><input id="birthDate" name="birth_date" type="date"><small>Auto-filled with a random date if left blank.</small></label>
-            <label class="field"><span>Sex</span><select id="patientSex" name="sex"><option value="">Random if blank</option><option value="U">Unspecified</option><option value="F">Female</option><option value="M">Male</option></select></label>
+      <details class="manual-tools panel">
+        <summary><span><strong>Manual test order</strong><small>Development tool for staging a sample without the clinic server</small></span><span aria-hidden="true">+</span></summary>
+        <div class="manual-grid">
+          <form id="orderForm" novalidate>
+            <div class="form-grid">
+              <label class="field field-wide"><span>Sample ID</span><input id="sampleId" name="sample_id" required autocomplete="off" placeholder="e.g. HQ-DEMO-001"><small>Must exactly match the ID entered on Selectra.</small></label>
+              <label class="field"><span>Patient ID</span><input id="patientId" name="patient_id" autocomplete="off" placeholder="Auto-filled if blank"></label>
+              <label class="field"><span>Local specimen label</span><select id="specimenType" name="specimen_type"><option value="SERUM">Serum</option><option value="PLASMA">Plasma</option><option value="URINE">Urine</option><option value="WHOLE BLOOD">Whole blood</option></select><small>Stored locally; not sent as Selectra O-16.</small></label>
+              <label class="field"><span>Family name</span><input id="familyName" name="family_name" autocomplete="off" placeholder="Auto-filled if blank"></label>
+              <label class="field"><span>Given name</span><input id="givenName" name="given_name" autocomplete="off" placeholder="Auto-filled if blank"></label>
+              <label class="field"><span>Birth date</span><input id="birthDate" name="birth_date" type="date"></label>
+              <label class="field"><span>Sex</span><select id="patientSex" name="sex"><option value="">Random if blank</option><option value="U">Unspecified</option><option value="F">Female</option><option value="M">Male</option></select></label>
+            </div>
+            <div class="test-builder">
+              <div class="field-label"><span>Selectra tests</span><small>Use an installed method name; leave empty for a random bench test.</small></div>
+              <div class="test-entry"><input id="testCodeInput" list="assaySuggestions" autocomplete="off" placeholder="Choose a test"><button id="addTest" type="button">Add test</button></div>
+              <datalist id="assaySuggestions"></datalist>
+              <div class="test-chips" id="testChips"><span class="empty-tests">No tests selected</span></div>
+            </div>
+            <div class="form-alert" id="formAlert" role="alert" hidden></div>
+            <button class="primary-action" type="submit" id="stageButton"><span>Stage local order</span><small>Does not transmit immediately</small></button>
+          </form>
+          <section class="preview" id="responsePreview" aria-label="Selectra response preview">
+            <div class="preview-head"><strong>LIS2-A preview</strong><span>H / P / O / L</span></div>
+            <pre id="responseRecords">Stage a local order to build the protocol preview.</pre>
+          </section>
+        </div>
+      </details>
+    </section>
+
+    <section class="console-view" id="cyanvisionView" role="tabpanel" aria-labelledby="cyanvisionTab" data-console-view="cyanvision" hidden>
+      <section class="cyanvision-worklist panel" id="cyanvisionPanel" aria-labelledby="cyanvisionTitle">
+        <header class="section-head cyanvision-head">
+          <div>
+            <span class="section-kicker">CYANVision · one-load worklist</span>
+            <h2 id="cyanvisionTitle">Prepare the next “Load from LIS” item</h2>
+            <p>One patient and one verified program code. The analyzer receives it only after the operator requests the LIS worklist.</p>
           </div>
+          <div class="cyanvision-state" id="cyanvisionState"><i></i><span>Draft</span></div>
+        </header>
+        <div class="cyanvision-grid">
+          <form id="cyanvisionForm" novalidate>
+            <div class="form-grid">
+              <label class="field field-wide"><span>Sample / patient ID</span><input id="cyanSampleId" required maxlength="20" autocomplete="off" placeholder="e.g. CYAN-DEMO-01"></label>
+              <label class="field"><span>Given name</span><input id="cyanGivenName" required maxlength="80" autocomplete="off" placeholder="MANEL"></label>
+              <label class="field"><span>Family name</span><input id="cyanFamilyName" required maxlength="80" autocomplete="off" placeholder="PATIENT"></label>
+              <label class="field"><span>Birth date</span><input id="cyanBirthDate" type="date" required></label>
+              <label class="field"><span>Sex</span><select id="cyanSex"><option value="M">Male</option><option value="F">Female</option></select></label>
+              <label class="field field-wide"><span>CYANVision test</span><select id="cyanTestCode" required disabled><option value="">Loading analyzer codes…</option></select><small id="cyanTestHelp">Only known codes are available.</small></label>
+            </div>
+            <div class="form-alert" id="cyanFormAlert" role="alert" hidden></div>
+            <button class="primary-action cyanvision-action" type="submit" id="cyanArmButton"><span>Stage and arm one load</span><small>Wait for Load from LIS</small></button>
+            <button class="secondary-danger" type="button" id="cyanDisarmButton" hidden>Disarm without sending</button>
+          </form>
+          <section class="preview cyanvision-preview" aria-label="CYANVision outbound preview">
+            <div class="preview-head"><strong>HL7 worklist preview</strong><span>DSR^Q03</span></div>
+            <div class="preview-instruction" id="cyanvisionInstruction">Complete the form, verify the program code, then arm the worklist.</div>
+            <pre id="cyanResponseRecords">No worklist prepared.</pre>
+          </section>
+        </div>
+      </section>
+    </section>
 
-          <div class="test-builder">
-            <div class="field-label"><span>Selectra test codes</span><small>Candidate codes from received results; verify outbound names on the instrument. Leave empty and a random test is picked for you.</small></div>
-            <div class="test-entry"><input id="testCodeInput" list="assaySuggestions" autocomplete="off" placeholder="Type a code, then Add"><button id="addTest" type="button">Add</button></div>
-            <datalist id="assaySuggestions"></datalist>
-            <div class="test-chips" id="testChips"><span class="empty-tests">No tests selected — a random test will be used</span></div>
-          </div>
+    <section class="console-view diagnostics-view" id="diagnosticsView" role="tabpanel" aria-labelledby="diagnosticsTab" data-console-view="diagnostics" hidden>
+      <section class="endpoint-strip" aria-label="Connection status">
+        <div><span>Web console</span><strong class="mono" id="webEndpoint">—</strong></div>
+        <div><span>Selectra listener</span><strong class="mono" id="instrumentEndpoint">—</strong></div>
+        <div><span>Selectra client</span><strong id="clientState">Waiting</strong></div>
+        <div><span>CYANVision listener</span><strong class="mono"><span id="cyanvisionPort">6004</span></strong></div>
+      </section>
 
-          <div class="form-alert" id="formAlert" role="alert" hidden></div>
-          <button class="primary-action" type="submit" id="stageButton"><span>Stage order</span><small>Save locally and build response preview</small></button>
-        </form>
-
-        <section class="preview" id="responsePreview" hidden>
-          <div class="preview-head"><strong>Response preview</strong><span>H / P / O / L</span></div>
-          <pre id="responseRecords"></pre>
-        </section>
+      <section class="diagnostic-controls">
+        <article class="arming-panel" id="armingPanel">
+          <div><span class="section-kicker">Manual bench orders</span><strong id="armingTitle">Replies are disarmed</strong><p id="armingCopy">This global switch applies only to manually created development orders.</p></div>
+          <button type="button" id="armingButton">Arm manual replies</button>
+        </article>
+        <article class="probe-panel" id="probePanel">
+          <div><span class="section-kicker">Danger zone · continuous probe</span><strong id="probeTitle">Automatic probe is disarmed</strong><p id="probeCopy">When armed, every Selectra query receives the probe payload until manually stopped.</p></div>
+          <dl class="probe-payload"><div><dt>Notice</dt><dd class="mono" id="probePatientName">—</dd></div><div><dt>Tests</dt><dd class="mono" id="probeTests">—</dd></div></dl>
+          <button type="button" id="probeButton">Arm continuous probe</button>
+        </article>
       </section>
 
       <section class="trace-panel panel" aria-labelledby="traceTitle">
-        <header class="panel-head">
-          <div><span class="step">02</span><div><h2 id="traceTitle">Protocol trace</h2><p>Incoming queries, exact-ID matches, and outbound order frames appear here.</p></div></div>
-          <span class="live-marker"><i></i>Live</span>
+        <header class="section-head">
+          <div><span class="section-kicker">Live protocol audit</span><h2 id="traceTitle">Analyzer communication trace</h2><p>Transport controls, queries, matches, and outbound frames.</p></div>
+          <span class="connection-note"><i></i> Live</span>
         </header>
-        <div class="trace-legend"><span class="instrument-arrow">Analyzer → Host</span><span class="host-arrow">Host → Analyzer</span></div>
-        <div class="trace-stream" id="traceStream" aria-live="polite">
-          <div class="trace-empty"><strong>Waiting for activity</strong><span>Stage an order, then simulate a query or connect the Selectra.</span></div>
-        </div>
+        <div class="trace-legend"><span class="instrument-arrow">Analyzer → Bridge</span><span class="host-arrow">Bridge → Analyzer</span></div>
+        <div class="trace-stream" id="traceStream" aria-live="polite"><div class="trace-empty"><strong>Waiting for analyzer activity</strong><span>New protocol events appear here automatically.</span></div></div>
       </section>
-    </div>
 
-    <section class="orders-panel panel" aria-labelledby="ordersTitle">
-      <header class="panel-head">
-        <div><span class="step">03</span><div><h2 id="ordersTitle">Staged orders</h2><p>The Selectra receives one only when its Q record exactly matches the sample ID and replies are armed.</p></div></div>
-      </header>
-      <div class="orders-list" id="ordersList"><div class="orders-empty">No orders staged yet.</div></div>
+      <aside class="safety-note"><strong>Diagnostic controls</strong><p>The continuous probe can add tests to any queried sample. Keep it disarmed outside a supervised technical test.</p></aside>
     </section>
-
-    <aside class="safety-note">
-      <strong>Controlled test</strong>
-      <p>The continuous probe appends tests while preserving the analyzer's patient demographics. It may start tests on a loaded sample and remains armed until you disarm it or restart LaboBridge.</p>
-    </aside>
   </main>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
