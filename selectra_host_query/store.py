@@ -89,6 +89,10 @@ class BenchStore:
                     message TEXT NOT NULL,
                     raw_text TEXT NOT NULL DEFAULT ''
                 );
+                CREATE TABLE IF NOT EXISTS schema_migrations (
+                    name TEXT PRIMARY KEY,
+                    applied_at TEXT NOT NULL
+                );
                 """
             )
             # Existing installations predate API-fed orders. SQLite's
@@ -104,6 +108,28 @@ class BenchStore:
             ):
                 if column not in order_columns:
                     connection.execute(f"ALTER TABLE orders ADD COLUMN {column} {definition}")
+
+            # API orders created before per-order manual arming was introduced
+            # were persisted as ready immediately. Disarm them once during the
+            # upgrade so no legacy order can bypass the new operator approval.
+            migration = "selectra_api_manual_arming_v1"
+            already_applied = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE name=?", (migration,),
+            ).fetchone()
+            if not already_applied:
+                connection.execute(
+                    """
+                    UPDATE orders
+                    SET ready=0, status='staged', updated_at=?
+                    WHERE source='api' AND ready=1
+                      AND status IN ('staged', 'queried', 'error')
+                    """,
+                    (utc_now(),),
+                )
+                connection.execute(
+                    "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
+                    (migration, utc_now()),
+                )
 
     @staticmethod
     def _order(row):

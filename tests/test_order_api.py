@@ -134,6 +134,22 @@ class OrderApiCase(unittest.TestCase):
         self.assertFalse(migrated["ready"])
         self.assertEqual(migrated["tests"], ["Creatinine"])
 
+    def test_upgrade_disarms_api_orders_created_before_manual_arming(self):
+        legacy_path = os.path.join(self.temp.name, "pre-manual-arming.db")
+        old_store = BenchStore(legacy_path)
+        old_store.upsert_order(SELECTRA_ORDER, source="api", ready=True)
+        connection = sqlite3.connect(legacy_path)
+        connection.execute(
+            "DELETE FROM schema_migrations WHERE name='selectra_api_manual_arming_v1'"
+        )
+        connection.commit()
+        connection.close()
+
+        migrated = BenchStore(legacy_path).get_order("SEL-API-001")
+
+        self.assertFalse(migrated["ready"])
+        self.assertEqual(migrated["status"], "staged")
+
     def test_selectra_api_order_requires_per_order_manual_arming(self):
         staged = self.client.post(
             "/api/v1/orders/selectra", json=SELECTRA_ORDER, headers=HEADERS,
