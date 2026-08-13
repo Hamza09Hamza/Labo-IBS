@@ -25,6 +25,16 @@ ASSAY_SUGGESTIONS = [
     "BILI DIRECT BIO", "CK NAK", "CK-NAC", "Proteine totale", "Albumine",
 ]
 
+# Some clinic targets have more than one historical/inbound method label.
+# When those aliases would produce different analyzer codes, use the method
+# confirmed for order download instead of relying on dictionary order.
+PREFERRED_ORDER_METHODS = {
+    "selectra": {
+        (None, 481): "Phosphatase ALP",
+        (99736, 366): "CALCUIM",
+    },
+}
+
 # Non-clinical placeholder demographics, used to auto-fill any field the
 # operator leaves blank when staging a bench order. Only sample_id has to
 # match what's typed/scanned on the Selectra; everything else here is
@@ -120,17 +130,105 @@ def _require_ascii(order, analyzer):
         raise ValueError(f"{analyzer} fields must use printable ASCII characters")
 
 
-def _validated_selectra_api_order(body):
-    tests = body.get("tests")
-    if not isinstance(tests, list) or not tests:
+def _optional_positive_id(field, value):
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        raise ValueError(f"{field} must be a positive integer")
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{field} must be a positive integer") from None
+    if parsed <= 0 or str(value).strip() != str(parsed):
+        raise ValueError(f"{field} must be a positive integer")
+    return parsed
+
+
+def _resolve_machine_test(machine, requested):
+    """Reverse a clinic target into one exact curated analyzer method."""
+    if not isinstance(requested, dict):
+        raise ValueError(
+            f"{machine} test must contain param_id and/or service_tarification_id"
+        )
+    param_id = _optional_positive_id("param_id", requested.get("param_id"))
+    service_id = _optional_positive_id(
+        "service_tarification_id", requested.get("service_tarification_id"),
+    )
+    if param_id is None and service_id is None:
+        raise ValueError("each test must contain param_id and/or service_tarification_id")
+
+    candidates = []
+    for method, targets in bridge_mappings.MAPS.get(machine, {}).items():
+        for target_param, target_service, *_ in targets:
+            if param_id is not None and target_param != param_id:
+                continue
+            if service_id is not None and target_service != service_id:
+                continue
+            wire_code = test_abbreviation(method) if machine == "selectra" else method
+            candidates.append({
+                "machine_test": method,
+                "machine_code": wire_code,
+                "param_id": target_param,
+                "service_tarification_id": target_service,
+            })
+
+    if not candidates:
+        raise ValueError(
+            f"no curated {machine} mapping for param_id={param_id}, "
+            f"service_tarification_id={service_id}"
+        )
+
+    target_pairs = {
+        (candidate["param_id"], candidate["service_tarification_id"])
+        for candidate in candidates
+    }
+    if len(target_pairs) == 1:
+        preferred = PREFERRED_ORDER_METHODS.get(machine, {}).get(next(iter(target_pairs)))
+        if preferred:
+            candidates = [
+                candidate for candidate in candidates
+                if candidate["machine_test"] == preferred
+            ]
+
+    # Multiple labels that generate the same wire code are harmless aliases.
+    by_wire_code = {}
+    for candidate in candidates:
+        by_wire_code.setdefault(candidate["machine_code"], candidate)
+    if len(by_wire_code) != 1:
+        choices = ", ".join(sorted(by_wire_code))
+        raise ValueError(
+            f"ambiguous {machine} mapping for param_id={param_id}, "
+            f"service_tarification_id={service_id}; matching machine codes: {choices}. "
+            "Send both identifiers or correct the curated mapping."
+        )
+    return next(iter(by_wire_code.values()))
+
+
+def _resolve_selectra_tests(values):
+    if not isinstance(values, list) or not values:
         raise ValueError("Selectra tests must be a non-empty JSON array")
-    tests = list(dict.fromkeys(
-        _validate_text("Selectra test", value, maximum=60) for value in tests
-    ))
-    if len(tests) > 40:
+    resolved = []
+    for value in values:
+        if isinstance(value, dict):
+            resolved.append(_resolve_machine_test("selectra", value))
+        else:
+            # Backward compatibility for the local bench and existing clients.
+            method = _validate_text("Selectra test", value, maximum=60)
+            resolved.append({
+                "machine_test": method,
+                "machine_code": test_abbreviation(method),
+                "param_id": None,
+                "service_tarification_id": None,
+            })
+    unique = {item["machine_code"]: item for item in resolved}
+    if len(unique) > 40:
         raise ValueError("no more than 40 Selectra tests can be staged")
-    for test in tests:
-        test_abbreviation(test)
+    return list(unique.values())
+
+
+def _validated_selectra_api_order(body):
+    resolved_tests = _resolve_selectra_tests(body.get("tests"))
+    tests = [item["machine_test"] for item in resolved_tests]
     birth_date = str(body.get("birth_date") or "").strip()
     try:
         date.fromisoformat(birth_date)
@@ -158,7 +256,7 @@ def _validated_selectra_api_order(body):
     if len(patient_name) > 20:
         raise ValueError("Selectra family name plus given name must be 20 characters or fewer")
     _require_ascii(order, "Selectra")
-    return order
+    return order, resolved_tests
 
 
 def _validated_cyanvision_order(body):
@@ -333,7 +431,7 @@ def create_app(store, service, cyanvision_service=None, order_api_token=None):
         if not isinstance(body, dict):
             return jsonify({"error": "request body must be a JSON object"}), 400
         try:
-            order = _validated_selectra_api_order(body)
+            order, resolved_tests = _validated_selectra_api_order(body)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         saved = store.upsert_order(order, source="api", ready=True)
@@ -342,6 +440,7 @@ def create_app(store, service, cyanvision_service=None, order_api_token=None):
             "analyzer": "selectra",
             "state": "ready",
             "order": saved,
+            "resolved_tests": resolved_tests,
             "response_preview": build_order_records(saved),
         }), 201
 
@@ -369,6 +468,10 @@ def create_app(store, service, cyanvision_service=None, order_api_token=None):
         if not isinstance(body, dict):
             return jsonify({"error": "request body must be a JSON object"}), 400
         try:
+            resolved_test = None
+            if "test" in body:
+                resolved_test = _resolve_machine_test("cyanvision", body["test"])
+                body = {**body, "test_code": resolved_test["machine_code"]}
             order = _validated_cyanvision_api_order(body)
             allowed_codes = {item["code"] for item in _cyanvision_test_options()}
             if order["test_code"] not in allowed_codes:
@@ -383,6 +486,7 @@ def create_app(store, service, cyanvision_service=None, order_api_token=None):
             "analyzer": "cyanvision",
             "state": "ready",
             "order": saved,
+            "resolved_test": resolved_test,
             "response_preview": cyanvision_service.preview(saved),
         }), 201
 

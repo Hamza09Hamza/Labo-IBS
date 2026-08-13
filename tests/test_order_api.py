@@ -165,6 +165,48 @@ class OrderApiCase(unittest.TestCase):
         )
         self.assertEqual(duplicate.sent, [])
 
+    def test_selectra_api_resolves_clinic_ids_to_machine_codes(self):
+        order = {
+            **SELECTRA_ORDER,
+            "sample_id": "SEL-ID-001",
+            "tests": [
+                {"service_tarification_id": 392},
+                {"param_id": 99953, "service_tarification_id": 528},
+                {"service_tarification_id": 481},
+            ],
+        }
+        response = self.client.post(
+            "/api/v1/orders/selectra", json=order, headers=HEADERS,
+        )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.get_json()
+        self.assertEqual(
+            [item["machine_code"] for item in payload["resolved_tests"]],
+            ["Crea", "SGPT", "ALP"],
+        )
+        self.assertEqual(payload["order"]["tests"], [
+            "Creatinine", "SGPT", "Phosphatase ALP",
+        ])
+        self.assertIn("^^^Crea\\^^^SGPT\\^^^ALP", payload["response_preview"][2])
+
+    def test_selectra_api_rejects_ambiguous_or_unknown_clinic_ids(self):
+        ambiguous = self.client.post(
+            "/api/v1/orders/selectra",
+            json={**SELECTRA_ORDER, "tests": [{"service_tarification_id": 528}]},
+            headers=HEADERS,
+        )
+        self.assertEqual(ambiguous.status_code, 400)
+        self.assertIn("ambiguous", ambiguous.get_json()["error"])
+
+        unknown = self.client.post(
+            "/api/v1/orders/selectra",
+            json={**SELECTRA_ORDER, "tests": [{"param_id": 123456789}]},
+            headers=HEADERS,
+        )
+        self.assertEqual(unknown.status_code, 400)
+        self.assertIn("no curated", unknown.get_json()["error"])
+
     @patch("selectra_host_query.app.pg.list_observed_test_codes", return_value=[])
     def test_cyanvision_api_queue_uses_documented_dsr_ack_continuation(self, _observed):
         first = self.client.post(
@@ -206,6 +248,22 @@ class OrderApiCase(unittest.TestCase):
         ])
         self.assertFalse(restarted_store.get_cyanvision_order("CYAN-API-001")["ready"])
         self.assertFalse(restarted_store.get_cyanvision_order("CYAN-API-002")["ready"])
+
+    @patch("selectra_host_query.app.pg.list_observed_test_codes", return_value=[])
+    def test_cyanvision_api_resolves_clinic_ids_to_program_code(self, _observed):
+        response = self.client.post(
+            "/api/v1/orders/cyanvision",
+            json={
+                key: value for key, value in CYAN_ORDER.items()
+                if key != "test_code"
+            } | {"sample_id": "CYAN-ID-001", "test": {"service_tarification_id": 481}},
+            headers=HEADERS,
+        )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.get_json()
+        self.assertEqual(payload["resolved_test"]["machine_code"], "ALP")
+        self.assertEqual(payload["order"]["test_code"], "ALP")
 
     @patch("selectra_host_query.app.pg.list_observed_test_codes", return_value=[])
     def test_api_status_and_cancellation(self, _observed):

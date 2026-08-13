@@ -50,7 +50,10 @@ POST /api/v1/orders/selectra
   "birth_date": "1980-06-15",
   "sex": "F",
   "specimen_type": "SERUM",
-  "tests": ["Creatinine", "SGPT"]
+  "tests": [
+    {"service_tarification_id": 392},
+    {"param_id": 99953, "service_tarification_id": 528}
+  ]
 }
 ```
 
@@ -60,8 +63,15 @@ Rules:
 - `family_name` plus a space plus `given_name` must fit the Selectra's
   20-character patient-name limit.
 - `birth_date` uses `YYYY-MM-DD`; `sex` is `M`, `F`, or `U`.
-- `tests` is a non-empty array of installed Selectra method names or their
-  confirmed short codes. Unknown values are rejected before staging.
+- `tests` should contain clinic identifiers. Each entry requires `param_id`,
+  `service_tarification_id`, or both. LaboBridge reverses its curated Selectra
+  mappings and transmits the exact installed analyzer code.
+- Supply both identifiers when available. For example, tarification `528`
+  contains both SGOT and SGPT and is rejected as ambiguous unless its
+  `param_id` is also supplied.
+- Unknown or ambiguous identifiers return HTTP `400`; LaboBridge never guesses
+  a clinical test. Legacy method-name strings remain accepted temporarily for
+  compatibility, but new integrations should use identifiers.
 - Reposting the same `sample_id` replaces the stored content and makes it
   ready again. `external_order_id` is optional correlation metadata.
 
@@ -95,7 +105,7 @@ POST /api/v1/orders/cyanvision
   "family_name": "PATIENT",
   "birth_date": "1980-06-15",
   "sex": "F",
-  "test_code": "ALP"
+  "test": {"service_tarification_id": 481}
 }
 ```
 
@@ -104,9 +114,11 @@ Rules:
 - Values must use printable ASCII because the documented outbound message
   declares `ASCII` in `MSH-18`.
 - `sex` is `M` or `F`.
-- `test_code` must exactly match a CYANVision code already curated or received
-  by the bridge. It is sent as `DSP|8||<test_code>|||`; numeric NTE Program IDs
-  are not substituted.
+- `test` requires `param_id`, `service_tarification_id`, or both. LaboBridge
+  resolves it through the curated CYANVision mappings and sends the resulting
+  program code as `DSP|8||<code>|||`.
+- Unknown or ambiguous identifiers return HTTP `400`. The legacy `test_code`
+  field remains accepted temporarily for compatibility.
 - The currently verified message layout represents one test per sample.
   Submit another sample/order item for another test until the instrument's
   multi-test worklist representation is confirmed.
@@ -129,9 +141,9 @@ DELETE /api/v1/orders/cyanvision/<sample_id>
 curl -X POST "http://172.16.2.4:5052/api/v1/orders/selectra" \
   -H "Content-Type: application/json" \
   -H "X-API-TOKEN: replace-with-the-configured-secret" \
-  --data '{"external_order_id":"LIS-ORDER-7812","sample_id":"2608130012","patient_id":"PAT-4821","family_name":"BENCH","given_name":"PATIENT","birth_date":"1980-06-15","sex":"F","specimen_type":"SERUM","tests":["Creatinine","SGPT"]}'
+  --data '{"external_order_id":"LIS-ORDER-7812","sample_id":"2608130012","patient_id":"PAT-4821","family_name":"BENCH","given_name":"PATIENT","birth_date":"1980-06-15","sex":"F","specimen_type":"SERUM","tests":[{"service_tarification_id":392},{"param_id":99953,"service_tarification_id":528}]}'
 ```
 
 A successful stage returns HTTP `201`, `state: "ready"`, the persisted order,
-and a protocol preview. Validation failures return `400` and do not store or
-arm anything.
+the `resolved_tests`/`resolved_test` mapping decision, and a protocol preview.
+Validation failures return `400` and do not store or arm anything.
