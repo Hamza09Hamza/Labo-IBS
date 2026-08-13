@@ -140,6 +140,26 @@ async function loadCyanvision() {
   }
 }
 
+async function loadCyanvisionTests() {
+  const result = await api("/api/cyanvision/tests");
+  if (result.available === false) return;
+  const select = $("#cyanTestCode");
+  const previous = select.value;
+  const options = result.tests || [];
+  select.innerHTML = '<option value="">Choose an exact CYANVision code</option>' + options.map((test) => {
+    const provenance = test.observed && test.mapped
+      ? "received + mapped"
+      : test.observed ? "received" : "mapped";
+    const name = test.name && test.name !== test.code ? ` — ${test.name}` : "";
+    return `<option value="${escapeHtml(test.code)}">${escapeHtml(test.code)}${escapeHtml(name)} · ${provenance}</option>`;
+  }).join("");
+  select.disabled = options.length === 0;
+  if (options.some((test) => test.code === previous)) select.value = previous;
+  $("#cyanTestHelp").textContent = options.length
+    ? `${options.length} exact code${options.length === 1 ? "" : "s"} available from CYANVision history and mappings. One test is sent in DSP line 8.`
+    : "No known CYANVision codes are available. Receive or map a result before staging a worklist.";
+}
+
 async function stageCyanvision(event) {
   event.preventDefault();
   const payload = {
@@ -334,11 +354,12 @@ async function stageOrder(event) {
 async function initialize() {
   const assays = await api("/api/assays");
   $("#assaySuggestions").innerHTML = assays.assays.map((assay) => `<option value="${escapeHtml(assay)}"></option>`).join("");
-  await Promise.all([loadStatus(), loadCyanvision(), loadOrders(), loadEvents()]);
+  await Promise.all([loadStatus(), loadCyanvision(), loadCyanvisionTests(), loadOrders(), loadEvents()]);
   setInterval(() => loadStatus().catch(() => {}), 2500);
   setInterval(() => loadOrders().catch(() => {}), 2200);
   setInterval(() => loadEvents().catch(() => {}), 1200);
   setInterval(() => loadCyanvision().catch(() => {}), 1800);
+  setInterval(() => loadCyanvisionTests().catch(() => {}), 30000);
 }
 
 $("#addTest").addEventListener("click", addTest);

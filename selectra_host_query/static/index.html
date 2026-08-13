@@ -63,7 +63,7 @@
         <div>
           <span class="cyanvision-kicker">CYANVision · HL7 v2.3.1 · one-load worklist</span>
           <h2 id="cyanvisionTitle">Prepare one sample for “Load from LIS”</h2>
-          <p>Arm one patient and one exact CYANVision program code. Nothing is transmitted until the analyzer sends QRY^Q02 on port <span class="mono" id="cyanvisionPort">6004</span>.</p>
+          <p>Arm one patient and one exact CYANVision test code. Nothing is transmitted until the analyzer sends QRY^Q02 on port <span class="mono" id="cyanvisionPort">6004</span>.</p>
         </div>
         <div class="cyanvision-state" id="cyanvisionState"><i></i><span>Draft</span></div>
       </header>
@@ -75,7 +75,7 @@
             <label class="field"><span>Family name</span><input id="cyanFamilyName" required maxlength="80" autocomplete="off" placeholder="APPELLE FODHIL"></label>
             <label class="field"><span>Birth date</span><input id="cyanBirthDate" type="date" required></label>
             <label class="field"><span>Sex</span><select id="cyanSex"><option value="M">Male</option><option value="F">Female</option></select></label>
-            <label class="field field-wide"><span>CYANVision program/test code</span><input id="cyanTestCode" required maxlength="60" autocomplete="off" placeholder="e.g. GLUC"><small>Use the exact program code configured on CYANVision; this first controlled load sends one test only.</small></label>
+            <label class="field field-wide"><span>CYANVision test</span><select id="cyanTestCode" required disabled><option value="">Loading exact analyzer codes…</option></select><small id="cyanTestHelp">Only codes already mapped or received from CYANVision are available. The selected code is sent in DSP line 8.</small></label>
           </div>
           <div class="form-alert" id="cyanFormAlert" role="alert" hidden></div>
           <button class="primary-action cyanvision-action" type="submit" id="cyanArmButton"><span>Stage and arm one load</span><small>Wait for Patient Worklist → Load from LIS</small></button>

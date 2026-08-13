@@ -219,6 +219,53 @@ def write_pending_param(machine, rec):
         return False
 
 
+def list_observed_test_codes(machine):
+    """Return exact test codes previously received from one analyzer.
+
+    Both mapped results and the pending mapping backlog are included. This
+    is intentionally observation-based: callers can offer analyzer spellings
+    the bridge has really seen instead of inventing outbound order names.
+    """
+    conn = _get_conn()
+    if conn is None:
+        return []
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT test_code, param_name AS display_name, received_at AS last_seen,
+                       'matched' AS source
+                FROM (
+                    SELECT DISTINCT ON (test_code)
+                           test_code, param_name, received_at
+                    FROM labo_bridge.labo_bridge_results
+                    WHERE machine = %s AND trim(test_code) <> ''
+                    ORDER BY test_code, received_at DESC
+                ) latest_results
+                UNION ALL
+                SELECT test_code, test_name AS display_name, last_seen_at AS last_seen,
+                       'pending' AS source
+                FROM labo_bridge.pending_params
+                WHERE machine = %s AND trim(test_code) <> ''
+                ORDER BY test_code
+                """,
+                (machine, machine),
+            )
+            rows = cur.fetchall()
+        return [
+            {
+                "code": row[0],
+                "display_name": row[1] or row[0],
+                "last_seen": row[2].isoformat() if row[2] else None,
+                "source": row[3],
+            }
+            for row in rows
+        ]
+    except Exception as e:
+        print(f"[pg] WARNING: failed to list observed codes for {machine}: {e}")
+        return []
+
+
 def write_matched_result(machine, sample_id, specimen, test_code, match, rec,
                          api_sent=False, api_result_id=None):
     """

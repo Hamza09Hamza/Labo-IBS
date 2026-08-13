@@ -9,6 +9,8 @@ from datetime import date, timedelta
 
 from flask import Flask, jsonify, request, send_from_directory
 
+from labo_bridge import mappings as bridge_mappings, pg
+
 from .protocol import build_order_records, test_abbreviation
 
 
@@ -146,6 +148,36 @@ def _validated_cyanvision_order(body):
     return order
 
 
+def _cyanvision_test_options():
+    """Exact CYANVision codes from curated mappings and received results."""
+    choices = {}
+    for code, targets in bridge_mappings.MAPS.get("cyanvision", {}).items():
+        primary = targets[0]
+        choices[code] = {
+            "code": code,
+            "name": primary[4] or primary[3] or primary[2] or code,
+            "observed": False,
+            "mapped": True,
+            "last_seen": None,
+        }
+    for row in pg.list_observed_test_codes("cyanvision"):
+        code = str(row.get("code") or "").strip()
+        if not code:
+            continue
+        entry = choices.setdefault(code, {
+            "code": code,
+            "name": row.get("display_name") or code,
+            "observed": False,
+            "mapped": False,
+            "last_seen": None,
+        })
+        entry["observed"] = True
+        entry["last_seen"] = row.get("last_seen")
+        if entry["name"] == code and row.get("display_name"):
+            entry["name"] = row["display_name"]
+    return sorted(choices.values(), key=lambda item: item["code"].casefold())
+
+
 def create_app(store, service, cyanvision_service=None):
     app = Flask(__name__, static_folder=None)
 
@@ -182,6 +214,12 @@ def create_app(store, service, cyanvision_service=None):
         preview = cyanvision_service.preview(status_value["order"]) if status_value["order"] else []
         return jsonify({"available": True, **status_value, "response_preview": preview})
 
+    @app.get("/api/cyanvision/tests")
+    def cyanvision_tests():
+        if not cyanvision_service:
+            return jsonify({"available": False, "tests": []})
+        return jsonify({"available": True, "tests": _cyanvision_test_options()})
+
     @app.post("/api/cyanvision/worklist")
     def stage_cyanvision_worklist():
         if not cyanvision_service:
@@ -191,6 +229,11 @@ def create_app(store, service, cyanvision_service=None):
             return jsonify({"error": "explicit ARM CYANVISION WORKLIST confirmation is required"}), 400
         try:
             order = _validated_cyanvision_order(body)
+            allowed_codes = {item["code"] for item in _cyanvision_test_options()}
+            if order["test_code"] not in allowed_codes:
+                raise ValueError(
+                    "Select a CYANVision test from the exact codes known to this bridge"
+                )
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         status_value = cyanvision_service.stage_and_arm(order)

@@ -25,7 +25,7 @@ The outgoing message contains the manual's exact positional data records:
 - `DSP.5`: sex (`M` or `F`)
 - `DSP.6`: birth date as `YYYYMMDD000000`
 - `DSP.7`: `1`
-- `DSP.8`: one exact analyzer program/test code
+- `DSP.8`: one exact analyzer test code (for example `GLUC` in CY014)
 - empty `DSC`: final dataset, with no continuation page
 
 The web form is served by `run_all.py` at `http://<server-IP>:5052/`.

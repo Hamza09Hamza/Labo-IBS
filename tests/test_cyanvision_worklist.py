@@ -20,7 +20,7 @@ ORDER = {
     "family_name": "APPELLE FODHIL",
     "birth_date": "1980-06-15",
     "sex": "F",
-    "test_code": "GLUC",
+    "test_code": "ALP",
 }
 
 QUERY = [
@@ -71,7 +71,7 @@ class CyanVisionWorklistCase(unittest.TestCase):
                 "DSP|5||F|||",
                 "DSP|6||19800615000000|||",
                 "DSP|7||1|||",
-                "DSP|8||GLUC|||",
+                "DSP|8||ALP|||",
             ],
         )
         self.assertEqual(records[-1], "DSC||")
@@ -138,6 +138,12 @@ class CyanVisionWorklistCase(unittest.TestCase):
             json={**ORDER, "sample_id": "BAD\u000bID", "confirmation": "ARM CYANVISION WORKLIST"},
         )
         self.assertEqual(invalid_mllp_control.status_code, 400)
+        unknown_code = client.post(
+            "/api/cyanvision/worklist",
+            json={**ORDER, "test_code": "ALP-TYPO", "confirmation": "ARM CYANVISION WORKLIST"},
+        )
+        self.assertEqual(unknown_code.status_code, 400)
+        self.assertIn("exact codes", unknown_code.get_json()["error"])
 
         staged = client.post(
             "/api/cyanvision/worklist",
@@ -152,6 +158,28 @@ class CyanVisionWorklistCase(unittest.TestCase):
         disarmed = client.delete("/api/cyanvision/worklist")
         self.assertEqual(disarmed.status_code, 200)
         self.assertFalse(disarmed.get_json()["armed"])
+
+    @patch("selectra_host_query.app.pg.list_observed_test_codes")
+    def test_web_api_lists_mapped_and_observed_cyanvision_codes(self, observed):
+        observed.return_value = [
+            {
+                "code": "LIPASE", "display_name": "LIPASE",
+                "last_seen": "2026-08-10T15:10:12", "source": "pending",
+            },
+            {
+                "code": "ALP", "display_name": "Phosphatases alcalines",
+                "last_seen": "2026-07-22T15:20:45", "source": "matched",
+            },
+        ]
+        selectra = SelectraHostQueryServer(self.store, armed=False, embedded=True)
+        client = create_app(self.store, selectra, self.service).test_client()
+        response = client.get("/api/cyanvision/tests")
+        self.assertEqual(response.status_code, 200)
+        tests = {item["code"]: item for item in response.get_json()["tests"]}
+        self.assertTrue(tests["ALP"]["mapped"])
+        self.assertTrue(tests["ALP"]["observed"])
+        self.assertTrue(tests["LIPASE"]["observed"])
+        self.assertFalse(tests["LIPASE"]["mapped"])
 
     def test_standalone_selectra_ui_reports_cyanvision_unavailable_without_error(self):
         selectra = SelectraHostQueryServer(self.store, armed=False, embedded=True)

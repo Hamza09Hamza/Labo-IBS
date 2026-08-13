@@ -69,13 +69,19 @@ the page.
 The same `5052` page also has a separate **CYANVision one-load worklist**.
 It uses the analyzer's existing HL7/MLLP connection on port `6004`; it does
 not open another listener. Fill one non-production sample, the patient name,
-birth date, sex, and one exact CYANVision program code, then press **Stage and
+birth date, sex, and choose one exact CYANVision test code, then press **Stage and
 arm one load**. On the analyzer, open **Patient Worklist** and press **Load
 from LIS**. The analyzer initiates `QRY^Q02`, the bridge returns one final
 `DSR^Q03` dataset, and the analyzer answers `ACK^Q03`. A matching positive
 acknowledgment disarms the staged item automatically. A disconnect before the
 acknowledgment leaves it armed for one retry; a negative acknowledgment stops
 automatic sending and is shown as rejected in the console trace.
+
+The CYANVision test control is a locked selector, not free text. Its choices
+combine exact codes from the curated `cyanvision` mappings with codes actually
+received in `labo_bridge_results` and `pending_params`. The API applies the
+same allow-list when arming, preventing a mistyped or invented `DSP|8` value
+even if a request bypasses the browser.
 
 ## Main components
 
