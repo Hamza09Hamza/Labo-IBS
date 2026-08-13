@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Start EVERYTHING in one process: all analyzer listeners (each on its own
-port), the admin web console at http://127.0.0.1:5050, and the Selectra Host
-Query staging page at http://127.0.0.1:5052. This is the one command to run.
+port), the admin web console at http://127.0.0.1:5050, and the analyzer order
+console at http://127.0.0.1:5052. This is the one command to run.
 
 Ports (see labo_bridge/server.py MACHINES for the source of truth):
     xn330      -> 6001
@@ -12,7 +12,7 @@ Ports (see labo_bridge/server.py MACHINES for the source of truth):
     xs500i     -> 6005  (via IPU on the machine's own PC)
     minividas  -> 6006
     admin UI   -> http://127.0.0.1:5050
-    Selectra Host Query UI -> http://127.0.0.1:5052
+    Selectra + CYANVision order UI -> http://127.0.0.1:5052
 
 Every line printed is prefixed with the machine name, and every result
 actually written to the local database (labo_bridge.db) is printed alongside
@@ -28,6 +28,7 @@ from labo_bridge.admin import app as admin_app
 from selectra_host_query.app import create_app as create_selectra_query_app
 from selectra_host_query.server import SelectraHostQueryServer
 from selectra_host_query.store import BenchStore
+from cyanvision_worklist.service import CyanVisionWorklistService
 
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -40,10 +41,14 @@ selectra_query_store = BenchStore(SELECTRA_QUERY_DATA)
 selectra_query_service = SelectraHostQueryServer(
     selectra_query_store, host="0.0.0.0", port=6003, armed=False, embedded=True,
 )
+cyanvision_worklist_service = CyanVisionWorklistService(
+    selectra_query_store, port=6004,
+)
 selectra_query_app = create_selectra_query_app(
-    selectra_query_store, selectra_query_service,
+    selectra_query_store, selectra_query_service, cyanvision_worklist_service,
 )
 server.configure_selectra_host_query(selectra_query_service)
+server.configure_cyanvision_worklist(cyanvision_worklist_service)
 
 
 def _run_admin():
@@ -73,7 +78,8 @@ if __name__ == "__main__":
         target=_run_selectra_query_ui, name="selectra-query-ui", daemon=True,
     )
     selectra_query_thread.start()
-    print("[selectra] Host Query staging page running at http://127.0.0.1:5052")
+    print("[orders] Selectra + CYANVision order console running at http://127.0.0.1:5052")
     print("[selectra] Exact-ID replies and the continuous wildcard probe start DISARMED; instrument traffic remains on port 6003.\n")
+    print("[cyanvision] One-load worklist starts DISARMED; queries and results remain on port 6004.\n")
 
     server.run_all()

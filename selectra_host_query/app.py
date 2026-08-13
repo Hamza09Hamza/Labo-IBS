@@ -1,4 +1,4 @@
-"""Flask API and static UI for the isolated Selectra Host Query bench."""
+"""Flask API and static UI for controlled analyzer order downloads."""
 
 from __future__ import annotations
 
@@ -62,7 +62,7 @@ def _validate_text(name, value, required=True, maximum=80):
     if len(value) > maximum:
         raise ValueError(f"{name} must be {maximum} characters or fewer")
     if value and not SAFE_VALUE.fullmatch(value):
-        raise ValueError(f"{name} contains a reserved LIS2-A delimiter")
+        raise ValueError(f"{name} contains a reserved protocol delimiter")
     return value
 
 
@@ -106,7 +106,47 @@ def _validated_order(body):
     }
 
 
-def create_app(store, service):
+def _validated_cyanvision_order(body):
+    for value in (
+        body.get("sample_id"), body.get("given_name"), body.get("family_name"),
+        body.get("test_code"),
+    ):
+        if "~" in str(value or ""):
+            raise ValueError("CYANVision values cannot contain HL7 delimiters")
+    sample_id = _validate_text("CYANVision sample ID", body.get("sample_id"), maximum=20)
+    birth_date = str(body.get("birth_date") or "").strip()
+    if not birth_date:
+        raise ValueError("CYANVision birth date is required")
+    try:
+        date.fromisoformat(birth_date)
+    except ValueError:
+        raise ValueError("CYANVision birth date must use YYYY-MM-DD") from None
+    sex = str(body.get("sex") or "").strip().upper()
+    if sex not in {"M", "F"}:
+        raise ValueError("CYANVision sex must be M or F")
+    order = {
+        "sample_id": sample_id,
+        "given_name": _validate_text(
+            "CYANVision given name", body.get("given_name"), maximum=80,
+        ),
+        "family_name": _validate_text(
+            "CYANVision family name", body.get("family_name"), maximum=80,
+        ),
+        "birth_date": birth_date,
+        "sex": sex,
+        "test_code": _validate_text(
+            "CYANVision program/test code", body.get("test_code"), maximum=60,
+        ),
+    }
+    if any(
+        any(ord(character) < 32 or ord(character) > 126 for character in str(value))
+        for value in order.values()
+    ):
+        raise ValueError("CYANVision fields must use printable ASCII characters for this protocol")
+    return order
+
+
+def create_app(store, service, cyanvision_service=None):
     app = Flask(__name__, static_folder=None)
 
     @app.after_request
@@ -124,7 +164,47 @@ def create_app(store, service):
 
     @app.get("/api/status")
     def status():
-        return jsonify({**service.status(), "orders": len(store.list_orders())})
+        cyanvision = cyanvision_service.status() if cyanvision_service else None
+        return jsonify({
+            **service.status(),
+            "orders": len(store.list_orders()),
+            "cyanvision": cyanvision,
+        })
+
+    @app.get("/api/cyanvision/worklist")
+    def cyanvision_worklist_status():
+        if not cyanvision_service:
+            # The standalone Selectra bench uses the same static page without
+            # installing a CYANVision listener. Let that UI hide this panel
+            # instead of aborting all of its polling during initialization.
+            return jsonify({"available": False})
+        status_value = cyanvision_service.status()
+        preview = cyanvision_service.preview(status_value["order"]) if status_value["order"] else []
+        return jsonify({"available": True, **status_value, "response_preview": preview})
+
+    @app.post("/api/cyanvision/worklist")
+    def stage_cyanvision_worklist():
+        if not cyanvision_service:
+            return jsonify({"error": "CYANVision worklist service is unavailable"}), 503
+        body = request.get_json(silent=True) or {}
+        if body.get("confirmation") != "ARM CYANVISION WORKLIST":
+            return jsonify({"error": "explicit ARM CYANVISION WORKLIST confirmation is required"}), 400
+        try:
+            order = _validated_cyanvision_order(body)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        status_value = cyanvision_service.stage_and_arm(order)
+        return jsonify({
+            "ok": True,
+            **status_value,
+            "response_preview": cyanvision_service.preview(order),
+        }), 201
+
+    @app.delete("/api/cyanvision/worklist")
+    def disarm_cyanvision_worklist():
+        if not cyanvision_service:
+            return jsonify({"error": "CYANVision worklist service is unavailable"}), 503
+        return jsonify({"ok": True, **cyanvision_service.disarm()})
 
     @app.get("/api/assays")
     def assays():

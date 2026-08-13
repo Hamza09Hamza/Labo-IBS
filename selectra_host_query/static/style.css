@@ -82,6 +82,33 @@ h1 { margin: 0; max-width: 760px; font-size: clamp(34px, 4.2vw, 62px); line-heig
 .probe-panel.armed .probe-kicker, .probe-panel.armed .probe-copy strong { color: var(--red); }
 .probe-panel.armed button { border-color: var(--red); background: var(--red); }
 
+.cyanvision-worklist { margin-bottom: 18px; border-color: #a9c9e8; box-shadow: none; }
+.cyanvision-head { min-height: 98px; padding: 18px 20px; display: flex; align-items: center; justify-content: space-between; gap: 20px; border-bottom: 1px solid #cfe0ef; background: var(--blue-soft); }
+.cyanvision-head > div:first-child { min-width: 0; }
+.cyanvision-kicker { display: block; color: var(--blue); font: 700 9px var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+.cyanvision-head h2 { margin: 3px 0 0; font-size: 20px; letter-spacing: -.035em; }
+.cyanvision-head p { max-width: 800px; margin: 4px 0 0; color: #526c82; font-size: 10px; }
+.cyanvision-state { min-width: 190px; padding: 9px 11px; display: flex; align-items: center; gap: 8px; border: 1px solid #9dbedc; background: white; color: var(--blue); font: 700 9px var(--mono); text-transform: uppercase; }
+.cyanvision-state i { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--blue); }
+.cyanvision-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, .9fr); }
+.cyanvision-form { border-right: 1px solid var(--line); }
+.cyanvision-form .field input:focus, .cyanvision-form .field select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(36,99,169,.12); }
+.cyanvision-action { background: #174f82; border-color: #174f82; }
+.cyanvision-action:hover { background: var(--blue); border-color: var(--blue); }
+.cyanvision-disarm { width: 100%; min-height: 40px; margin-top: 8px; border: 1px solid var(--red); background: white; color: var(--red); cursor: pointer; font-size: 10px; font-weight: 750; }
+.cyanvision-preview { min-width: 0; margin: 20px; border: 1px solid #cfe0ef; background: #f7fbff; }
+.cyanvision-instruction { padding: 12px; border-bottom: 1px solid #dce9f4; color: #355a77; font-size: 10px; }
+.cyanvision-preview pre { max-height: 330px; margin: 0; padding: 12px; overflow: auto; color: #294f6d; font: 9px/1.6 var(--mono); white-space: pre-wrap; word-break: break-word; }
+.cyanvision-worklist.armed .cyanvision-head { background: #ddebfa; }
+.cyanvision-worklist.armed .cyanvision-state { border-color: var(--blue); background: var(--blue); color: white; }
+.cyanvision-worklist.armed .cyanvision-state i { background: white; box-shadow: 0 0 0 4px rgba(255,255,255,.18); }
+.cyanvision-worklist.pending .cyanvision-state { border-color: var(--amber); background: var(--amber-soft); color: var(--amber); }
+.cyanvision-worklist.pending .cyanvision-state i { background: var(--amber); }
+.cyanvision-worklist.acknowledged .cyanvision-state { border-color: var(--teal); background: var(--teal-soft); color: var(--teal); }
+.cyanvision-worklist.acknowledged .cyanvision-state i { background: var(--teal); }
+.cyanvision-worklist.rejected .cyanvision-state { border-color: var(--red); background: var(--red-soft); color: var(--red); }
+.cyanvision-worklist.rejected .cyanvision-state i { background: var(--red); }
+
 .bench-layout { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(360px, .95fr); gap: 18px; align-items: start; }
 .panel { min-width: 0; border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
 .panel-head { min-height: 78px; padding: 17px 19px; display: flex; align-items: center; justify-content: space-between; gap: 15px; border-bottom: 1px solid var(--line); }
@@ -169,6 +196,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   .endpoint-strip > div:nth-child(2) { border-right: 0; }
   .endpoint-strip > div:nth-child(-n+2) { border-bottom: 1px solid rgba(255,255,255,.13); }
   .bench-layout { grid-template-columns: minmax(0, 1fr); }
+  .cyanvision-grid { grid-template-columns: minmax(0, 1fr); }
+  .cyanvision-form { border-right: 0; border-bottom: 1px solid var(--line); }
   .probe-panel { grid-template-columns: minmax(0, 1fr) minmax(250px, .8fr); }
   .probe-panel button { grid-column: 1 / -1; width: 100%; }
   .trace-panel { min-height: 520px; }
@@ -185,6 +214,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   .arming-panel button { width: 100%; }
   .probe-panel { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .probe-panel button { grid-column: auto; }
+  .cyanvision-head { align-items: stretch; flex-direction: column; }
+  .cyanvision-state { width: 100%; min-width: 0; }
+  .cyanvision-preview { margin: 12px; }
   .form-grid { grid-template-columns: minmax(0, 1fr); }
   .field-wide { grid-column: auto; }
   .field-label { align-items: flex-start; flex-direction: column; gap: 2px; }

@@ -59,12 +59,23 @@ The ports shown above are defaults. Runtime port selection and machine metadata 
 The normal `run_all.py` process also serves:
 
 - Labo Bridge administration: `http://<server-IP>:5050/`
-- Selectra Host Query staging and trace: `http://<server-IP>:5052/`
+- Selectra + CYANVision order console and trace: `http://<server-IP>:5052/`
 
 The Selectra continues to communicate on its existing listener port (`6003`
 unless changed in machine settings). Host Query replies start disarmed after
 every restart and require an exact sample-ID match against an order staged on
 the page.
+
+The same `5052` page also has a separate **CYANVision one-load worklist**.
+It uses the analyzer's existing HL7/MLLP connection on port `6004`; it does
+not open another listener. Fill one non-production sample, the patient name,
+birth date, sex, and one exact CYANVision program code, then press **Stage and
+arm one load**. On the analyzer, open **Patient Worklist** and press **Load
+from LIS**. The analyzer initiates `QRY^Q02`, the bridge returns one final
+`DSR^Q03` dataset, and the analyzer answers `ACK^Q03`. A matching positive
+acknowledgment disarms the staged item automatically. A disconnect before the
+acknowledgment leaves it armed for one retry; a negative acknowledgment stops
+automatic sending and is shown as rejected in the console trace.
 
 ## Main components
 
