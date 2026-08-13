@@ -5,8 +5,9 @@ Two protocol styles are supported behind one accept-loop:
 
   ASTM/LIS2-A (xn330, ismart, selectra): ENQ/ACK/STX-framing, records decoded
       one line at a time by the machine's decode_record().
-  HL7/MLLP    (cyanvision): whole segments decoded by decode_segment(), and a
-      full HL7 ACK message is sent back per message.
+  HL7/MLLP    (cyanvision): whole segments decoded by decode_segment(); result
+      messages receive a full HL7 ACK, while worklist QRY messages receive the
+      protocol-specific DSR response on that same socket.
 
 Each machine's config (protocol, decoder, port, extras) is declared in MACHINES.
 Every machine gets its OWN port, since the wire protocols don't self-identify
@@ -44,11 +45,17 @@ RESULTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir,
 # the production Selectra socket on port 6003; it never opens a second
 # instrument listener and never replies to an unmatched sample ID.
 _selectra_host_query_service = None
+_cyanvision_worklist_service = None
 
 
 def configure_selectra_host_query(service):
     global _selectra_host_query_service
     _selectra_host_query_service = service
+
+
+def configure_cyanvision_worklist(service):
+    global _cyanvision_worklist_service
+    _cyanvision_worklist_service = service
 
 # machine -> config. Each machine listens on its own fixed port.
 # "selectra" is the chemistry analyzer's real machine name (ELITech is the
@@ -506,12 +513,13 @@ def _handle_hl7(conn, addr, cfg, machine, quiet):
 
         for message, remainder in hl7_mllp.iter_messages(buffer):
             buffer = remainder
+            segments = hl7_mllp.split_segments(message)
             session = _Session(machine, addr[0], quiet)
             # Reconstruct the exact bytes as received, including the MLLP
             # envelope (VT/FS/CR) that iter_messages strips off for parsing.
             session.raw_bytes = hl7_mllp.B_VT + message + hl7_mllp.B_FS + bytes([hl7_mllp.CR])
             control_id = ""
-            for seg in hl7_mllp.split_segments(message):
+            for seg in segments:
                 fields = seg.split("|")
                 ev = cfg["decode_segment"](fields)
                 if ev.get("kind") == "header":
@@ -521,7 +529,13 @@ def _handle_hl7(conn, addr, cfg, machine, quiet):
             _write_session_file(session)
             if not quiet:
                 print(f"[{machine}] message complete ({session.result_count} results written)")
-            conn.sendall(hl7_mllp.build_ack(control_id or "0"))
+            handled = (
+                machine == "cyanvision"
+                and _cyanvision_worklist_service is not None
+                and _cyanvision_worklist_service.handle_message(conn, segments)
+            )
+            if not handled:
+                conn.sendall(hl7_mllp.build_ack(control_id or "0"))
 
 
 def _bind_socket(machine: str, port: int) -> socket.socket:
@@ -548,6 +562,8 @@ def _serve_one_machine(machine: str, quiet: bool, stop_event: threading.Event):
     sock = _bind_socket(machine, port)
     if machine == "selectra" and _selectra_host_query_service is not None:
         _selectra_host_query_service.set_instrument_port(port)
+    if machine == "cyanvision" and _cyanvision_worklist_service is not None:
+        _cyanvision_worklist_service.set_instrument_port(port)
     print(f"[{machine}] listening on {HOST}:{port} ({cfg['protocol'].upper()}). "
           f"Storage: Postgres (labo_bridge schema)")
     live_status.set_listening(machine, datetime.now().isoformat(timespec="seconds"))
@@ -569,6 +585,8 @@ def _serve_one_machine(machine: str, quiet: bool, stop_event: threading.Event):
                     port = desired_port
                     if machine == "selectra" and _selectra_host_query_service is not None:
                         _selectra_host_query_service.set_instrument_port(port)
+                    if machine == "cyanvision" and _cyanvision_worklist_service is not None:
+                        _cyanvision_worklist_service.set_instrument_port(port)
                     print(f"[{machine}] now listening on {HOST}:{port}.")
                 except OSError as e:
                     print(f"[{machine}] failed to bind port {desired_port} ({e}); "
@@ -603,6 +621,8 @@ def _serve_one_machine(machine: str, quiet: bool, stop_event: threading.Event):
             finally:
                 if machine == "selectra" and _selectra_host_query_service is not None:
                     _selectra_host_query_service.client_disconnected(query_peer)
+                if machine == "cyanvision" and _cyanvision_worklist_service is not None:
+                    _cyanvision_worklist_service.connection_closed()
                 conn.close()
             print(f"[{machine}] ready for next connection.")
             live_status.set_listening(machine, datetime.now().isoformat(timespec="seconds"))

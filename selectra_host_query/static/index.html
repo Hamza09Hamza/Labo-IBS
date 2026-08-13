@@ -4,18 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#102a35">
-  <title>Selectra Host Query Bench</title>
+  <title>Analyzer Order Console</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <a class="skip-link" href="#workspace">Skip to order staging</a>
 
   <header class="topbar">
-    <a class="brand" href="/" aria-label="Selectra Host Query Bench home">
+    <a class="brand" href="/" aria-label="Analyzer Order Console home">
       <span class="brand-device" aria-hidden="true">
         <svg viewBox="0 0 32 32" fill="none"><path d="M5 8h22v15H5z" stroke="currentColor" stroke-width="1.7"/><path d="M9 12h7M9 16h11M9 20h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M23 12v8" stroke="currentColor" stroke-width="1.7"/><circle cx="23" cy="12" r="1.4" fill="currentColor"/></svg>
       </span>
-      <span><strong>Selectra</strong><small>Host Query Bench</small></span>
+      <span><strong>Labo Bridge</strong><small>Analyzer Order Console</small></span>
     </a>
     <div class="mode-pill" id="modePill"><span></span><strong>Checking mode…</strong></div>
   </header>
@@ -23,10 +23,10 @@
   <main id="workspace">
     <section class="intro" aria-labelledby="pageTitle">
       <div>
-        <p class="eyebrow">Selectra LIS2-A order staging</p>
-        <h1 id="pageTitle">Stage one order.<br>Ask for it by sample ID.</h1>
+        <p class="eyebrow">Bidirectional analyzer order staging</p>
+        <h1 id="pageTitle">Prepare the order.<br>Let the analyzer pull it.</h1>
       </div>
-      <p class="intro-copy">Prepare an order here, then wait. Nothing is returned until the Selectra sends a Host Query containing the exact staged sample ID.</p>
+      <p class="intro-copy">CYANVision downloads one armed worklist through “Load from LIS.” Selectra remains available below with its separate exact-ID query flow.</p>
     </section>
 
     <section class="arming-panel" id="armingPanel" aria-label="Live response control">
@@ -56,6 +56,37 @@
       <div><span>Selectra endpoint</span><strong class="mono" id="instrumentEndpoint">—</strong></div>
       <div><span>TCP client</span><strong id="clientState">Waiting</strong></div>
       <div><span>Staged orders</span><strong class="mono" id="orderCount">0</strong></div>
+    </section>
+
+    <section class="cyanvision-worklist panel" id="cyanvisionPanel" aria-labelledby="cyanvisionTitle">
+      <header class="cyanvision-head">
+        <div>
+          <span class="cyanvision-kicker">CYANVision · HL7 v2.3.1 · one-load worklist</span>
+          <h2 id="cyanvisionTitle">Prepare one sample for “Load from LIS”</h2>
+          <p>Arm one patient and one exact CYANVision test code. Nothing is transmitted until the analyzer sends QRY^Q02 on port <span class="mono" id="cyanvisionPort">6004</span>.</p>
+        </div>
+        <div class="cyanvision-state" id="cyanvisionState"><i></i><span>Draft</span></div>
+      </header>
+      <div class="cyanvision-grid">
+        <form id="cyanvisionForm" class="cyanvision-form" novalidate>
+          <div class="form-grid">
+            <label class="field field-wide"><span>Sample / patient ID</span><input id="cyanSampleId" required maxlength="20" autocomplete="off" placeholder="e.g. CYAN-DEMO-01"><small>This becomes DSP line 1 and must identify the worklist sample.</small></label>
+            <label class="field"><span>Given name</span><input id="cyanGivenName" required maxlength="80" autocomplete="off" placeholder="MANEL"></label>
+            <label class="field"><span>Family name</span><input id="cyanFamilyName" required maxlength="80" autocomplete="off" placeholder="APPELLE FODHIL"></label>
+            <label class="field"><span>Birth date</span><input id="cyanBirthDate" type="date" required></label>
+            <label class="field"><span>Sex</span><select id="cyanSex"><option value="M">Male</option><option value="F">Female</option></select></label>
+            <label class="field field-wide"><span>CYANVision test</span><select id="cyanTestCode" required disabled><option value="">Loading exact analyzer codes…</option></select><small id="cyanTestHelp">Only codes already mapped or received from CYANVision are available. The selected code is sent in DSP line 8.</small></label>
+          </div>
+          <div class="form-alert" id="cyanFormAlert" role="alert" hidden></div>
+          <button class="primary-action cyanvision-action" type="submit" id="cyanArmButton"><span>Stage and arm one load</span><small>Wait for Patient Worklist → Load from LIS</small></button>
+          <button class="cyanvision-disarm" type="button" id="cyanDisarmButton" hidden>Disarm without sending</button>
+        </form>
+        <section class="cyanvision-preview" aria-label="CYANVision outbound preview">
+          <div class="preview-head"><strong>DSR^Q03 preview</strong><span>VT / HL7 / FS CR</span></div>
+          <div class="cyanvision-instruction" id="cyanvisionInstruction">Fill the form, verify the exact analyzer program code, then arm it.</div>
+          <pre id="cyanResponseRecords">No worklist prepared.</pre>
+        </section>
+      </div>
     </section>
 
     <div class="bench-layout">
@@ -97,7 +128,7 @@
           <div><span class="step">02</span><div><h2 id="traceTitle">Protocol trace</h2><p>Incoming queries, exact-ID matches, and outbound order frames appear here.</p></div></div>
           <span class="live-marker"><i></i>Live</span>
         </header>
-        <div class="trace-legend"><span class="instrument-arrow">Selectra → Host</span><span class="host-arrow">Host → Selectra</span></div>
+        <div class="trace-legend"><span class="instrument-arrow">Analyzer → Host</span><span class="host-arrow">Host → Analyzer</span></div>
         <div class="trace-stream" id="traceStream" aria-live="polite">
           <div class="trace-empty"><strong>Waiting for activity</strong><span>Stage an order, then simulate a query or connect the Selectra.</span></div>
         </div>

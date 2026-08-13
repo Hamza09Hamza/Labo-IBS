@@ -1,13 +1,16 @@
-"""Flask API and static UI for the isolated Selectra Host Query bench."""
+"""Flask API and static UI for controlled analyzer order downloads."""
 
 from __future__ import annotations
 
 import os
+import hmac
 import random
 import re
 from datetime import date, timedelta
 
 from flask import Flask, jsonify, request, send_from_directory
+
+from labo_bridge import mappings as bridge_mappings, pg
 
 from .protocol import build_order_records, test_abbreviation
 
@@ -62,7 +65,7 @@ def _validate_text(name, value, required=True, maximum=80):
     if len(value) > maximum:
         raise ValueError(f"{name} must be {maximum} characters or fewer")
     if value and not SAFE_VALUE.fullmatch(value):
-        raise ValueError(f"{name} contains a reserved LIS2-A delimiter")
+        raise ValueError(f"{name} contains a reserved protocol delimiter")
     return value
 
 
@@ -106,8 +109,155 @@ def _validated_order(body):
     }
 
 
-def create_app(store, service):
+def _require_ascii(order, analyzer):
+    values = []
+    for value in order.values():
+        values.extend(value if isinstance(value, list) else [value])
+    if any(
+        any(ord(character) < 32 or ord(character) > 126 for character in str(value or ""))
+        for value in values
+    ):
+        raise ValueError(f"{analyzer} fields must use printable ASCII characters")
+
+
+def _validated_selectra_api_order(body):
+    tests = body.get("tests")
+    if not isinstance(tests, list) or not tests:
+        raise ValueError("Selectra tests must be a non-empty JSON array")
+    tests = list(dict.fromkeys(
+        _validate_text("Selectra test", value, maximum=60) for value in tests
+    ))
+    if len(tests) > 40:
+        raise ValueError("no more than 40 Selectra tests can be staged")
+    for test in tests:
+        test_abbreviation(test)
+    birth_date = str(body.get("birth_date") or "").strip()
+    try:
+        date.fromisoformat(birth_date)
+    except ValueError:
+        raise ValueError("Selectra birth date must use YYYY-MM-DD") from None
+    sex = str(body.get("sex") or "").strip().upper()
+    if sex not in {"M", "F", "U"}:
+        raise ValueError("Selectra sex must be M, F, or U")
+    order = {
+        "sample_id": _validate_text("Selectra sample ID", body.get("sample_id"), maximum=12),
+        "patient_id": _validate_text("Selectra patient ID", body.get("patient_id"), maximum=64),
+        "family_name": _validate_text("Selectra family name", body.get("family_name"), maximum=80),
+        "given_name": _validate_text("Selectra given name", body.get("given_name"), maximum=80),
+        "birth_date": birth_date,
+        "sex": sex,
+        "specimen_type": _validate_text(
+            "Selectra specimen type", body.get("specimen_type"), maximum=32,
+        ),
+        "tests": tests,
+        "external_order_id": _validate_text(
+            "external order ID", body.get("external_order_id"), required=False, maximum=100,
+        ) or None,
+    }
+    patient_name = " ".join((order["family_name"], order["given_name"]))
+    if len(patient_name) > 20:
+        raise ValueError("Selectra family name plus given name must be 20 characters or fewer")
+    _require_ascii(order, "Selectra")
+    return order
+
+
+def _validated_cyanvision_order(body):
+    for value in (
+        body.get("sample_id"), body.get("given_name"), body.get("family_name"),
+        body.get("test_code"),
+    ):
+        if "~" in str(value or ""):
+            raise ValueError("CYANVision values cannot contain HL7 delimiters")
+    sample_id = _validate_text("CYANVision sample ID", body.get("sample_id"), maximum=20)
+    birth_date = str(body.get("birth_date") or "").strip()
+    if not birth_date:
+        raise ValueError("CYANVision birth date is required")
+    try:
+        date.fromisoformat(birth_date)
+    except ValueError:
+        raise ValueError("CYANVision birth date must use YYYY-MM-DD") from None
+    sex = str(body.get("sex") or "").strip().upper()
+    if sex not in {"M", "F"}:
+        raise ValueError("CYANVision sex must be M or F")
+    order = {
+        "sample_id": sample_id,
+        "given_name": _validate_text(
+            "CYANVision given name", body.get("given_name"), maximum=80,
+        ),
+        "family_name": _validate_text(
+            "CYANVision family name", body.get("family_name"), maximum=80,
+        ),
+        "birth_date": birth_date,
+        "sex": sex,
+        "test_code": _validate_text(
+            "CYANVision program/test code", body.get("test_code"), maximum=60,
+        ),
+    }
+    if any(
+        any(ord(character) < 32 or ord(character) > 126 for character in str(value))
+        for value in order.values()
+    ):
+        raise ValueError("CYANVision fields must use printable ASCII characters for this protocol")
+    return order
+
+
+def _validated_cyanvision_api_order(body):
+    order = _validated_cyanvision_order(body)
+    order["external_order_id"] = _validate_text(
+        "external order ID", body.get("external_order_id"), required=False, maximum=100,
+    ) or None
+    return order
+
+
+def _cyanvision_test_options():
+    """Exact CYANVision codes from curated mappings and received results."""
+    choices = {}
+    for code, targets in bridge_mappings.MAPS.get("cyanvision", {}).items():
+        primary = targets[0]
+        choices[code] = {
+            "code": code,
+            "name": primary[4] or primary[3] or primary[2] or code,
+            "observed": False,
+            "mapped": True,
+            "last_seen": None,
+        }
+    for row in pg.list_observed_test_codes("cyanvision"):
+        code = str(row.get("code") or "").strip()
+        if not code:
+            continue
+        entry = choices.setdefault(code, {
+            "code": code,
+            "name": row.get("display_name") or code,
+            "observed": False,
+            "mapped": False,
+            "last_seen": None,
+        })
+        entry["observed"] = True
+        entry["last_seen"] = row.get("last_seen")
+        if entry["name"] == code and row.get("display_name"):
+            entry["name"] = row["display_name"]
+    return sorted(choices.values(), key=lambda item: item["code"].casefold())
+
+
+def create_app(store, service, cyanvision_service=None, order_api_token=None):
     app = Flask(__name__, static_folder=None)
+    configured_order_api_token = (
+        order_api_token if order_api_token is not None
+        else os.environ.get("LABO_ORDER_API_TOKEN", "").strip()
+    )
+
+    @app.before_request
+    def protect_order_api():
+        if not request.path.startswith("/api/v1/orders/"):
+            return None
+        if not configured_order_api_token:
+            return jsonify({
+                "error": "order API is disabled; configure LABO_ORDER_API_TOKEN"
+            }), 503
+        supplied = request.headers.get("X-API-TOKEN", "")
+        if not hmac.compare_digest(supplied, configured_order_api_token):
+            return jsonify({"error": "invalid or missing X-API-TOKEN"}), 401
+        return None
 
     @app.after_request
     def no_cache(response):
@@ -124,7 +274,133 @@ def create_app(store, service):
 
     @app.get("/api/status")
     def status():
-        return jsonify({**service.status(), "orders": len(store.list_orders())})
+        cyanvision = cyanvision_service.status() if cyanvision_service else None
+        return jsonify({
+            **service.status(),
+            "orders": len(store.list_orders()),
+            "cyanvision": cyanvision,
+        })
+
+    @app.get("/api/cyanvision/worklist")
+    def cyanvision_worklist_status():
+        if not cyanvision_service:
+            # The standalone Selectra bench uses the same static page without
+            # installing a CYANVision listener. Let that UI hide this panel
+            # instead of aborting all of its polling during initialization.
+            return jsonify({"available": False})
+        status_value = cyanvision_service.status()
+        preview = cyanvision_service.preview(status_value["order"]) if status_value["order"] else []
+        return jsonify({"available": True, **status_value, "response_preview": preview})
+
+    @app.get("/api/cyanvision/tests")
+    def cyanvision_tests():
+        if not cyanvision_service:
+            return jsonify({"available": False, "tests": []})
+        return jsonify({"available": True, "tests": _cyanvision_test_options()})
+
+    @app.post("/api/cyanvision/worklist")
+    def stage_cyanvision_worklist():
+        if not cyanvision_service:
+            return jsonify({"error": "CYANVision worklist service is unavailable"}), 503
+        body = request.get_json(silent=True) or {}
+        if body.get("confirmation") != "ARM CYANVISION WORKLIST":
+            return jsonify({"error": "explicit ARM CYANVISION WORKLIST confirmation is required"}), 400
+        try:
+            order = _validated_cyanvision_order(body)
+            allowed_codes = {item["code"] for item in _cyanvision_test_options()}
+            if order["test_code"] not in allowed_codes:
+                raise ValueError(
+                    "Select a CYANVision test from the exact codes known to this bridge"
+                )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        status_value = cyanvision_service.stage_and_arm(order)
+        return jsonify({
+            "ok": True,
+            **status_value,
+            "response_preview": cyanvision_service.preview(order),
+        }), 201
+
+    @app.delete("/api/cyanvision/worklist")
+    def disarm_cyanvision_worklist():
+        if not cyanvision_service:
+            return jsonify({"error": "CYANVision worklist service is unavailable"}), 503
+        return jsonify({"ok": True, **cyanvision_service.disarm()})
+
+    @app.post("/api/v1/orders/selectra")
+    def api_stage_selectra_order():
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "request body must be a JSON object"}), 400
+        try:
+            order = _validated_selectra_api_order(body)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        saved = store.upsert_order(order, source="api", ready=True)
+        return jsonify({
+            "ok": True,
+            "analyzer": "selectra",
+            "state": "ready",
+            "order": saved,
+            "response_preview": build_order_records(saved),
+        }), 201
+
+    @app.get("/api/v1/orders/selectra/<sample_id>")
+    def api_get_selectra_order(sample_id):
+        order = store.get_order(sample_id)
+        if not order or order.get("source") != "api":
+            return jsonify({"error": "Selectra API order not found"}), 404
+        return jsonify({"analyzer": "selectra", "order": order})
+
+    @app.delete("/api/v1/orders/selectra/<sample_id>")
+    def api_cancel_selectra_order(sample_id):
+        order = store.get_order(sample_id)
+        if not order or order.get("source") != "api":
+            return jsonify({"error": "Selectra API order not found"}), 404
+        store.cancel_order(sample_id)
+        store.add_event("api", "order_cancelled", sample_id, "Selectra API order cancelled")
+        return jsonify({"ok": True, "analyzer": "selectra", "sample_id": sample_id, "state": "cancelled"})
+
+    @app.post("/api/v1/orders/cyanvision")
+    def api_stage_cyanvision_order():
+        if not cyanvision_service:
+            return jsonify({"error": "CYANVision worklist service is unavailable"}), 503
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "request body must be a JSON object"}), 400
+        try:
+            order = _validated_cyanvision_api_order(body)
+            allowed_codes = {item["code"] for item in _cyanvision_test_options()}
+            if order["test_code"] not in allowed_codes:
+                raise ValueError(
+                    "Select a CYANVision test from the exact codes known to this bridge"
+                )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        saved = store.upsert_cyanvision_order(order, source="api", ready=True)
+        return jsonify({
+            "ok": True,
+            "analyzer": "cyanvision",
+            "state": "ready",
+            "order": saved,
+            "response_preview": cyanvision_service.preview(saved),
+        }), 201
+
+    @app.get("/api/v1/orders/cyanvision/<sample_id>")
+    def api_get_cyanvision_order(sample_id):
+        order = store.get_cyanvision_order(sample_id)
+        if not order or order.get("source") != "api":
+            return jsonify({"error": "CYANVision API order not found"}), 404
+        return jsonify({"analyzer": "cyanvision", "order": order})
+
+    @app.delete("/api/v1/orders/cyanvision/<sample_id>")
+    def api_cancel_cyanvision_order(sample_id):
+        order = store.get_cyanvision_order(sample_id)
+        if not order or order.get("source") != "api":
+            return jsonify({"error": "CYANVision API order not found"}), 404
+        store.cancel_cyanvision_order(sample_id)
+        store.add_event("api", "cyanvision_order_cancelled", sample_id, "CYANVision API order cancelled")
+        return jsonify({"ok": True, "analyzer": "cyanvision", "sample_id": sample_id, "state": "cancelled"})
 
     @app.get("/api/assays")
     def assays():

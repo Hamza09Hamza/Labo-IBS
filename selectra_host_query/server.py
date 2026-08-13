@@ -264,8 +264,10 @@ class SelectraHostQueryServer:
         """Process one complete analyzer batch after its EOT.
 
         In embedded mode ``connection`` is the existing production Selectra
-        socket accepted by LaboBridge on port 6003.  A reply is possible only
-        for an exact staged sample-ID match and only while explicitly armed.
+        socket accepted by LaboBridge on port 6003. A reply is possible only
+        for an exact staged sample-ID match. Manual bench orders require the
+        global arm switch; authenticated API orders carry their own persisted
+        ready flag and therefore remain available across process restarts.
         """
         rejections = protocol.application_rejections(records)
         for rejection in rejections:
@@ -328,11 +330,23 @@ class SelectraHostQueryServer:
         self.store.add_event("instrument", "query_matched", sample_id,
                              f"Matched exact sample ID {sample_id}", "\n".join(query_records))
         response = protocol.build_order_records(order)
-        if not self.armed and not is_probe:
+        is_api_order = order.get("source") == "api"
+        api_ready = is_api_order and bool(order.get("ready"))
+        may_send = is_probe or api_ready or (self.armed and not is_api_order)
+        if not may_send:
+            reason = (
+                "API order is no longer ready (already delivered, cancelled, or rejected)"
+                if is_api_order else "live responses are disarmed"
+            )
             self.store.add_event("host", "response_blocked", sample_id,
-                                 "Order response built but not sent because live responses are disarmed",
+                                 f"Order response built but not sent because {reason}",
                                  "\n".join(response))
             return
+        if api_ready:
+            self.store.add_event(
+                "host", "api_order_triggered", sample_id,
+                "Authenticated API order matched exactly and is being sent to Selectra",
+            )
         try:
             self._send_transaction(connection, response, sample_id)
             self.store.mark_transport_acknowledged(sample_id)

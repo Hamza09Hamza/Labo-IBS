@@ -65,9 +65,11 @@ function formatTime(value) {
 async function loadStatus() {
   const status = await api("/api/status");
   const pill = $("#modePill");
-  const anyArmed = status.armed || status.probe_armed;
+  const anyArmed = status.armed || status.probe_armed || status.cyanvision?.armed;
   pill.className = `mode-pill ${anyArmed ? "armed" : "safe"}`;
-  pill.querySelector("strong").textContent = status.probe_armed
+  pill.querySelector("strong").textContent = status.cyanvision?.armed
+    ? "CYANVision load armed"
+    : status.probe_armed
     ? "Continuous probe armed"
     : status.armed ? "Live responses armed" : "Observation mode";
   liveResponsesArmed = status.armed;
@@ -97,6 +99,108 @@ async function loadStatus() {
     ? `${status.connected_clients} connected`
     : status.last_peer ? `Last: ${status.last_peer}` : "Waiting";
   $("#orderCount").textContent = String(status.orders);
+}
+
+async function loadCyanvision() {
+  const status = await api("/api/cyanvision/worklist");
+  if (status.available === false) {
+    $("#cyanvisionPanel").hidden = true;
+    return;
+  }
+  $("#cyanvisionPanel").hidden = false;
+  $("#cyanvisionPort").textContent = String(status.listener_port);
+  const panel = $("#cyanvisionPanel");
+  const stateElement = $("#cyanvisionState");
+  panel.classList.toggle("armed", status.armed);
+  panel.classList.toggle("pending", status.pending_ack);
+  panel.classList.toggle("acknowledged", status.status === "acknowledged");
+  panel.classList.toggle("rejected", status.status === "rejected");
+  const labels = {
+    empty: "Draft",
+    disarmed: "Disarmed",
+    armed: "Armed — waiting for Load from LIS",
+    waiting_for_ack: "Sent — waiting for ACK^Q03",
+    acknowledged: "ACK received — load complete",
+    rejected: "Rejected — check protocol trace",
+  };
+  stateElement.querySelector("span").textContent = labels[status.status] || status.status;
+  $("#cyanDisarmButton").hidden = !status.armed;
+  $("#cyanArmButton").querySelector("span").textContent = status.armed
+    ? "Replace and re-arm this load"
+    : "Stage and arm one load";
+  if (status.order) {
+    $("#cyanResponseRecords").textContent = (status.response_preview || []).join("\n");
+    $("#cyanvisionInstruction").textContent = status.pending_ack
+      ? `Worklist ${status.order.sample_id} was sent; waiting for CYANVision ACK^Q03.`
+      : status.status === "acknowledged"
+        ? `CYANVision acknowledged ${status.order.sample_id}. The one-load order is disarmed.`
+        : status.armed
+          ? `Now ask the operator to open Patient Worklist and press Load from LIS. Only ${status.order.sample_id} will be offered.`
+          : `Last prepared worklist: ${status.order.sample_id}.`;
+  } else if (status.api_ready_orders) {
+    $("#cyanvisionInstruction").textContent = `${status.api_ready_orders} API worklist item${status.api_ready_orders === 1 ? " is" : "s are"} ready. CYANVision will download the queue when the operator presses Load from LIS.`;
+  }
+}
+
+async function loadCyanvisionTests() {
+  const result = await api("/api/cyanvision/tests");
+  if (result.available === false) return;
+  const select = $("#cyanTestCode");
+  const previous = select.value;
+  const options = result.tests || [];
+  select.innerHTML = '<option value="">Choose an exact CYANVision code</option>' + options.map((test) => {
+    const provenance = test.observed && test.mapped
+      ? "received + mapped"
+      : test.observed ? "received" : "mapped";
+    const name = test.name && test.name !== test.code ? ` — ${test.name}` : "";
+    return `<option value="${escapeHtml(test.code)}">${escapeHtml(test.code)}${escapeHtml(name)} · ${provenance}</option>`;
+  }).join("");
+  select.disabled = options.length === 0;
+  if (options.some((test) => test.code === previous)) select.value = previous;
+  $("#cyanTestHelp").textContent = options.length
+    ? `${options.length} exact code${options.length === 1 ? "" : "s"} available from CYANVision history and mappings. One test is sent in DSP line 8.`
+    : "No known CYANVision codes are available. Receive or map a result before staging a worklist.";
+}
+
+async function stageCyanvision(event) {
+  event.preventDefault();
+  const payload = {
+    sample_id: $("#cyanSampleId").value.trim(),
+    given_name: $("#cyanGivenName").value.trim(),
+    family_name: $("#cyanFamilyName").value.trim(),
+    birth_date: $("#cyanBirthDate").value,
+    sex: $("#cyanSex").value,
+    test_code: $("#cyanTestCode").value.trim(),
+    confirmation: "ARM CYANVISION WORKLIST",
+  };
+  if (!window.confirm(
+    `Arm CYANVision worklist ${payload.sample_id} with program ${payload.test_code}? The next Load from LIS request will download it.`
+  )) return;
+  const alert = $("#cyanFormAlert");
+  const button = $("#cyanArmButton");
+  alert.hidden = true;
+  button.disabled = true;
+  try {
+    const result = await api("/api/cyanvision/worklist", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    $("#cyanResponseRecords").textContent = result.response_preview.join("\n");
+    toast(`CYANVision worklist ${result.order.sample_id} armed for one load.`);
+    await Promise.all([loadCyanvision(), loadStatus(), loadEvents()]);
+  } catch (error) {
+    alert.textContent = error.message;
+    alert.hidden = false;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function disarmCyanvision() {
+  await api("/api/cyanvision/worklist", { method: "DELETE" });
+  toast("CYANVision worklist disarmed.");
+  await Promise.all([loadCyanvision(), loadStatus(), loadEvents()]);
 }
 
 async function toggleContinuousProbe() {
@@ -252,10 +356,12 @@ async function stageOrder(event) {
 async function initialize() {
   const assays = await api("/api/assays");
   $("#assaySuggestions").innerHTML = assays.assays.map((assay) => `<option value="${escapeHtml(assay)}"></option>`).join("");
-  await Promise.all([loadStatus(), loadOrders(), loadEvents()]);
+  await Promise.all([loadStatus(), loadCyanvision(), loadCyanvisionTests(), loadOrders(), loadEvents()]);
   setInterval(() => loadStatus().catch(() => {}), 2500);
   setInterval(() => loadOrders().catch(() => {}), 2200);
   setInterval(() => loadEvents().catch(() => {}), 1200);
+  setInterval(() => loadCyanvision().catch(() => {}), 1800);
+  setInterval(() => loadCyanvisionTests().catch(() => {}), 30000);
 }
 
 $("#addTest").addEventListener("click", addTest);
@@ -265,5 +371,7 @@ $("#testCodeInput").addEventListener("keydown", (event) => {
 $("#orderForm").addEventListener("submit", stageOrder);
 $("#armingButton").addEventListener("click", () => toggleLiveResponses().catch((error) => toast(error.message)));
 $("#probeButton").addEventListener("click", () => toggleContinuousProbe().catch((error) => toast(error.message)));
+$("#cyanvisionForm").addEventListener("submit", stageCyanvision);
+$("#cyanDisarmButton").addEventListener("click", () => disarmCyanvision().catch((error) => toast(error.message)));
 renderTests();
 initialize().catch((error) => toast(`Bench failed to initialize: ${error.message}`));
