@@ -140,13 +140,14 @@ def build_order_records(order: dict) -> list[str]:
     sample_id = _clean(order["sample_id"])
     if not sample_id or len(sample_id) > 12:
         raise ValueError("Selectra sample ID must contain 1 to 12 characters")
+    preserve_demographics = bool(order.get("preserve_analyser_demographics"))
     family_name = _clean(order.get("family_name"))
     given_name = _clean(order.get("given_name"))
     patient_name = " ".join(part for part in (family_name, given_name) if part)[:20]
     birth_date = _clean(order.get("birth_date")).replace("-", "")
-    sex = _clean(order.get("sex") or "U").upper()
+    sex = _clean(order.get("sex") or "M").upper()
     if sex not in {"M", "F", "U"}:
-        sex = "U"
+        sex = "M"
     tests = [test_abbreviation(code) for code in order.get("tests") or []]
     if not tests:
         raise ValueError("at least one installed Selectra test is required")
@@ -158,15 +159,52 @@ def build_order_records(order: dict) -> list[str]:
     order_fields[2] = sample_id
     order_fields[4] = universal_tests
     order_fields[5] = "R"
-    order_fields[11] = "N"
+    action_code = _clean(order.get("action_code") or "N").upper()
+    if action_code not in {"N", "A", "C"}:
+        raise ValueError("Selectra action code must be N, A, or C")
+    order_fields[11] = action_code
+    specimen_type = _clean(order.get("outbound_specimen_type"))
+    if specimen_type:
+        order_fields[15] = specimen_type
+    ordering_physician = _clean(order.get("ordering_physician"))[:20]
+    if ordering_physician:
+        order_fields[16] = ordering_physician
     order_fields[25] = "Q"
+
+    # The analyser rejects an order when demographics conflict with a request
+    # already present under the same sample ID. A wildcard response cannot
+    # know those demographics, so it must send the required minimal P record
+    # rather than inventing a patient name, birth date, or sex.
+    patient_record = (
+        "P|1"
+        if preserve_demographics
+        else f"P|1||||{patient_name}||{birth_date}|{sex}"
+    )
 
     return [
         f"H|\\^&|||WINLAB|||||PROM||P|LIS2-A|{_stamp()}",
-        f"P|1||||{patient_name}||{birth_date}|{sex}",
+        patient_record,
         "|".join(order_fields),
         "L|1|F",
     ]
+
+
+def application_rejections(records: list[str]) -> list[dict[str, str]]:
+    """Extract Selectra O records that reject a host order (O-26 = X)."""
+    rejected = []
+    patient_name = ""
+    for record in records:
+        fields = record.split("|")
+        record_type = fields[0].lstrip("01234567") if fields else ""
+        if record_type == "P":
+            patient_name = fields[5].strip() if len(fields) > 5 else ""
+        elif record_type == "O" and len(fields) > 25 and fields[25].strip() == "X":
+            rejected.append({
+                "sample_id": fields[2].strip() if len(fields) > 2 else "",
+                "patient_name": patient_name,
+                "record": record,
+            })
+    return rejected
 
 
 def visible_bytes(data: bytes) -> str:

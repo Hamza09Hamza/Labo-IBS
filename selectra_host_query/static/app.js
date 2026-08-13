@@ -102,7 +102,7 @@ async function loadStatus() {
 async function toggleContinuousProbe() {
   const nextArmed = !continuousProbeArmed;
   if (nextArmed && !window.confirm(
-    "Arm continuous probe? EVERY Selectra sample query will receive APPELLE MANEL/FODHIL and three installed tests until you manually disarm it or restart LaboBridge."
+    "Arm continuous probe? EVERY Selectra sample query will receive three appended tests and the APPELLE MANEL/FODHIL order notice until you manually disarm it or restart LaboBridge."
   )) return;
   const button = $("#probeButton");
   button.disabled = true;
@@ -181,7 +181,7 @@ async function loadEvents() {
 }
 
 function orderCard(order) {
-  const statusClass = order.status === "error" ? "error" : "";
+  const statusClass = ["error", "rejected"].includes(order.status) ? "error" : "";
   return `
     <article class="order-card">
       <div class="order-card-head"><h3>${escapeHtml(order.sample_id)}</h3><span class="order-status ${statusClass}">${escapeHtml(order.status)}</span></div>

@@ -121,6 +121,16 @@ class SelectraHostQueryServer:
             "sex": "M",
             "specimen_type": "Normal",
             "tests": tests,
+            # Preserve the analyser's existing patient demographics. The
+            # manual says conflicting names or birth dates produce O-26=X.
+            "preserve_analyser_demographics": True,
+            # Append the tests to an existing request (or create one when it
+            # does not exist) instead of replacing the sample request.
+            "action_code": "A",
+            "outbound_specimen_type": "Normal",
+            # Keep the human-visible diagnostic text in the documented O-17
+            # Ordering Physician field, whose maximum is also 20 characters.
+            "ordering_physician": PROBE_PATIENT_NAME,
         }
 
     def set_instrument_port(self, port: int):
@@ -257,6 +267,20 @@ class SelectraHostQueryServer:
         socket accepted by LaboBridge on port 6003.  A reply is possible only
         for an exact staged sample-ID match and only while explicitly armed.
         """
+        rejections = protocol.application_rejections(records)
+        for rejection in rejections:
+            sample_id = rejection["sample_id"]
+            message = (
+                "Selectra rejected the host order at application level (O-26=X); "
+                "transport ACK alone did not mean the request was accepted"
+            )
+            if sample_id and self.store.get_order(sample_id):
+                self.store.mark_rejected(sample_id, message)
+            self.store.add_event(
+                "instrument", "application_rejected", sample_id or None,
+                message, rejection["record"],
+            )
+
         query_records = [record for record in records if record.lstrip("01234567").startswith("Q|")]
         if not query_records:
             if records:
@@ -285,7 +309,8 @@ class SelectraHostQueryServer:
                     "\n".join(query_records),
                 )
                 return
-            order = self.store.upsert_order(self._probe_order(sample_id, probe_tests))
+            order = self._probe_order(sample_id, probe_tests)
+            self.store.upsert_order(order)
             is_probe = True
             self.store.add_event(
                 "host", "continuous_probe_triggered", sample_id,
@@ -310,11 +335,11 @@ class SelectraHostQueryServer:
             return
         try:
             self._send_transaction(connection, response, sample_id)
-            self.store.mark_delivered(sample_id)
+            self.store.mark_transport_acknowledged(sample_id)
             if is_probe:
                 self.store.add_event(
-                    "host", "continuous_probe_delivered", sample_id,
-                    "Continuous automatic probe delivered; it remains armed for later queries",
+                    "host", "continuous_probe_transport_acknowledged", sample_id,
+                    "Selectra ACKed the continuous-probe frame; application acceptance is still pending",
                 )
         except (TimeoutError, socket.timeout, ConnectionError, OSError) as exc:
             message = f"Host response failed: {exc}"
@@ -360,5 +385,8 @@ class SelectraHostQueryServer:
         if not acknowledged:
             raise ConnectionError("Selectra rejected the complete order frame three times")
         connection.sendall(protocol.B_EOT)
-        self.store.add_event("host", "response_delivered", sample_id,
-                             f"Delivered {len(records)} records in one message frame and released the line", "<EOT>")
+        self.store.add_event(
+            "host", "transport_acknowledged", sample_id,
+            f"Selectra ACKed {len(records)} records in one message frame; released the line",
+            "<EOT>",
+        )

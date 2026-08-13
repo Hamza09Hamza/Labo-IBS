@@ -97,7 +97,10 @@ class BenchCase(unittest.TestCase):
         self.assertEqual(connection.sent[-1], protocol.B_EOT)
         records = protocol.split_records(protocol.decode_frame(connection.sent[1]))
         self.assertEqual([record[0] for record in records], ["H", "P", "O", "L"])
-        self.assertEqual(self.store.get_order("HQ-DEMO-001")["status"], "delivered")
+        self.assertEqual(
+            self.store.get_order("HQ-DEMO-001")["status"],
+            "transport_acknowledged",
+        )
 
     def test_api_stages_and_simulates_an_exact_id(self):
         service = SelectraHostQueryServer(self.store, armed=False)
@@ -184,16 +187,26 @@ class BenchCase(unittest.TestCase):
         service.handle_records(connection, ["Q|1|^REMOTE123||ALL||||||||0"])
         self.assertTrue(service.status()["probe_armed"])
         records = protocol.split_records(protocol.decode_frame(connection.sent[1]))
-        self.assertIn("APPELLE MANEL/FODHIL", records[1])
-        self.assertEqual(records[2].split("|")[2], "REMOTE123")
-        self.assertEqual(len(records[2].split("|")[4].split("\\")), 3)
-        self.assertEqual(self.store.get_order("REMOTE123")["status"], "delivered")
+        self.assertEqual(records[1], "P|1")
+        order_fields = records[2].split("|")
+        self.assertEqual(order_fields[2], "REMOTE123")
+        self.assertEqual(len(order_fields[4].split("\\")), 3)
+        self.assertEqual(order_fields[5], "R")
+        self.assertEqual(order_fields[11], "A")
+        self.assertEqual(order_fields[15], "Normal")
+        self.assertEqual(order_fields[16], "APPELLE MANEL/FODHIL")
+        self.assertEqual(order_fields[25], "Q")
+        self.assertEqual(
+            self.store.get_order("REMOTE123")["status"],
+            "transport_acknowledged",
+        )
 
         second_connection = FakeConnection(bytes([protocol.ACK]) * 2)
         service.handle_records(second_connection, ["Q|1|^REMOTE124||ALL||||||||0"])
         self.assertEqual(len(second_connection.sent), 3)
         second_records = protocol.split_records(protocol.decode_frame(second_connection.sent[1]))
-        self.assertIn("APPELLE MANEL/FODHIL", second_records[1])
+        self.assertEqual(second_records[1], "P|1")
+        self.assertEqual(second_records[2].split("|")[16], "APPELLE MANEL/FODHIL")
         self.assertEqual(second_records[2].split("|")[2], "REMOTE124")
         self.assertTrue(service.status()["probe_armed"])
 
@@ -203,6 +216,29 @@ class BenchCase(unittest.TestCase):
         third_connection = FakeConnection()
         service.handle_records(third_connection, ["Q|1|^REMOTE125||ALL||||||||0"])
         self.assertEqual(third_connection.sent, [])
+
+    def test_application_rejection_marks_transport_acknowledged_order_rejected(self):
+        service = SelectraHostQueryServer(self.store, armed=False, embedded=True)
+        service.set_probe_armed(True)
+        connection = FakeConnection(bytes([protocol.ACK]) * 2)
+        service.handle_records(connection, ["Q|1|^REMOTE123||ALL||||||||0"])
+        self.assertEqual(
+            self.store.get_order("REMOTE123")["status"],
+            "transport_acknowledged",
+        )
+
+        rejection = [
+            "H|\\^&|||PROM^4.3.13||||1.5|WINLAB||P|LIS2-A|20260812164529",
+            "P|1||||APPELLE MANEL/FODHIL|||M",
+            "O|1|REMOTE123|||R||||||||||||||||||||X",
+            "L|1|F",
+        ]
+        service.handle_records(FakeConnection(), rejection)
+        order = self.store.get_order("REMOTE123")
+        self.assertEqual(order["status"], "rejected")
+        self.assertIn("O-26=X", order["last_error"])
+        events = self.store.list_events()
+        self.assertTrue(any(event["kind"] == "application_rejected" for event in events))
 
 
 if __name__ == "__main__":

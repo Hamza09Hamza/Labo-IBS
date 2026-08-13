@@ -140,13 +140,19 @@ class BenchStore:
                 (now, now, sample_id),
             )
 
-    def mark_delivered(self, sample_id: str, simulated: bool = False):
+    def mark_transport_acknowledged(self, sample_id: str):
         now = utc_now()
-        status = "simulated" if simulated else "delivered"
         with self._session() as connection:
             connection.execute(
                 "UPDATE orders SET status=?, last_delivery_at=?, updated_at=?, last_error=NULL WHERE sample_id=?",
-                (status, now, now, sample_id),
+                ("transport_acknowledged", now, now, sample_id),
+            )
+
+    def mark_rejected(self, sample_id: str, message: str):
+        with self._session() as connection:
+            connection.execute(
+                "UPDATE orders SET status='rejected', last_error=?, updated_at=? WHERE sample_id=?",
+                (message, utc_now(), sample_id),
             )
 
     def mark_error(self, sample_id: str, message: str):

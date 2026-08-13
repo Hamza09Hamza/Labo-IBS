@@ -27,18 +27,22 @@ also has an explicitly armed **continuous wildcard probe**. It is deliberately
 separate from normal exact-ID replies:
 
 1. Open `http://<server-IP>:5052/` and click **Arm continuous probe**.
-2. Confirm that the page shows `APPELLE MANEL/FODHIL` and three randomly chosen,
-   installed Selectra test abbreviations.
+2. Confirm that the page shows the `APPELLE MANEL/FODHIL` order notice and three
+   randomly chosen, installed Selectra test abbreviations.
 3. Every valid Selectra `Q` record, for any 1–12 character sample ID, receives
-   that alert name and those three tests while the probe remains armed.
+   that order notice and those three tests while the probe remains armed.
 4. Click **Disarm continuous probe** to stop it. Restarting LaboBridge also
    returns it to the disarmed state.
 5. Check the trace for `continuous_probe_triggered`, `frame_sent`,
-   `response_delivered`, and `continuous_probe_delivered` for each query.
+   `transport_acknowledged`, and `continuous_probe_transport_acknowledged` for
+   each query. A later `application_rejected` event means the Selectra returned
+   `O-26=X` and did not accept the request.
 
-The alert is written as 20 characters because this analyzer's patient-name
-field is limited to 20. The three tests are selected when the probe is armed and
-remain visible in the page before the query arrives.
+The probe sends the required minimal `P|1` patient record so it cannot overwrite
+or conflict with demographics already held by the analyzer. The 20-character
+alert is placed in documented field O-17 (Ordering Physician), the tests are
+appended with action `A`, and the three selected tests remain visible in the
+page before the query arrives.
 
 **Safety:** each query could belong to a loaded sample. Returning an order can
 attach or start the selected tests on every queried sample. Arm this only for
@@ -53,8 +57,15 @@ the previous behavior where four separately acknowledged frames were still four
 incomplete application messages and were ignored by the analyzer.
 
 Outbound order records identify `WINLAB` as the host and `PROM` as the analyzer,
-use the analyzer's captured case-sensitive installed method abbreviations, set
-the order report type to `Q`, and terminate with `L|1|F`.
+use the analyzer's captured case-sensitive installed method abbreviations, and
+terminate with `L|1|F`. Normal staged orders use action `N`; the wildcard probe
+uses action `A`, sample type `Normal`, the order notice in O-17, and report type
+`Q`.
+
+An ASTM frame `ACK` proves only transport acceptance. The page records it as
+`transport_acknowledged`, not as application delivery. The analyzer may later
+return an O record with report type `X`; the bridge detects this as an explicit
+application rejection and marks that order `rejected`.
 
 ## Standalone isolated listener
 
