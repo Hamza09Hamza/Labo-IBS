@@ -279,6 +279,7 @@ MINIVIDAS_MAP = {
     # (commit c4944b4) - merged in here so it survives the list-format
     # conversion instead of getting overwritten by a plain git pull.
     "HAVM": [(None, 438, "HAV (IgM)", "", "HAV (IgM)")],
+    "RBG": [(None, 500, "Rubeole IGG", "RBG", "Rubeole IgG")],
 }
 
 MAPS = {
