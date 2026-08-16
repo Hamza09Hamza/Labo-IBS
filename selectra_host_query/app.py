@@ -397,6 +397,7 @@ def create_app(store, service, cyanvision_service=None, order_api_token=None):
                 order for order in active_orders
                 if order.get("source") == "api" and order.get("ready")
             ]),
+            "api_auto_arm": store.selectra_auto_arm_enabled(),
             "cyanvision": cyanvision,
         })
 
@@ -455,13 +456,39 @@ def create_app(store, service, cyanvision_service=None, order_api_token=None):
             order, resolved_tests = _validated_selectra_api_order(body)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
-        saved = store.upsert_order(order, source="api", ready=False)
+        saved = store.upsert_order(
+            order, source="api", ready=store.selectra_auto_arm_enabled(),
+        )
         return jsonify({
             "ok": True,
             "analyzer": "selectra",
             "sample_id": saved["sample_id"],
-            "state": "staged",
+            "state": "armed" if saved["ready"] else "staged",
         }), 201
+
+    @app.post("/api/selectra/auto-arm")
+    def set_selectra_auto_arm():
+        body = request.get_json(silent=True) or {}
+        enabled = body.get("enabled") is True
+        if enabled and body.get("confirmation") != "ENABLE SELECTRA AUTO ARM":
+            return jsonify({
+                "error": "explicit ENABLE SELECTRA AUTO ARM confirmation is required"
+            }), 400
+        changed = store.set_selectra_auto_arm(enabled)
+        store.add_event(
+            "local", "selectra_auto_arm_enabled" if enabled else "selectra_auto_arm_disabled",
+            None,
+            (
+                f"Selectra API auto-arm enabled; {changed} waiting order(s) armed"
+                if enabled else
+                f"Selectra API auto-arm disabled; {changed} waiting order(s) disarmed"
+            ),
+        )
+        return jsonify({
+            "ok": True,
+            "enabled": enabled,
+            "updated_orders": changed,
+        })
 
     @app.get("/api/v1/orders/selectra/<sample_id>")
     def api_get_selectra_order(sample_id):

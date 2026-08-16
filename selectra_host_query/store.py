@@ -96,6 +96,11 @@ class BenchStore:
                     name TEXT PRIMARY KEY,
                     applied_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS settings (
+                    name TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
                 """
             )
             # Existing installations predate API-fed orders. SQLite's
@@ -272,6 +277,47 @@ class BenchStore:
                  utc_now(), sample_id),
             )
         return self.get_order(sample_id)
+
+    def selectra_auto_arm_enabled(self) -> bool:
+        with self._session() as connection:
+            row = connection.execute(
+                "SELECT value FROM settings WHERE name='selectra_api_auto_arm'"
+            ).fetchone()
+        return bool(row and row["value"] == "1")
+
+    def set_selectra_auto_arm(self, enabled: bool) -> int:
+        """Persist API auto-arm and update all still-actionable API orders."""
+        now = utc_now()
+        with self._session() as connection:
+            connection.execute(
+                """
+                INSERT INTO settings (name, value, updated_at)
+                VALUES ('selectra_api_auto_arm', ?, ?)
+                ON CONFLICT(name) DO UPDATE SET
+                    value=excluded.value, updated_at=excluded.updated_at
+                """,
+                ("1" if enabled else "0", now),
+            )
+            if enabled:
+                cursor = connection.execute(
+                    """
+                    UPDATE orders
+                    SET ready=1, status='staged', updated_at=?, last_error=NULL
+                    WHERE source='api' AND status IN ('staged', 'queried', 'error')
+                    """,
+                    (now,),
+                )
+            else:
+                cursor = connection.execute(
+                    """
+                    UPDATE orders
+                    SET ready=0, updated_at=?
+                    WHERE source='api' AND ready=1
+                      AND status IN ('staged', 'queried', 'error')
+                    """,
+                    (now,),
+                )
+        return cursor.rowcount
 
     @staticmethod
     def _cyanvision_order(row):

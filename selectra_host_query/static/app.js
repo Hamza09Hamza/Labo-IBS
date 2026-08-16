@@ -2,6 +2,7 @@ const $ = (selector) => document.querySelector(selector);
 const state = { tests: [], eventsAfter: 0, ordersSignature: "" };
 let liveResponsesArmed = false;
 let continuousProbeArmed = false;
+let apiAutoArmEnabled = false;
 let toastTimer = null;
 
 function escapeHtml(value) {
@@ -75,6 +76,14 @@ async function loadStatus() {
     ? "Continuous probe armed"
     : status.armed ? "Live responses armed" : "Observation mode";
   liveResponsesArmed = status.armed;
+  apiAutoArmEnabled = status.api_auto_arm === true;
+  const autoArmControl = $("#autoArmControl");
+  autoArmControl.classList.toggle("armed", apiAutoArmEnabled);
+  $("#autoArmTitle").textContent = apiAutoArmEnabled ? "Auto-arm active" : "Manual arming";
+  $("#autoArmCopy").textContent = apiAutoArmEnabled
+    ? "Exact-ID server orders are armed on arrival."
+    : "New server orders wait for review.";
+  $("#autoArmButton").textContent = apiAutoArmEnabled ? "Stop auto-arm" : "Start auto-arm";
   const armingPanel = $("#armingPanel");
   const armingButton = $("#armingButton");
   armingPanel.classList.toggle("armed", status.armed);
@@ -250,6 +259,33 @@ async function toggleLiveResponses() {
     liveResponsesArmed = result.armed;
     toast(result.armed ? "Manual Selectra replies armed." : "Manual Selectra replies disarmed.");
     await Promise.all([loadStatus(), loadEvents()]);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function toggleApiAutoArm() {
+  const enabled = !apiAutoArmEnabled;
+  if (enabled && !window.confirm(
+    "Start Selectra API auto-arm? All waiting server orders and every new authenticated server order will be armed. Replies still require an exact sample-ID query."
+  )) return;
+  const button = $("#autoArmButton");
+  button.disabled = true;
+  try {
+    const result = await api("/api/selectra/auto-arm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        enabled,
+        confirmation: enabled ? "ENABLE SELECTRA AUTO ARM" : "",
+      }),
+    });
+    apiAutoArmEnabled = result.enabled;
+    state.ordersSignature = "";
+    toast(result.enabled
+      ? `Auto-arm started; ${result.updated_orders} waiting order(s) armed.`
+      : `Auto-arm stopped; ${result.updated_orders} waiting order(s) disarmed.`);
+    await Promise.all([loadStatus(), loadOrders(), loadEvents()]);
   } finally {
     button.disabled = false;
   }
@@ -447,6 +483,7 @@ $("#testCodeInput").addEventListener("keydown", (event) => {
   if (event.key === "Enter") { event.preventDefault(); addTest(); }
 });
 $("#orderForm").addEventListener("submit", stageOrder);
+$("#autoArmButton").addEventListener("click", () => toggleApiAutoArm().catch((error) => toast(error.message)));
 $("#armingButton").addEventListener("click", () => toggleLiveResponses().catch((error) => toast(error.message)));
 $("#probeButton").addEventListener("click", () => toggleContinuousProbe().catch((error) => toast(error.message)));
 $("#cyanvisionForm").addEventListener("submit", stageCyanvision);

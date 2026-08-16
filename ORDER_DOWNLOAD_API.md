@@ -10,7 +10,9 @@ http://<bridge-IP>:5052/api/v1/orders/
 This API does not push a connection to either analyzer:
 
 - Selectra orders remain inactive until a local operator arms the exact sample
-  on the `5052` console. A matching Host Query can then receive it.
+  on the `5052` console. After validation, the operator may enable persistent
+  **API auto-arm** so authenticated server orders are armed as they arrive.
+  In both modes only an exact Host Query match can receive an order.
 - CYANVision sends `QRY^Q02` when the operator presses **Patient Worklist ->
   Load from LIS**. The bridge returns the ready CYANVision queue in creation
   order, waiting for `ACK^Q03` between `DSR^Q03` items. The final item has an
@@ -88,10 +90,14 @@ Rules:
   the inactive staged state. `external_order_id` is optional correlation
   metadata.
 
-The API only stages the order. It remains inactive until a local operator opens
-the `5052` console and clicks **Arm for Selectra** on that exact sample. Once
-armed, it survives a LaboBridge restart. After Selectra transport-ACKs the
-response, it becomes `transport_acknowledged` and is no longer armed.
+By default, the API only stages the order. It remains inactive until a local
+operator opens the `5052` console and clicks **Arm for Selectra** on that exact
+sample. Once the local operator starts **API auto-arm**, all waiting actionable
+API orders and every new authenticated API order are armed automatically. The
+mode survives a LaboBridge restart. Stopping auto-arm disarms all waiting API
+orders; it does not affect already delivered audit records. After Selectra
+transport-ACKs a response, that order becomes `transport_acknowledged` and is
+no longer armed.
 
 ### Read status or cancel
 

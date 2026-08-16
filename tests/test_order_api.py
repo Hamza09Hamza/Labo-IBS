@@ -201,6 +201,49 @@ class OrderApiCase(unittest.TestCase):
         )
         self.assertEqual(duplicate.sent, [])
 
+    def test_selectra_api_auto_arm_is_persistent_and_stoppable(self):
+        first = self.client.post(
+            "/api/v1/orders/selectra", json=SELECTRA_ORDER, headers=HEADERS,
+        )
+        self.assertEqual(first.status_code, 201)
+        self.assertFalse(self.store.get_order("SEL-API-001")["ready"])
+
+        enabled = self.client.post(
+            "/api/selectra/auto-arm",
+            json={
+                "enabled": True,
+                "confirmation": "ENABLE SELECTRA AUTO ARM",
+            },
+        )
+        self.assertEqual(enabled.status_code, 200)
+        self.assertTrue(enabled.get_json()["enabled"])
+        self.assertTrue(self.store.get_order("SEL-API-001")["ready"])
+
+        restarted_store = BenchStore(self.db_path)
+        self.assertTrue(restarted_store.selectra_auto_arm_enabled())
+        second_order = {**SELECTRA_ORDER, "sample_id": "SEL-API-AUTO-002"}
+        second = self.client.post(
+            "/api/v1/orders/selectra", json=second_order, headers=HEADERS,
+        )
+        self.assertEqual(second.status_code, 201)
+        self.assertEqual(second.get_json()["state"], "armed")
+        self.assertTrue(self.store.get_order("SEL-API-AUTO-002")["ready"])
+
+        disabled = self.client.post(
+            "/api/selectra/auto-arm", json={"enabled": False},
+        )
+        self.assertEqual(disabled.status_code, 200)
+        self.assertFalse(self.store.selectra_auto_arm_enabled())
+        self.assertFalse(self.store.get_order("SEL-API-001")["ready"])
+        self.assertFalse(self.store.get_order("SEL-API-AUTO-002")["ready"])
+
+    def test_selectra_api_auto_arm_requires_explicit_start_confirmation(self):
+        response = self.client.post(
+            "/api/selectra/auto-arm", json={"enabled": True},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(self.store.selectra_auto_arm_enabled())
+
     def test_selectra_api_resolves_clinic_ids_to_machine_codes(self):
         order = {
             **SELECTRA_ORDER,

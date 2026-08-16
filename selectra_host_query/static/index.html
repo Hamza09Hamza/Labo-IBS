@@ -32,7 +32,7 @@
 
     <ol class="handoff-rail" aria-label="Order delivery workflow">
       <li><span>1</span><div><strong>Receive</strong><small>The clinic server stages an order.</small></div></li>
-      <li><span>2</span><div><strong>Review and arm</strong><small>Confirm the sample ID and tests locally.</small></div></li>
+      <li><span>2</span><div><strong>Review or auto-arm</strong><small>Choose manual control or validated automation.</small></div></li>
       <li><span>3</span><div><strong>Analyzer pulls</strong><small>The exact query receives the order.</small></div></li>
     </ol>
 
@@ -48,9 +48,12 @@
           <div>
             <span class="section-kicker">Selectra · exact-ID delivery</span>
             <h2 id="ordersTitle">Orders waiting on this bridge</h2>
-            <p>Amber orders are inactive. Arm only the sample the operator is about to run.</p>
+            <p>Use manual review during validation, then start exact-ID auto-arm when ready.</p>
           </div>
-          <span class="connection-note"><i></i> Queue refreshes automatically</span>
+          <div class="auto-arm-control" id="autoArmControl">
+            <span><strong id="autoArmTitle">Manual arming</strong><small id="autoArmCopy">New server orders wait for review.</small></span>
+            <button id="autoArmButton" type="button">Start auto-arm</button>
+          </div>
         </header>
         <div class="orders-list" id="ordersList"><div class="orders-empty"><strong>No active Selectra orders</strong><span>Orders sent by the clinic server will appear here.</span></div></div>
       </section>
