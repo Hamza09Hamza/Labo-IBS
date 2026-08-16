@@ -307,6 +307,59 @@ class OrderApiCase(unittest.TestCase):
         self.assertNotIn("19800615", "\n".join(records))
         self.assertNotIn("Fasting sample", "\n".join(records))
 
+    def test_selectra_optional_outbound_fields_are_persistent_and_operator_controlled(self):
+        order = {
+            **SELECTRA_ORDER,
+            "sample_id": "SEL-FIELDS-001",
+            "specimen_type": "Normal",
+            "ordering_physician": "DR LAB",
+            "comment": "Fasting sample",
+        }
+        staged = self.client.post(
+            "/api/v1/orders/selectra", json=order, headers=HEADERS,
+        )
+        self.assertEqual(staged.status_code, 201)
+
+        rejected = self.client.post(
+            "/api/selectra/outbound-fields",
+            json={"field": "specimen_type", "enabled": True},
+        )
+        self.assertEqual(rejected.status_code, 400)
+
+        for field in (
+            "birth_date", "sex", "specimen_type", "ordering_physician", "comment",
+        ):
+            response = self.client.post(
+                "/api/selectra/outbound-fields",
+                json={
+                    "field": field,
+                    "enabled": True,
+                    "confirmation": "ENABLE SELECTRA OUTBOUND FIELD",
+                },
+            )
+            self.assertEqual(response.status_code, 200)
+
+        self.assertTrue(all(BenchStore(self.db_path).selectra_outbound_fields().values()))
+        records = self.selectra.preview("SEL-FIELDS-001")
+        patient_fields = records[1].split("|")
+        order_fields = records[2].split("|")
+        self.assertEqual(patient_fields[5], "BENCH PATIENT")
+        self.assertEqual(patient_fields[7], "19800615")
+        self.assertEqual(patient_fields[8], "F")
+        self.assertEqual(order_fields[15], "Normal")
+        self.assertEqual(order_fields[16], "DR LAB")
+        self.assertEqual(records[3], "C|1||Fasting sample")
+
+        reset = self.client.post(
+            "/api/selectra/outbound-fields", json={"reset": True},
+        )
+        self.assertEqual(reset.status_code, 200)
+        self.assertFalse(any(reset.get_json()["fields"].values()))
+        minimal = self.selectra.preview("SEL-FIELDS-001")
+        self.assertEqual(minimal[1], "P|1||||BENCH PATIENT")
+        self.assertNotIn("Normal", "\n".join(minimal))
+        self.assertEqual(len(minimal), 4)
+
     def test_selectra_api_rejects_ambiguous_or_unknown_clinic_ids(self):
         ambiguous = self.client.post(
             "/api/v1/orders/selectra",

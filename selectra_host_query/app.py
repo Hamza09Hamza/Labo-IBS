@@ -398,6 +398,7 @@ def create_app(store, service, cyanvision_service=None, order_api_token=None):
                 if order.get("source") == "api" and order.get("ready")
             ]),
             "api_auto_arm": store.selectra_auto_arm_enabled(),
+            "selectra_outbound_fields": store.selectra_outbound_fields(),
             "cyanvision": cyanvision,
         })
 
@@ -489,6 +490,32 @@ def create_app(store, service, cyanvision_service=None, order_api_token=None):
             "enabled": enabled,
             "updated_orders": changed,
         })
+
+    @app.post("/api/selectra/outbound-fields")
+    def set_selectra_outbound_fields():
+        body = request.get_json(silent=True) or {}
+        if body.get("reset") is True:
+            fields = store.reset_selectra_outbound_fields()
+            store.add_event(
+                "local", "selectra_outbound_fields_reset", None,
+                "Selectra API output returned to minimal name, sample ID, and tests",
+            )
+            return jsonify({"ok": True, "fields": fields})
+        field = str(body.get("field") or "").strip()
+        enabled = body.get("enabled") is True
+        if enabled and body.get("confirmation") != "ENABLE SELECTRA OUTBOUND FIELD":
+            return jsonify({
+                "error": "explicit ENABLE SELECTRA OUTBOUND FIELD confirmation is required"
+            }), 400
+        try:
+            fields = store.set_selectra_outbound_field(field, enabled)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        store.add_event(
+            "local", "selectra_outbound_field_changed", None,
+            f"Selectra API outbound field {field} {'enabled' if enabled else 'disabled'}",
+        )
+        return jsonify({"ok": True, "fields": fields})
 
     @app.get("/api/v1/orders/selectra/<sample_id>")
     def api_get_selectra_order(sample_id):

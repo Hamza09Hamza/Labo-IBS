@@ -1,5 +1,5 @@
 const $ = (selector) => document.querySelector(selector);
-const state = { tests: [], eventsAfter: 0, ordersSignature: "" };
+const state = { tests: [], eventsAfter: 0, ordersSignature: "", outboundFields: {} };
 let liveResponsesArmed = false;
 let continuousProbeArmed = false;
 let apiAutoArmEnabled = false;
@@ -63,6 +63,20 @@ function formatTime(value) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
+function renderOutboundPolicy(fields = {}) {
+  state.outboundFields = fields;
+  let enabledCount = 0;
+  document.querySelectorAll("[data-outbound-field]").forEach((button) => {
+    const enabled = fields[button.dataset.outboundField] === true;
+    if (enabled) enabledCount += 1;
+    button.setAttribute("aria-checked", String(enabled));
+    button.querySelector("span").textContent = enabled ? "Sent" : "Not sent";
+  });
+  $("#policySummaryState").textContent = enabledCount
+    ? `${enabledCount} optional sent`
+    : "Minimal";
+}
+
 async function loadStatus() {
   const status = await api("/api/status");
   const pill = $("#modePill");
@@ -77,6 +91,7 @@ async function loadStatus() {
     : status.armed ? "Live responses armed" : "Observation mode";
   liveResponsesArmed = status.armed;
   apiAutoArmEnabled = status.api_auto_arm === true;
+  renderOutboundPolicy(status.selectra_outbound_fields || {});
   const autoArmControl = $("#autoArmControl");
   autoArmControl.classList.toggle("armed", apiAutoArmEnabled);
   $("#autoArmTitle").textContent = apiAutoArmEnabled ? "Auto-arm active" : "Manual arming";
@@ -291,6 +306,43 @@ async function toggleApiAutoArm() {
   }
 }
 
+async function toggleOutboundField(button) {
+  const field = button.dataset.outboundField;
+  const label = button.dataset.fieldLabel;
+  const enabled = state.outboundFields[field] !== true;
+  if (enabled && !window.confirm(
+    `Send ${label} to Selectra for every API order? Incorrect values can make Selectra reject an existing sample.`
+  )) return;
+  button.disabled = true;
+  try {
+    const result = await api("/api/selectra/outbound-fields", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        field,
+        enabled,
+        confirmation: enabled ? "ENABLE SELECTRA OUTBOUND FIELD" : "",
+      }),
+    });
+    renderOutboundPolicy(result.fields);
+    toast(`${label} ${enabled ? "will now be sent" : "will no longer be sent"}.`);
+    await loadEvents();
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function resetOutboundFields() {
+  const result = await api("/api/selectra/outbound-fields", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reset: true }),
+  });
+  renderOutboundPolicy(result.fields);
+  toast("Selectra API output returned to minimal fields.");
+  await loadEvents();
+}
+
 function eventClass(direction) {
   if (direction === "instrument") return "instrument";
   if (direction === "host") return "host";
@@ -484,6 +536,10 @@ $("#testCodeInput").addEventListener("keydown", (event) => {
 });
 $("#orderForm").addEventListener("submit", stageOrder);
 $("#autoArmButton").addEventListener("click", () => toggleApiAutoArm().catch((error) => toast(error.message)));
+document.querySelectorAll("[data-outbound-field]").forEach((button) => {
+  button.addEventListener("click", () => toggleOutboundField(button).catch((error) => toast(error.message)));
+});
+$("#resetOutboundFields").addEventListener("click", () => resetOutboundFields().catch((error) => toast(error.message)));
 $("#armingButton").addEventListener("click", () => toggleLiveResponses().catch((error) => toast(error.message)));
 $("#probeButton").addEventListener("click", () => toggleContinuousProbe().catch((error) => toast(error.message)));
 $("#cyanvisionForm").addEventListener("submit", stageCyanvision);

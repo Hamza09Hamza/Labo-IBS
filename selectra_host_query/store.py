@@ -13,6 +13,11 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
+SELECTRA_OPTIONAL_OUTBOUND_FIELDS = (
+    "birth_date", "sex", "specimen_type", "ordering_physician", "comment",
+)
+
+
 class BenchStore:
     def __init__(self, path: str):
         self.path = os.path.abspath(path)
@@ -318,6 +323,48 @@ class BenchStore:
                     (now,),
                 )
         return cursor.rowcount
+
+    def selectra_outbound_fields(self) -> dict[str, bool]:
+        names = [f"selectra_outbound_{field}" for field in SELECTRA_OPTIONAL_OUTBOUND_FIELDS]
+        placeholders = ",".join("?" for _ in names)
+        with self._session() as connection:
+            rows = connection.execute(
+                f"SELECT name, value FROM settings WHERE name IN ({placeholders})", names,
+            ).fetchall()
+        stored = {row["name"]: row["value"] == "1" for row in rows}
+        return {
+            field: stored.get(f"selectra_outbound_{field}", False)
+            for field in SELECTRA_OPTIONAL_OUTBOUND_FIELDS
+        }
+
+    def set_selectra_outbound_field(self, field: str, enabled: bool) -> dict[str, bool]:
+        if field not in SELECTRA_OPTIONAL_OUTBOUND_FIELDS:
+            raise ValueError(f"unknown Selectra outbound field {field!r}")
+        with self._session() as connection:
+            connection.execute(
+                """
+                INSERT INTO settings (name, value, updated_at) VALUES (?, ?, ?)
+                ON CONFLICT(name) DO UPDATE SET
+                    value=excluded.value, updated_at=excluded.updated_at
+                """,
+                (f"selectra_outbound_{field}", "1" if enabled else "0", utc_now()),
+            )
+        return self.selectra_outbound_fields()
+
+    def reset_selectra_outbound_fields(self) -> dict[str, bool]:
+        with self._session() as connection:
+            connection.executemany(
+                """
+                INSERT INTO settings (name, value, updated_at) VALUES (?, '0', ?)
+                ON CONFLICT(name) DO UPDATE SET
+                    value='0', updated_at=excluded.updated_at
+                """,
+                [
+                    (f"selectra_outbound_{field}", utc_now())
+                    for field in SELECTRA_OPTIONAL_OUTBOUND_FIELDS
+                ],
+            )
+        return self.selectra_outbound_fields()
 
     @staticmethod
     def _cyanvision_order(row):

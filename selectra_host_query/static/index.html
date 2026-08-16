@@ -58,6 +58,27 @@
         <div class="orders-list" id="ordersList"><div class="orders-empty"><strong>No active Selectra orders</strong><span>Orders sent by the clinic server will appear here.</span></div></div>
       </section>
 
+      <details class="outbound-policy panel" id="outboundPolicy">
+        <summary>
+          <span><strong>Selectra outbound fields</strong><small>Name, sample ID, and tests are always sent. Optional fields start disabled.</small></span>
+          <span class="policy-summary-state" id="policySummaryState">Minimal</span>
+        </summary>
+        <div class="policy-body">
+          <div class="policy-intro">
+            <div><span class="section-kicker">Wire policy · API orders only</span><h3>Choose exactly what leaves the bridge.</h3></div>
+            <button type="button" id="resetOutboundFields">Return to minimal</button>
+          </div>
+          <div class="policy-grid">
+            <div class="policy-row"><span class="policy-code">P-8</span><div><strong>Birth date</strong><small>YYYYMMDD from the clinic order</small></div><button type="button" role="switch" aria-checked="false" data-outbound-field="birth_date" data-field-label="birth date"><span>Not sent</span></button></div>
+            <div class="policy-row"><span class="policy-code">P-9</span><div><strong>Sex</strong><small>M, F, or U from the clinic order</small></div><button type="button" role="switch" aria-checked="false" data-outbound-field="sex" data-field-label="sex"><span>Not sent</span></button></div>
+            <div class="policy-row"><span class="policy-code">O-16</span><div><strong>Sample type</strong><small>Case-sensitive; for example Normal or SERUM</small></div><button type="button" role="switch" aria-checked="false" data-outbound-field="specimen_type" data-field-label="sample type"><span>Not sent</span></button></div>
+            <div class="policy-row"><span class="policy-code">O-17</span><div><strong>Physician</strong><small>Ordering physician, maximum 20 characters</small></div><button type="button" role="switch" aria-checked="false" data-outbound-field="ordering_physician" data-field-label="physician"><span>Not sent</span></button></div>
+            <div class="policy-row"><span class="policy-code">C-4</span><div><strong>Comment</strong><small>Sample comment, maximum 100 characters</small></div><button type="button" role="switch" aria-checked="false" data-outbound-field="comment" data-field-label="comment"><span>Not sent</span></button></div>
+          </div>
+          <p class="policy-warning">Enable a field only after its value and Selectra configuration have been verified. Changes apply immediately to every staged API order.</p>
+        </div>
+      </details>
+
       <details class="manual-tools panel">
         <summary><span><strong>Manual test order</strong><small>Development tool for staging a sample without the clinic server</small></span><span aria-hidden="true">+</span></summary>
         <div class="manual-grid">

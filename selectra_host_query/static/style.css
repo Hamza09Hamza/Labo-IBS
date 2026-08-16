@@ -111,6 +111,29 @@ h1 { max-width: 760px; margin: 0; font-size: clamp(30px, 4vw, 48px); line-height
 .remove-order-button { border: 1px solid #dfb5b1; background: white; color: var(--red); }
 .remove-order-button:hover { border-color: var(--red); background: var(--red-soft); }
 
+.outbound-policy { margin-top: 16px; box-shadow: none; }
+.outbound-policy > summary { min-height: 68px; padding: 14px 19px; display: flex; align-items: center; justify-content: space-between; gap: 20px; cursor: pointer; list-style: none; }
+.outbound-policy > summary::-webkit-details-marker { display: none; }
+.outbound-policy > summary strong, .outbound-policy > summary small { display: block; }
+.outbound-policy > summary small { margin-top: 2px; color: var(--muted); font-size: 12px; }
+.policy-summary-state { flex: 0 0 auto; padding: 6px 9px; border: 1px solid var(--line-strong); color: var(--muted); font: 700 10px var(--mono); text-transform: uppercase; }
+.outbound-policy[open] > summary { border-bottom: 1px solid var(--line); }
+.policy-body { padding: 18px 19px 16px; }
+.policy-intro { margin-bottom: 14px; display: flex; align-items: end; justify-content: space-between; gap: 18px; }
+.policy-intro h3 { margin: 0; font-size: 17px; }
+.policy-intro button { border: 1px solid var(--line-strong); background: white; color: var(--ink); font-size: 11px; font-weight: 750; }
+.policy-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+.policy-row { min-width: 0; min-height: 76px; padding: 12px; display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 10px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--surface-soft); }
+.policy-code { color: var(--teal-dark); font: 700 11px var(--mono); }
+.policy-row strong, .policy-row small { display: block; }
+.policy-row strong { font-size: 12px; }
+.policy-row small { margin-top: 2px; color: var(--muted); font-size: 10px; }
+.policy-row [role="switch"] { position: relative; min-width: 78px; min-height: 32px; padding: 0 9px 0 25px; border: 1px solid var(--line-strong); border-radius: 16px; background: white; color: var(--muted); font-size: 10px; font-weight: 750; }
+.policy-row [role="switch"]::before { content: ''; position: absolute; left: 7px; top: 50%; width: 11px; height: 11px; border-radius: 50%; background: #a5afb1; transform: translateY(-50%); }
+.policy-row [role="switch"][aria-checked="true"] { padding: 0 25px 0 9px; border-color: var(--teal); background: var(--teal-soft); color: var(--teal-dark); }
+.policy-row [role="switch"][aria-checked="true"]::before { left: auto; right: 7px; background: var(--teal); }
+.policy-warning { margin: 12px 0 0; padding-left: 10px; border-left: 3px solid var(--amber); color: var(--muted); font-size: 11px; }
+
 .manual-tools { margin-top: 16px; box-shadow: none; }
 .manual-tools summary { min-height: 68px; padding: 14px 19px; display: flex; align-items: center; justify-content: space-between; gap: 20px; cursor: pointer; list-style: none; }
 .manual-tools summary::-webkit-details-marker { display: none; }
@@ -218,6 +241,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
   .endpoint-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .endpoint-strip > div:nth-child(2) { border-right: 0; }
   .endpoint-strip > div:nth-child(-n+2) { border-bottom: 1px solid rgba(255,255,255,.13); }
+  .policy-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 600px) {
   body { font-size: 16px; }
@@ -229,6 +253,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
   .view-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .view-tabs button { min-width: 0; min-height: 56px; padding: 6px; font-size: 11px; line-height: 1.25; }
   .section-head { align-items: stretch; flex-direction: column; gap: 12px; }
+  .policy-intro { align-items: stretch; flex-direction: column; }
+  .policy-intro button { width: 100%; }
+  .policy-row { grid-template-columns: 38px minmax(0, 1fr); }
+  .policy-row [role="switch"] { grid-column: 1 / -1; width: 100%; }
   .connection-note, .cyanvision-state { width: 100%; }
   .form-grid { grid-template-columns: minmax(0, 1fr); }
   .field-wide { grid-column: auto; }

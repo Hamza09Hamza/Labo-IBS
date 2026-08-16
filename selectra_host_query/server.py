@@ -160,7 +160,7 @@ class SelectraHostQueryServer:
         order = self.store.get_order(sample_id)
         if not order:
             raise KeyError(sample_id)
-        records = protocol.build_order_records(order)
+        records = self._build_order_records(order)
         if simulated:
             self.store.add_event("simulator", "query", sample_id,
                                  "Simulated an exact-ID Selectra query", f"Q|1|^{sample_id}^")
@@ -168,6 +168,14 @@ class SelectraHostQueryServer:
                                  f"Built {len(records)} LIS2-A order records; no network bytes sent",
                                  "\n".join(records))
         return records
+
+    def _build_order_records(self, order: dict):
+        enabled = {
+            field
+            for field, active in self.store.selectra_outbound_fields().items()
+            if active
+        }
+        return protocol.build_order_records(order, enabled)
 
     def _run(self):
         try:
@@ -329,7 +337,7 @@ class SelectraHostQueryServer:
         self.store.mark_query(sample_id)
         self.store.add_event("instrument", "query_matched", sample_id,
                              f"Matched exact sample ID {sample_id}", "\n".join(query_records))
-        response = protocol.build_order_records(order)
+        response = self._build_order_records(order)
         is_api_order = order.get("source") == "api"
         api_ready = is_api_order and bool(order.get("ready"))
         may_send = is_probe or api_ready or (self.armed and not is_api_order)

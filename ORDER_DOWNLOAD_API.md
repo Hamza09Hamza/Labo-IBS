@@ -72,8 +72,12 @@ Rules:
   its patient-ID fields as ignored, so it does not appear in the analyzer form.
 - Selectra API responses intentionally send only the patient name, exact
   sample ID, and requested tests. `specimen_type`, `ordering_physician`, and
-  `comment` are not transmitted even if an older client includes them. This
-  keeps O-16 empty so the analyzer can use its configured sample type.
+  `comment` are not transmitted by default even if an older client includes
+  them. This keeps O-16 empty so the analyzer can use its configured sample
+  type. A local operator can individually enable birth date, sex, sample type,
+  physician, or comment in **Selectra outbound fields** on the `5052` console.
+  These switches persist across restarts and apply immediately to staged API
+  orders; **Return to minimal** disables all optional output again.
 - `tests` should contain clinic identifiers. Each entry requires `param_id`,
   `service_tarification_id`, or both. LaboBridge reverses its curated Selectra
   mappings and transmits the exact installed analyzer code.
