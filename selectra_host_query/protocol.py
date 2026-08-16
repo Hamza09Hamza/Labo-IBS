@@ -138,8 +138,8 @@ def build_order_records(order: dict) -> list[str]:
     The caller must place all returned records in ONE ASTM frame.
     """
     sample_id = _clean(order["sample_id"])
-    if not sample_id or len(sample_id) > 12:
-        raise ValueError("Selectra sample ID must contain 1 to 12 characters")
+    if not sample_id:
+        raise ValueError("Selectra sample ID is required")
     preserve_demographics = bool(order.get("preserve_analyser_demographics"))
     family_name = _clean(order.get("family_name"))
     given_name = _clean(order.get("given_name"))
@@ -181,12 +181,18 @@ def build_order_records(order: dict) -> list[str]:
         else f"P|1||||{patient_name}||{birth_date}|{sex}"
     )
 
-    return [
+    records = [
         f"H|\\^&|||WINLAB|||||PROM||P|LIS2-A|{_stamp()}",
         patient_record,
         "|".join(order_fields),
-        "L|1|F",
     ]
+    comment = _clean(order.get("comment"))[:100]
+    if comment:
+        # A C record immediately following O is copied into the Selectra's
+        # sample Comment field. The instrument stores at most 100 characters.
+        records.append(f"C|1||{comment}")
+    records.append("L|1|F")
+    return records
 
 
 def application_rejections(records: list[str]) -> list[dict[str, str]]:

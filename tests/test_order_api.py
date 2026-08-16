@@ -232,6 +232,33 @@ class OrderApiCase(unittest.TestCase):
             selectra_protocol.build_order_records(stored)[2],
         )
 
+    def test_selectra_api_accepts_long_exact_id_and_maps_demographic_fields(self):
+        sample_id = "CLINIC-SAMPLE-20260816-0001"
+        order = {
+            **SELECTRA_ORDER,
+            "sample_id": sample_id,
+            "specimen_type": "Normal",
+            "ordering_physician": "DR LAB",
+            "comment": "Fasting sample",
+        }
+
+        response = self.client.post(
+            "/api/v1/orders/selectra", json=order, headers=HEADERS,
+        )
+
+        self.assertEqual(response.status_code, 201)
+        stored = self.store.get_order(sample_id)
+        records = selectra_protocol.build_order_records(stored)
+        patient_fields = records[1].split("|")
+        order_fields = records[2].split("|")
+        self.assertEqual(patient_fields[5], "BENCH PATIENT")
+        self.assertEqual(patient_fields[7], "19800615")
+        self.assertEqual(patient_fields[8], "F")
+        self.assertEqual(order_fields[2], sample_id)
+        self.assertEqual(order_fields[15], "Normal")
+        self.assertEqual(order_fields[16], "DR LAB")
+        self.assertEqual(records[3], "C|1||Fasting sample")
+
     def test_selectra_api_rejects_ambiguous_or_unknown_clinic_ids(self):
         ambiguous = self.client.post(
             "/api/v1/orders/selectra",

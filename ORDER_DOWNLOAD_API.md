@@ -48,6 +48,9 @@ POST /api/v1/orders/selectra
   "given_name": "PATIENT",
   "birth_date": "1980-06-15",
   "sex": "F",
+  "specimen_type": "Normal",
+  "ordering_physician": "DR LAB",
+  "comment": "Fasting sample",
   "tests": [
     {"service_tarification_id": 392},
     {"param_id": 99953, "service_tarification_id": 528}
@@ -57,10 +60,21 @@ POST /api/v1/orders/selectra
 
 Rules:
 
-- `sample_id` is required, case-sensitive, and limited to 12 characters.
+- `sample_id` is required and case-sensitive. The bridge does not truncate it
+  or impose the Selectra manual's historical 12-character limit. Delivery
+  still requires Selectra to send the exact same complete value in `Q-2`.
+  If the analyzer firmware truncates an ID, it remains safely unmatched.
 - `family_name` plus a space plus `given_name` must fit the Selectra's
   20-character patient-name limit.
 - `birth_date` uses `YYYY-MM-DD`; `sex` is `M`, `F`, or `U`.
+- `patient_id` is retained for local/clinic correlation. Selectra documents
+  its patient-ID fields as ignored, so it does not appear in the analyzer form.
+- `specimen_type` is optional and is sent in `O-16`. It must exactly match a
+  case-sensitive sample type configured on that Selectra (for example
+  `Normal`); omit it when the analyzer's configured label is unknown.
+- `ordering_physician` is optional, sent in `O-17`, and limited to 20
+  characters. `comment` is optional, sent in a following `C` record, and
+  limited to the 100 characters stored by Selectra.
 - `tests` should contain clinic identifiers. Each entry requires `param_id`,
   `service_tarification_id`, or both. LaboBridge reverses its curated Selectra
   mappings and transmits the exact installed analyzer code.
@@ -70,9 +84,6 @@ Rules:
 - Unknown or ambiguous identifiers return HTTP `400`; LaboBridge never guesses
   a clinical test. Legacy method-name strings remain accepted temporarily for
   compatibility, but new integrations should use identifiers.
-- Selectra specimen type is not part of this API. The optional LIS2-A O-16
-  descriptor requires an exact, case-sensitive analyzer configuration name;
-  it remains blank until those local names are confirmed.
 - Reposting the same `sample_id` replaces the stored content and returns it to
   the inactive staged state. `external_order_id` is optional correlation
   metadata.

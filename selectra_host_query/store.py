@@ -60,7 +60,10 @@ class BenchStore:
                     last_error TEXT,
                     source TEXT NOT NULL DEFAULT 'manual',
                     ready INTEGER NOT NULL DEFAULT 0,
-                    external_order_id TEXT
+                    external_order_id TEXT,
+                    outbound_specimen_type TEXT NOT NULL DEFAULT '',
+                    ordering_physician TEXT NOT NULL DEFAULT '',
+                    comment TEXT NOT NULL DEFAULT ''
                 );
                 CREATE TABLE IF NOT EXISTS cyanvision_orders (
                     sample_id TEXT PRIMARY KEY,
@@ -105,6 +108,9 @@ class BenchStore:
                 ("source", "TEXT NOT NULL DEFAULT 'manual'"),
                 ("ready", "INTEGER NOT NULL DEFAULT 0"),
                 ("external_order_id", "TEXT"),
+                ("outbound_specimen_type", "TEXT NOT NULL DEFAULT ''"),
+                ("ordering_physician", "TEXT NOT NULL DEFAULT ''"),
+                ("comment", "TEXT NOT NULL DEFAULT ''"),
             ):
                 if column not in order_columns:
                     connection.execute(f"ALTER TABLE orders ADD COLUMN {column} {definition}")
@@ -148,8 +154,9 @@ class BenchStore:
                 INSERT INTO orders
                     (sample_id, patient_id, family_name, given_name, birth_date,
                      sex, specimen_type, tests_json, status, source, ready,
-                     external_order_id, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'staged', ?, ?, ?, ?, ?)
+                     external_order_id, outbound_specimen_type,
+                     ordering_physician, comment, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'staged', ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(sample_id) DO UPDATE SET
                     patient_id=excluded.patient_id,
                     family_name=excluded.family_name,
@@ -162,6 +169,9 @@ class BenchStore:
                     source=excluded.source,
                     ready=excluded.ready,
                     external_order_id=excluded.external_order_id,
+                    outbound_specimen_type=excluded.outbound_specimen_type,
+                    ordering_physician=excluded.ordering_physician,
+                    comment=excluded.comment,
                     updated_at=excluded.updated_at,
                     last_error=NULL
                 """,
@@ -169,7 +179,10 @@ class BenchStore:
                     order["sample_id"], order["patient_id"], order["family_name"],
                     order["given_name"], order.get("birth_date", ""), order.get("sex", "U"),
                     order.get("specimen_type", "SERUM"), json.dumps(order["tests"], ensure_ascii=True),
-                    source, int(bool(ready)), order.get("external_order_id"), now, now,
+                    source, int(bool(ready)), order.get("external_order_id"),
+                    order.get("outbound_specimen_type", ""),
+                    order.get("ordering_physician", ""), order.get("comment", ""),
+                    now, now,
                 ),
             )
         direction = "api" if source == "api" else "local"

@@ -72,7 +72,7 @@ def _validate_text(name, value, required=True, maximum=80):
     value = str(value or "").strip()
     if required and not value:
         raise ValueError(f"{name} is required")
-    if len(value) > maximum:
+    if maximum is not None and len(value) > maximum:
         raise ValueError(f"{name} must be {maximum} characters or fewer")
     if value and not SAFE_VALUE.fullmatch(value):
         raise ValueError(f"{name} contains a reserved protocol delimiter")
@@ -102,7 +102,7 @@ def _validated_order(body):
     sex = str(body.get("sex") or "").upper() or _random_sex()
     if sex not in {"M", "F", "U"}:
         raise ValueError("sex must be M, F, or U")
-    sample_id = _validate_text("sample ID", body.get("sample_id"), maximum=12)
+    sample_id = _validate_text("sample ID", body.get("sample_id"), maximum=None)
     family_name = str(body.get("family_name") or "").strip() or random.choice(_RANDOM_FAMILY_NAMES)
     given_name = str(body.get("given_name") or "").strip() or random.choice(_RANDOM_GIVEN_NAMES)
     return {
@@ -238,14 +238,27 @@ def _validated_selectra_api_order(body):
     if sex not in {"M", "F", "U"}:
         raise ValueError("Selectra sex must be M, F, or U")
     order = {
-        "sample_id": _validate_text("Selectra sample ID", body.get("sample_id"), maximum=12),
+        # Do not impose the manual's historical 12-character O-3 limit at
+        # the bridge boundary. Store and match the exact value Selectra sends
+        # in Q-2; never truncate an identifier or guess a prefix match.
+        "sample_id": _validate_text("Selectra sample ID", body.get("sample_id"), maximum=None),
         "patient_id": _validate_text("Selectra patient ID", body.get("patient_id"), maximum=64),
         "family_name": _validate_text("Selectra family name", body.get("family_name"), maximum=80),
         "given_name": _validate_text("Selectra given name", body.get("given_name"), maximum=80),
         "birth_date": birth_date,
         "sex": sex,
         "specimen_type": _validate_text(
-            "Selectra specimen type", body.get("specimen_type") or "UNSPECIFIED", maximum=32,
+            "Selectra specimen type", body.get("specimen_type"), required=False, maximum=32,
+        ),
+        "outbound_specimen_type": _validate_text(
+            "Selectra specimen type", body.get("specimen_type"), required=False, maximum=32,
+        ),
+        "ordering_physician": _validate_text(
+            "Selectra ordering physician", body.get("ordering_physician"),
+            required=False, maximum=20,
+        ),
+        "comment": _validate_text(
+            "Selectra comment", body.get("comment"), required=False, maximum=100,
         ),
         "tests": tests,
         "external_order_id": _validate_text(

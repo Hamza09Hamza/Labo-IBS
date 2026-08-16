@@ -303,11 +303,11 @@ class SelectraHostQueryServer:
         is_probe = False
         order = None
         if probe_active:
-            sample_id = next((value for value in candidates if 0 < len(value) <= 12), "")
+            sample_id = next((value for value in candidates if value), "")
             if not sample_id:
                 self.store.add_event(
                     "system", "continuous_probe_rejected", None,
-                    f"Continuous probe ignored a query with no valid 1-12 character sample ID: {candidates}",
+                    f"Continuous probe ignored a query with no sample ID: {candidates}",
                     "\n".join(query_records),
                 )
                 return

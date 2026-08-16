@@ -29,7 +29,7 @@ separate from normal exact-ID replies:
 1. Open `http://<server-IP>:5052/` and click **Arm continuous probe**.
 2. Confirm that the page shows the `APPELLE MANEL/FODHIL` order notice and three
    randomly chosen, installed Selectra test abbreviations.
-3. Every valid Selectra `Q` record, for any 1–12 character sample ID, receives
+3. Every valid Selectra `Q` record containing a sample ID receives
    that order notice and those three tests while the probe remains armed.
 4. Click **Disarm continuous probe** to stop it. Restarting LaboBridge also
    returns it to the disarmed state.
