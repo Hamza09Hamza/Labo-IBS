@@ -1,7 +1,7 @@
 # Analyzer order API setup
 
-This guide configures the Windows LaboBridge server to receive Selectra and
-CYANVision orders from another authorized server. The endpoint schemas are in
+This guide configures the Windows LaboBridge server to receive Selectra,
+CYANVision, and XN-330 orders from another authorized server. The endpoint schemas are in
 `ORDER_DOWNLOAD_API.md`.
 
 ## 1. Update LaboBridge
@@ -79,6 +79,7 @@ network. The analyzer ports remain unchanged:
 
 - Selectra: TCP `6003`
 - CYANVision: TCP `6004`
+- Sysmex XN-330: TCP `6001` (results and ASTM Host Query share this listener)
 
 ## 5. Verify authentication before sending patient data
 

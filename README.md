@@ -59,7 +59,7 @@ The ports shown above are defaults. Runtime port selection and machine metadata 
 The normal `run_all.py` process also serves:
 
 - Labo Bridge administration: `http://<server-IP>:5050/`
-- Selectra + CYANVision order console and trace: `http://<server-IP>:5052/`
+- Selectra + CYANVision + XN-330 order console and trace: `http://<server-IP>:5052/`
 
 The Selectra continues to communicate on its existing listener port (`6003`
 unless changed in machine settings). Host Query replies start disarmed after
@@ -83,8 +83,14 @@ received in `labo_bridge_results` and `pending_params`. The API applies the
 same allow-list when arming, preventing a mistyped or invented `DSP|8` value
 even if a request bypasses the browser.
 
+The XN-330 tab stages persistent ASTM Host Query orders on the analyzer's
+existing port `6001`. Orders start unarmed, match only the exact Q-3 sample ID,
+and are consumed after the XN-330 acknowledges the complete `H/P/O/L` response.
+The bridge uses the XN-L patient-name and discrete-parameter field layout; it
+does not reuse Selectra's LIS2-A order fields.
+
 An authenticated inbound order API is also served on port `5052`. A clinic
-server can stage persistent, analyzer-ready orders for Selectra or CYANVision;
+server can stage persistent orders for Selectra, CYANVision, or XN-330;
 see `ORDER_DOWNLOAD_SETUP.md` for deployment and token generation, and
 `ORDER_DOWNLOAD_API.md` for request schemas, authentication headers,
 lifecycle, and examples. API orders are separate from the manually armed test

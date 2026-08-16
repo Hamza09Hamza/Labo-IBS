@@ -17,6 +17,9 @@ This API does not push a connection to either analyzer:
   Load from LIS**. The bridge returns the ready CYANVision queue in creation
   order, waiting for `ACK^Q03` between `DSR^Q03` items. The final item has an
   empty `DSC` continuation pointer.
+- XN-330 orders remain inactive until a local operator arms the exact order
+  card. The XN-330 initiates an ASTM `H/Q/L` Host Query and receives `H/P/O/L`
+  only when its Q-3 sample ID exactly matches an armed order.
 
 ## Authentication
 
@@ -156,6 +159,59 @@ GET    /api/v1/orders/cyanvision/<sample_id>
 DELETE /api/v1/orders/cyanvision/<sample_id>
 ```
 
+## Sysmex XN-330
+
+### Stage or replace an order
+
+```http
+POST /api/v1/orders/xn330
+```
+
+An FNS clinic order can select the full curated XN-330 parameter set with its
+tarification ID:
+
+```json
+{
+  "external_order_id": "LIS-FNS-7814",
+  "sample_id": "XN-260816-001",
+  "patient_id": "PAT-4821",
+  "given_name": "BENCH",
+  "family_name": "PATIENT",
+  "birth_date": "1980-06-15",
+  "sex": "F",
+  "tests": [{"service_tarification_id": 421}]
+}
+```
+
+Rules:
+
+- `sample_id` is case-sensitive, limited to 22 printable ASCII characters,
+  and must exactly match the sample component sent by the XN-330 in Q-3.
+- `patient_id` is limited to 16 characters. Given and family names are each
+  limited to 20 characters and are transmitted as `^Given^Family`.
+- `birth_date` uses `YYYY-MM-DD`; `sex` is `M`, `F`, or `U`.
+- `tests` may contain clinic identifier objects. Tarification `421` without a
+  `param_id` expands to the bridge's curated FNS/XN-330 parameters. A specific
+  `param_id` selects its exact mapped XN parameter.
+- For controlled bench compatibility, exact documented parameter strings are
+  also accepted: `WBC`, `RBC`, `HGB`, `HCT`, `MCV`, `MCH`, `MCHC`, `PLT`,
+  `RDW-SD`, `RDW-CV`, `MPV`, `NEUT#`, `LYMPH#`, `MONO#`, `EO#`, `BASO#`,
+  `NEUT%`, `LYMPH%`, `MONO%`, `EO%`, `BASO%`, `IG#`, and `IG%`.
+- Reposting the same sample replaces its contents and returns it to unarmed
+  staging. The API never auto-arms an XN-330 order.
+
+The local operator opens the **XN-330 orders** tab on port `5052`, reviews the
+patient and parameters, and clicks **Arm for XN-330**. Successful ASTM
+acknowledgement consumes and disarms the order. An unarmed or unmatched query
+is recorded in the trace but receives no patient/order payload.
+
+### Read status or cancel
+
+```http
+GET    /api/v1/orders/xn330/<sample_id>
+DELETE /api/v1/orders/xn330/<sample_id>
+```
+
 ## Example request
 
 ```bash
@@ -178,3 +234,7 @@ or arm anything.
 CYANVision staging uses the same compact acknowledgement shape, with
 `"state":"ready"` because its queue is delivered through the operator's
 explicit **Load from LIS** action on the analyzer.
+
+XN-330 staging uses the same compact acknowledgement shape with
+`"analyzer":"xn330"` and `"state":"staged"`; manual arming is intentionally
+performed only through the local console.
