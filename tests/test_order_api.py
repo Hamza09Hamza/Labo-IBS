@@ -275,7 +275,7 @@ class OrderApiCase(unittest.TestCase):
             selectra_protocol.build_order_records(stored)[2],
         )
 
-    def test_selectra_api_accepts_long_exact_id_and_maps_demographic_fields(self):
+    def test_selectra_api_sends_only_name_id_and_tests(self):
         sample_id = "CLINIC-SAMPLE-20260816-0001"
         order = {
             **SELECTRA_ORDER,
@@ -295,12 +295,17 @@ class OrderApiCase(unittest.TestCase):
         patient_fields = records[1].split("|")
         order_fields = records[2].split("|")
         self.assertEqual(patient_fields[5], "BENCH PATIENT")
-        self.assertEqual(patient_fields[7], "19800615")
-        self.assertEqual(patient_fields[8], "F")
+        self.assertEqual(len(patient_fields), 6)
         self.assertEqual(order_fields[2], sample_id)
-        self.assertEqual(order_fields[15], "Normal")
-        self.assertEqual(order_fields[16], "DR LAB")
-        self.assertEqual(records[3], "C|1||Fasting sample")
+        self.assertEqual(order_fields[4], "^^^Crea\\^^^SGPT")
+        self.assertEqual(order_fields[15], "")
+        self.assertEqual(order_fields[16], "")
+        self.assertEqual(records[-1], "L|1|F")
+        self.assertEqual(len(records), 4)
+        self.assertNotIn("SERUM", "\n".join(records))
+        self.assertNotIn("Normal", "\n".join(records))
+        self.assertNotIn("19800615", "\n".join(records))
+        self.assertNotIn("Fasting sample", "\n".join(records))
 
     def test_selectra_api_rejects_ambiguous_or_unknown_clinic_ids(self):
         ambiguous = self.client.post(

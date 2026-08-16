@@ -50,9 +50,6 @@ POST /api/v1/orders/selectra
   "given_name": "PATIENT",
   "birth_date": "1980-06-15",
   "sex": "F",
-  "specimen_type": "Normal",
-  "ordering_physician": "DR LAB",
-  "comment": "Fasting sample",
   "tests": [
     {"service_tarification_id": 392},
     {"param_id": 99953, "service_tarification_id": 528}
@@ -68,15 +65,15 @@ Rules:
   If the analyzer firmware truncates an ID, it remains safely unmatched.
 - `family_name` plus a space plus `given_name` must fit the Selectra's
   20-character patient-name limit.
-- `birth_date` uses `YYYY-MM-DD`; `sex` is `M`, `F`, or `U`.
+- `birth_date` uses `YYYY-MM-DD`; `sex` is `M`, `F`, or `U`. They are retained
+  for clinic correlation but deliberately omitted from the Selectra message to
+  avoid conflicting with a sample already entered on the analyzer.
 - `patient_id` is retained for local/clinic correlation. Selectra documents
   its patient-ID fields as ignored, so it does not appear in the analyzer form.
-- `specimen_type` is optional and is sent in `O-16`. It must exactly match a
-  case-sensitive sample type configured on that Selectra (for example
-  `Normal`); omit it when the analyzer's configured label is unknown.
-- `ordering_physician` is optional, sent in `O-17`, and limited to 20
-  characters. `comment` is optional, sent in a following `C` record, and
-  limited to the 100 characters stored by Selectra.
+- Selectra API responses intentionally send only the patient name, exact
+  sample ID, and requested tests. `specimen_type`, `ordering_physician`, and
+  `comment` are not transmitted even if an older client includes them. This
+  keeps O-16 empty so the analyzer can use its configured sample type.
 - `tests` should contain clinic identifiers. Each entry requires `param_id`,
   `service_tarification_id`, or both. LaboBridge reverses its curated Selectra
   mappings and transmits the exact installed analyzer code.
