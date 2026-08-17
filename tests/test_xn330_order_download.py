@@ -66,7 +66,7 @@ class XN330OrderDownloadCase(unittest.TestCase):
         self.assertEqual([record[0] for record in records], ["H", "P", "O", "L"])
         patient = records[1].split("|")
         self.assertEqual(patient[4], "PAT-001")
-        self.assertEqual(patient[5], "^MANEL^PATIENT")
+        self.assertEqual(patient[5], "^PATIENT^MANEL")
         self.assertEqual(patient[7], "19800615")
         self.assertEqual(patient[8], "F")
         order = records[2].split("|")
@@ -81,7 +81,7 @@ class XN330OrderDownloadCase(unittest.TestCase):
         self.assertIn("^^^^WBC", order[4])
         self.assertIn("^^^^NEUT%", order[4])
         self.assertEqual(order[11], "N")
-        self.assertEqual(order[25], "Q")
+        self.assertEqual(order[25], "O")
         self.assertEqual(records[-1], "L|1|N")
 
     def test_each_record_gets_its_own_frame_matching_real_capture(self):

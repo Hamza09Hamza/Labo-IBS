@@ -90,9 +90,16 @@ def build_order_records(order: dict, query_selector: str | None = None) -> list[
     patient_fields[0] = "P"
     patient_fields[1] = "1"
     patient_fields[4] = _clean(order.get("patient_id"))[:16]
-    # XN ASTM P-6: ^First name^Last name, maximum 20 bytes each.
+    # XN ASTM P-6, patient name: this analyzer's own HOST settings screen
+    # ("ASTM name field setting") reads: "[0: ^Last name^First name
+    # (compatible), 1: ^First name^Last name]" and this unit is configured
+    # to 0 - the default/compatible mode - not 1. We were sending
+    # ^First^Last, which this specific unit's own configuration says is the
+    # wrong order for it; ^Last^First is what its "compatible" setting
+    # expects. Confirmed directly from the analyzer's own HOST menu
+    # (2026-08-17 screenshots), not inferred from a capture.
     patient_fields[5] = (
-        f"^{_clean(order.get('given_name'))[:20]}^{_clean(order.get('family_name'))[:20]}"
+        f"^{_clean(order.get('family_name'))[:20]}^{_clean(order.get('given_name'))[:20]}"
     )
     patient_fields[7] = _clean(order.get("birth_date")).replace("-", "")
     sex = _clean(order.get("sex") or "U").upper()
@@ -131,7 +138,19 @@ def build_order_records(order: dict, query_selector: str | None = None) -> list[
     order_fields[4] = "\\".join(f"^^^^{code}" for code in tests)
     order_fields[6] = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     order_fields[11] = "N"  # normal sample analysis
-    order_fields[25] = "Q"  # matching order exists for this inquiry
+    # O-25 (Report Type): every O-2/O-3 content variant tried so far
+    # (blank, plain sample_id, exact padded selector component - see above)
+    # produced the identical "sample number differs from the request"
+    # rejection (samples 2608217113/2608217116/2608217117/2608217118,
+    # 2026-08-17), which points away from O-2/O-3 content as the cause.
+    # Per ASTM E1394, "Q" means "these are results, sent in response to a
+    # query" - this record carries zero R (result) records, so "Q" may be
+    # telling the analyzer to expect result data that never arrives. "O"
+    # means "order record only, no results", which is what this record
+    # actually is. Selectra's own working order-download uses "Q" for its
+    # equivalent field, so this is not guaranteed to be XN-330-specific -
+    # an untested hypothesis, not a confirmed fix.
+    order_fields[25] = "O"
 
     # H-4 (Sender Name or ID): every one of 9 real captured XN-330 sessions
     # (results/xn330_*.txt) shows this analyzer always populates its own H-4
