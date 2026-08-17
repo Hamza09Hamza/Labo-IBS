@@ -55,6 +55,22 @@ class XN330OrderDownloadService:
             if details:
                 queries.append((record, details))
         if not queries:
+            # Unlike Selectra, we don't yet know whether/how the XN-330
+            # reports application-level acceptance or rejection of a
+            # downloaded order - a transport ACK only proves the analyzer
+            # received the bytes, not that it queued the tests (this was
+            # exactly the gap that hid Selectra's real rejection reason for
+            # weeks). Capture whatever comes in shortly after a real
+            # delivery so a genuine reply can be decoded from evidence, the
+            # same way Selectra's O-26=X was found - not guessed at first.
+            if records and self.store.has_recent_xn330_delivery():
+                self.store.add_event(
+                    "instrument", "xn330_post_delivery_batch", None,
+                    f"Received {len(records)} non-query record(s) shortly after an XN-330 "
+                    "order was delivered; capturing raw content to check for an "
+                    "application-level accept/reject signal (shape not yet confirmed)",
+                    "\n".join(records),
+                )
             return
 
         raw_queries = "\n".join(record for record, _ in queries)

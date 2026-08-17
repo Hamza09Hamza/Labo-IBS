@@ -615,6 +615,31 @@ class BenchStore:
                 (now, now, sample_id),
             )
 
+    def has_recent_xn330_delivery(self, within_seconds: int = 120) -> bool:
+        """True if any XN-330 order was transport-acknowledged recently.
+
+        Unlike Selectra, the XN-330 order-download reply shape has not been
+        observed on real hardware yet - we don't know whether it reports an
+        application-level rejection the way Selectra's O-26=X does, or in
+        what record shape. Scoping the "capture everything unrecognized"
+        logging to a short window after a real delivery (rather than always
+        logging every non-query batch) avoids flooding the trace with
+        ordinary XN-330 patient-result uploads during normal operation,
+        while still catching whatever a real analyzer reply looks like.
+        """
+        with self._session() as connection:
+            row = connection.execute(
+                "SELECT last_delivery_at FROM xn330_orders WHERE last_delivery_at IS NOT NULL "
+                "ORDER BY last_delivery_at DESC LIMIT 1"
+            ).fetchone()
+        if row is None or row["last_delivery_at"] is None:
+            return False
+        try:
+            delivered_at = datetime.fromisoformat(row["last_delivery_at"].replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        return (datetime.now(timezone.utc) - delivered_at).total_seconds() <= within_seconds
+
     def mark_xn330_error(self, sample_id: str, message: str):
         with self._session() as connection:
             connection.execute(
