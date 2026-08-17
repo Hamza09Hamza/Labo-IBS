@@ -1,7 +1,11 @@
 const $ = (selector) => document.querySelector(selector);
-const state = { tests: [], eventsAfter: 0, ordersSignature: "" };
+const state = {
+  tests: [], eventsAfter: 0, ordersSignature: "", outboundFields: {},
+  xnTests: [], xnTestOptions: [], xnOrdersSignature: "",
+};
 let liveResponsesArmed = false;
 let continuousProbeArmed = false;
+let apiAutoArmEnabled = false;
 let toastTimer = null;
 
 function escapeHtml(value) {
@@ -62,12 +66,28 @@ function formatTime(value) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
+function renderOutboundPolicy(fields = {}) {
+  state.outboundFields = fields;
+  let enabledCount = 0;
+  document.querySelectorAll("[data-outbound-field]").forEach((button) => {
+    const enabled = fields[button.dataset.outboundField] === true;
+    if (enabled) enabledCount += 1;
+    button.setAttribute("aria-checked", String(enabled));
+    button.querySelector("span").textContent = enabled ? "Sent" : "Not sent";
+  });
+  $("#policySummaryState").textContent = enabledCount
+    ? `${enabledCount} optional sent`
+    : "Minimal";
+}
+
 async function loadStatus() {
   const status = await api("/api/status");
   const pill = $("#modePill");
-  const anyArmed = status.api_armed_orders || status.armed || status.probe_armed || status.cyanvision?.armed;
+  const anyArmed = status.api_armed_orders || status.armed || status.probe_armed || status.cyanvision?.armed || status.xn330?.armed_orders;
   pill.className = `mode-pill ${anyArmed ? "armed" : "safe"}`;
-  pill.querySelector("strong").textContent = status.api_armed_orders
+  pill.querySelector("strong").textContent = status.xn330?.armed_orders
+    ? `${status.xn330.armed_orders} XN-330 order${status.xn330.armed_orders === 1 ? "" : "s"} armed`
+    : status.api_armed_orders
     ? `${status.api_armed_orders} Selectra order${status.api_armed_orders === 1 ? "" : "s"} armed`
     : status.cyanvision?.armed
     ? "CYANVision load armed"
@@ -75,6 +95,15 @@ async function loadStatus() {
     ? "Continuous probe armed"
     : status.armed ? "Live responses armed" : "Observation mode";
   liveResponsesArmed = status.armed;
+  apiAutoArmEnabled = status.api_auto_arm === true;
+  renderOutboundPolicy(status.selectra_outbound_fields || {});
+  const autoArmControl = $("#autoArmControl");
+  autoArmControl.classList.toggle("armed", apiAutoArmEnabled);
+  $("#autoArmTitle").textContent = apiAutoArmEnabled ? "Auto-arm active" : "Manual arming";
+  $("#autoArmCopy").textContent = apiAutoArmEnabled
+    ? "Exact-ID server orders are armed on arrival."
+    : "New server orders wait for review.";
+  $("#autoArmButton").textContent = apiAutoArmEnabled ? "Stop auto-arm" : "Start auto-arm";
   const armingPanel = $("#armingPanel");
   const armingButton = $("#armingButton");
   armingPanel.classList.toggle("armed", status.armed);
@@ -101,6 +130,139 @@ async function loadStatus() {
     ? `${status.connected_clients} connected`
     : status.last_peer ? `Last: ${status.last_peer}` : "Waiting";
   $("#orderCount").textContent = String(status.orders);
+  if (status.xn330) {
+    $("#xn330Port").textContent = String(status.xn330.listener_port);
+    $("#xnLinkState").textContent = status.xn330.connected_clients
+      ? `Port ${status.xn330.listener_port} · connected`
+      : status.xn330.last_peer
+        ? `Port ${status.xn330.listener_port} · last ${status.xn330.last_peer}`
+        : `Port ${status.xn330.listener_port} · waiting`;
+  }
+}
+
+function renderXnTestOptions() {
+  const grid = $("#xnTestGrid");
+  if (!state.xnTestOptions.length) {
+    grid.innerHTML = '<span class="empty-tests">No XN-330 parameter codes available.</span>';
+    return;
+  }
+  grid.innerHTML = state.xnTestOptions.map((test) => `
+    <label class="xn-test-option">
+      <input type="checkbox" value="${escapeHtml(test.code)}" ${state.xnTests.includes(test.code) ? "checked" : ""}>
+      <span><strong>${escapeHtml(test.code)}</strong><small>${escapeHtml(test.profile)}</small></span>
+    </label>
+  `).join("");
+  grid.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+    input.addEventListener("change", () => {
+      state.xnTests = [...grid.querySelectorAll('input:checked')].map((item) => item.value);
+    });
+  });
+}
+
+async function loadXnTests() {
+  const result = await api("/api/xn330/tests");
+  if (result.available === false) return;
+  state.xnTestOptions = result.tests || [];
+  if (!state.xnTests.length) state.xnTests = state.xnTestOptions.map((test) => test.code);
+  renderXnTestOptions();
+}
+
+function xnOrderCard(order) {
+  const actionable = ["staged", "queried", "error"].includes(order.status);
+  const displayStatus = actionable ? (order.ready ? "armed" : "awaiting arm") : order.status;
+  const statusClass = order.status === "error" ? "error" : "";
+  return `
+    <article class="order-card xn-order-card ${order.ready ? "is-armed" : ""}">
+      <div class="order-card-head"><h3>${escapeHtml(order.sample_id)}</h3><span class="order-status ${statusClass}">${escapeHtml(displayStatus)}</span></div>
+      <p class="order-person">${escapeHtml(order.given_name)} ${escapeHtml(order.family_name)} · ${escapeHtml(order.patient_id)}</p>
+      <div class="order-tests">${order.tests.map(escapeHtml).join(" · ")}</div>
+      <div class="order-meta"><span>${order.source === "api" ? "Server order" : "Local order"}</span><span>${order.query_count} quer${order.query_count === 1 ? "y" : "ies"}</span><span>${escapeHtml(formatTime(order.updated_at))}</span></div>
+      <div class="order-actions">
+        ${actionable ? `<button class="arm-order-button" type="button" data-xn-${order.ready ? "disarm" : "arm"}="${escapeHtml(order.sample_id)}">${order.ready ? "Disarm" : "Arm for XN-330"}</button>` : ""}
+        <button class="simulate-button" type="button" data-xn-simulate="${escapeHtml(order.sample_id)}">Preview response</button>
+        <button class="remove-order-button" type="button" data-xn-remove="${escapeHtml(order.sample_id)}">Remove</button>
+      </div>
+    </article>`;
+}
+
+async function loadXnOrders() {
+  const result = await api("/api/xn330/orders");
+  if (result.available === false) return;
+  const signature = JSON.stringify(result.orders);
+  if (signature === state.xnOrdersSignature) return;
+  state.xnOrdersSignature = signature;
+  const container = $("#xnOrdersList");
+  container.innerHTML = result.orders.length
+    ? result.orders.map(xnOrderCard).join("")
+    : '<div class="orders-empty"><strong>No active XN-330 orders</strong><span>Stage one below or send it through the authenticated API.</span></div>';
+  container.querySelectorAll("[data-xn-arm]").forEach((button) => button.addEventListener("click", () => setXnOrderArmed(button.dataset.xnArm, true, button).catch((error) => toast(error.message))));
+  container.querySelectorAll("[data-xn-disarm]").forEach((button) => button.addEventListener("click", () => setXnOrderArmed(button.dataset.xnDisarm, false, button).catch((error) => toast(error.message))));
+  container.querySelectorAll("[data-xn-simulate]").forEach((button) => button.addEventListener("click", () => previewXnOrder(button.dataset.xnSimulate).catch((error) => toast(error.message))));
+  container.querySelectorAll("[data-xn-remove]").forEach((button) => button.addEventListener("click", () => removeXnOrder(button.dataset.xnRemove, button).catch((error) => toast(error.message))));
+}
+
+async function setXnOrderArmed(sampleId, armed, button) {
+  if (armed && !window.confirm(`Arm XN-330 order ${sampleId}? Its next exact Host Query will receive these demographics and parameters once.`)) return;
+  button.disabled = true;
+  try {
+    await api(`/api/xn330/orders/${encodeURIComponent(sampleId)}/arm`, {
+      method: armed ? "POST" : "DELETE",
+      headers: armed ? { "Content-Type": "application/json" } : undefined,
+      body: armed ? JSON.stringify({ confirmation: "ARM XN330 ORDER" }) : undefined,
+    });
+    state.xnOrdersSignature = "";
+    toast(`XN-330 order ${sampleId} ${armed ? "armed" : "disarmed"}.`);
+    await Promise.all([loadXnOrders(), loadStatus(), loadEvents()]);
+  } finally { button.disabled = false; }
+}
+
+async function previewXnOrder(sampleId) {
+  const result = await api("/api/xn330/simulate-query", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sample_id: sampleId }),
+  });
+  $("#xnResponseRecords").textContent = result.response_records.join("\n");
+  toast(`Built XN-330 preview for ${sampleId}; no bytes sent.`);
+}
+
+async function removeXnOrder(sampleId, button) {
+  if (!window.confirm(`Remove XN-330 order ${sampleId}?`)) return;
+  button.disabled = true;
+  try {
+    await api(`/api/xn330/orders/${encodeURIComponent(sampleId)}`, { method: "DELETE" });
+    state.xnOrdersSignature = "";
+    toast(`XN-330 order ${sampleId} removed.`);
+    await Promise.all([loadXnOrders(), loadStatus(), loadEvents()]);
+  } finally { button.disabled = false; }
+}
+
+async function stageXnOrder(event) {
+  event.preventDefault();
+  const alert = $("#xnFormAlert");
+  const button = $("#xnStageButton");
+  alert.hidden = true;
+  button.disabled = true;
+  try {
+    const result = await api("/api/xn330/orders", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sample_id: $("#xnSampleId").value.trim(),
+        patient_id: $("#xnPatientId").value.trim(),
+        given_name: $("#xnGivenName").value.trim(),
+        family_name: $("#xnFamilyName").value.trim(),
+        birth_date: $("#xnBirthDate").value,
+        sex: $("#xnSex").value,
+        tests: state.xnTests,
+      }),
+    });
+    $("#xnResponseRecords").textContent = result.response_preview.join("\n");
+    state.xnOrdersSignature = "";
+    toast(`XN-330 order ${result.order.sample_id} staged. Review and arm its card when ready.`);
+    await Promise.all([loadXnOrders(), loadStatus(), loadEvents()]);
+  } catch (error) {
+    alert.textContent = error.message;
+    alert.hidden = false;
+  } finally { button.disabled = false; }
 }
 
 async function loadCyanvision() {
@@ -255,6 +417,70 @@ async function toggleLiveResponses() {
   }
 }
 
+async function toggleApiAutoArm() {
+  const enabled = !apiAutoArmEnabled;
+  if (enabled && !window.confirm(
+    "Start Selectra API auto-arm? All waiting server orders and every new authenticated server order will be armed. Replies still require an exact sample-ID query."
+  )) return;
+  const button = $("#autoArmButton");
+  button.disabled = true;
+  try {
+    const result = await api("/api/selectra/auto-arm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        enabled,
+        confirmation: enabled ? "ENABLE SELECTRA AUTO ARM" : "",
+      }),
+    });
+    apiAutoArmEnabled = result.enabled;
+    state.ordersSignature = "";
+    toast(result.enabled
+      ? `Auto-arm started; ${result.updated_orders} waiting order(s) armed.`
+      : `Auto-arm stopped; ${result.updated_orders} waiting order(s) disarmed.`);
+    await Promise.all([loadStatus(), loadOrders(), loadEvents()]);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function toggleOutboundField(button) {
+  const field = button.dataset.outboundField;
+  const label = button.dataset.fieldLabel;
+  const enabled = state.outboundFields[field] !== true;
+  if (enabled && !window.confirm(
+    `Send ${label} to Selectra for every API order? Incorrect values can make Selectra reject an existing sample.`
+  )) return;
+  button.disabled = true;
+  try {
+    const result = await api("/api/selectra/outbound-fields", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        field,
+        enabled,
+        confirmation: enabled ? "ENABLE SELECTRA OUTBOUND FIELD" : "",
+      }),
+    });
+    renderOutboundPolicy(result.fields);
+    toast(`${label} ${enabled ? "will now be sent" : "will no longer be sent"}.`);
+    await loadEvents();
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function resetOutboundFields() {
+  const result = await api("/api/selectra/outbound-fields", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reset: true }),
+  });
+  renderOutboundPolicy(result.fields);
+  toast("Selectra API output returned to minimal fields.");
+  await loadEvents();
+}
+
 function eventClass(direction) {
   if (direction === "instrument") return "instrument";
   if (direction === "host") return "host";
@@ -407,16 +633,17 @@ async function stageOrder(event) {
 async function initialize() {
   const assays = await api("/api/assays");
   $("#assaySuggestions").innerHTML = assays.assays.map((assay) => `<option value="${escapeHtml(assay)}"></option>`).join("");
-  await Promise.all([loadStatus(), loadCyanvision(), loadCyanvisionTests(), loadOrders(), loadEvents()]);
+  await Promise.all([loadStatus(), loadCyanvision(), loadCyanvisionTests(), loadOrders(), loadXnTests(), loadXnOrders(), loadEvents()]);
   setInterval(() => loadStatus().catch(() => {}), 2500);
   setInterval(() => loadOrders().catch(() => {}), 2200);
   setInterval(() => loadEvents().catch(() => {}), 1200);
   setInterval(() => loadCyanvision().catch(() => {}), 1800);
   setInterval(() => loadCyanvisionTests().catch(() => {}), 30000);
+  setInterval(() => loadXnOrders().catch(() => {}), 2200);
 }
 
 function setConsoleView(name, updateHash = true) {
-  const valid = ["selectra", "cyanvision", "diagnostics"];
+  const valid = ["selectra", "xn330", "cyanvision", "diagnostics"];
   const selected = valid.includes(name) ? name : "selectra";
   document.querySelectorAll("[data-console-tab]").forEach((button) => {
     const active = button.dataset.consoleTab === selected;
@@ -447,10 +674,27 @@ $("#testCodeInput").addEventListener("keydown", (event) => {
   if (event.key === "Enter") { event.preventDefault(); addTest(); }
 });
 $("#orderForm").addEventListener("submit", stageOrder);
+$("#autoArmButton").addEventListener("click", () => toggleApiAutoArm().catch((error) => toast(error.message)));
+document.querySelectorAll("[data-outbound-field]").forEach((button) => {
+  button.addEventListener("click", () => toggleOutboundField(button).catch((error) => toast(error.message)));
+});
+$("#resetOutboundFields").addEventListener("click", () => resetOutboundFields().catch((error) => toast(error.message)));
 $("#armingButton").addEventListener("click", () => toggleLiveResponses().catch((error) => toast(error.message)));
 $("#probeButton").addEventListener("click", () => toggleContinuousProbe().catch((error) => toast(error.message)));
 $("#cyanvisionForm").addEventListener("submit", stageCyanvision);
 $("#cyanDisarmButton").addEventListener("click", () => disarmCyanvision().catch((error) => toast(error.message)));
+$("#xnOrderForm").addEventListener("submit", stageXnOrder);
+document.querySelectorAll("[data-xn-profile]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const profile = button.dataset.xnProfile;
+    state.xnTests = profile === "all"
+      ? state.xnTestOptions.map((test) => test.code)
+      : profile === "cbc"
+        ? state.xnTestOptions.filter((test) => test.profile === "CBC").map((test) => test.code)
+        : [];
+    renderXnTestOptions();
+  });
+});
 renderTests();
 setConsoleView(location.hash.slice(1), false);
 initialize().catch((error) => toast(`Bench failed to initialize: ${error.message}`));

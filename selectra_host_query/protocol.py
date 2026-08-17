@@ -128,7 +128,7 @@ def test_abbreviation(value: str) -> str:
     raise ValueError(f"unknown Selectra order test {clean!r}; use an installed method")
 
 
-def build_order_records(order: dict) -> list[str]:
+def build_order_records(order: dict, api_outbound_fields=None) -> list[str]:
     """Build one protocol-aligned host response to a Selectra Q record.
 
     Direction matters: fields observed in analyser result uploads are not
@@ -138,8 +138,10 @@ def build_order_records(order: dict) -> list[str]:
     The caller must place all returned records in ONE ASTM frame.
     """
     sample_id = _clean(order["sample_id"])
-    if not sample_id or len(sample_id) > 12:
-        raise ValueError("Selectra sample ID must contain 1 to 12 characters")
+    if not sample_id:
+        raise ValueError("Selectra sample ID is required")
+    minimal_api_order = order.get("source") == "api"
+    enabled_api_fields = set(api_outbound_fields or ())
     preserve_demographics = bool(order.get("preserve_analyser_demographics"))
     family_name = _clean(order.get("family_name"))
     given_name = _clean(order.get("given_name"))
@@ -164,10 +166,10 @@ def build_order_records(order: dict) -> list[str]:
         raise ValueError("Selectra action code must be N, A, or C")
     order_fields[11] = action_code
     specimen_type = _clean(order.get("outbound_specimen_type"))
-    if specimen_type:
+    if specimen_type and (not minimal_api_order or "specimen_type" in enabled_api_fields):
         order_fields[15] = specimen_type
     ordering_physician = _clean(order.get("ordering_physician"))[:20]
-    if ordering_physician:
+    if ordering_physician and (not minimal_api_order or "ordering_physician" in enabled_api_fields):
         order_fields[16] = ordering_physician
     order_fields[25] = "Q"
 
@@ -175,18 +177,35 @@ def build_order_records(order: dict) -> list[str]:
     # already present under the same sample ID. A wildcard response cannot
     # know those demographics, so it must send the required minimal P record
     # rather than inventing a patient name, birth date, or sex.
-    patient_record = (
-        "P|1"
-        if preserve_demographics
-        else f"P|1||||{patient_name}||{birth_date}|{sex}"
-    )
+    if preserve_demographics:
+        patient_record = "P|1"
+    elif not minimal_api_order:
+        patient_record = f"P|1||||{patient_name}||{birth_date}|{sex}"
+    elif "sex" in enabled_api_fields:
+        patient_record = (
+            f"P|1||||{patient_name}||"
+            f"{birth_date if 'birth_date' in enabled_api_fields else ''}|{sex}"
+        )
+    elif "birth_date" in enabled_api_fields:
+        patient_record = f"P|1||||{patient_name}||{birth_date}"
+    else:
+        patient_record = f"P|1||||{patient_name}"
 
-    return [
+    records = [
         f"H|\\^&|||WINLAB|||||PROM||P|LIS2-A|{_stamp()}",
         patient_record,
         "|".join(order_fields),
-        "L|1|F",
     ]
+    comment = (
+        _clean(order.get("comment"))[:100]
+        if not minimal_api_order or "comment" in enabled_api_fields else ""
+    )
+    if comment:
+        # A C record immediately following O is copied into the Selectra's
+        # sample Comment field. The instrument stores at most 100 characters.
+        records.append(f"C|1||{comment}")
+    records.append("L|1|F")
+    return records
 
 
 def application_rejections(records: list[str]) -> list[dict[str, str]]:

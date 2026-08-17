@@ -10,11 +10,16 @@ http://<bridge-IP>:5052/api/v1/orders/
 This API does not push a connection to either analyzer:
 
 - Selectra orders remain inactive until a local operator arms the exact sample
-  on the `5052` console. A matching Host Query can then receive it.
+  on the `5052` console. After validation, the operator may enable persistent
+  **API auto-arm** so authenticated server orders are armed as they arrive.
+  In both modes only an exact Host Query match can receive an order.
 - CYANVision sends `QRY^Q02` when the operator presses **Patient Worklist ->
   Load from LIS**. The bridge returns the ready CYANVision queue in creation
   order, waiting for `ACK^Q03` between `DSR^Q03` items. The final item has an
   empty `DSC` continuation pointer.
+- XN-330 orders remain inactive until a local operator arms the exact order
+  card. The XN-330 initiates an ASTM `H/Q/L` Host Query and receives `H/P/O/L`
+  only when its Q-3 sample ID exactly matches an armed order.
 
 ## Authentication
 
@@ -57,10 +62,25 @@ POST /api/v1/orders/selectra
 
 Rules:
 
-- `sample_id` is required, case-sensitive, and limited to 12 characters.
+- `sample_id` is required and case-sensitive. The bridge does not truncate it
+  or impose the Selectra manual's historical 12-character limit. Delivery
+  still requires Selectra to send the exact same complete value in `Q-2`.
+  If the analyzer firmware truncates an ID, it remains safely unmatched.
 - `family_name` plus a space plus `given_name` must fit the Selectra's
   20-character patient-name limit.
-- `birth_date` uses `YYYY-MM-DD`; `sex` is `M`, `F`, or `U`.
+- `birth_date` uses `YYYY-MM-DD`; `sex` is `M`, `F`, or `U`. They are retained
+  for clinic correlation but deliberately omitted from the Selectra message to
+  avoid conflicting with a sample already entered on the analyzer.
+- `patient_id` is retained for local/clinic correlation. Selectra documents
+  its patient-ID fields as ignored, so it does not appear in the analyzer form.
+- Selectra API responses intentionally send only the patient name, exact
+  sample ID, and requested tests. `specimen_type`, `ordering_physician`, and
+  `comment` are not transmitted by default even if an older client includes
+  them. This keeps O-16 empty so the analyzer can use its configured sample
+  type. A local operator can individually enable birth date, sex, sample type,
+  physician, or comment in **Selectra outbound fields** on the `5052` console.
+  These switches persist across restarts and apply immediately to staged API
+  orders; **Return to minimal** disables all optional output again.
 - `tests` should contain clinic identifiers. Each entry requires `param_id`,
   `service_tarification_id`, or both. LaboBridge reverses its curated Selectra
   mappings and transmits the exact installed analyzer code.
@@ -70,17 +90,18 @@ Rules:
 - Unknown or ambiguous identifiers return HTTP `400`; LaboBridge never guesses
   a clinical test. Legacy method-name strings remain accepted temporarily for
   compatibility, but new integrations should use identifiers.
-- Selectra specimen type is not part of this API. The optional LIS2-A O-16
-  descriptor requires an exact, case-sensitive analyzer configuration name;
-  it remains blank until those local names are confirmed.
 - Reposting the same `sample_id` replaces the stored content and returns it to
   the inactive staged state. `external_order_id` is optional correlation
   metadata.
 
-The API only stages the order. It remains inactive until a local operator opens
-the `5052` console and clicks **Arm for Selectra** on that exact sample. Once
-armed, it survives a LaboBridge restart. After Selectra transport-ACKs the
-response, it becomes `transport_acknowledged` and is no longer armed.
+By default, the API only stages the order. It remains inactive until a local
+operator opens the `5052` console and clicks **Arm for Selectra** on that exact
+sample. Once the local operator starts **API auto-arm**, all waiting actionable
+API orders and every new authenticated API order are armed automatically. The
+mode survives a LaboBridge restart. Stopping auto-arm disarms all waiting API
+orders; it does not affect already delivered audit records. After Selectra
+transport-ACKs a response, that order becomes `transport_acknowledged` and is
+no longer armed.
 
 ### Read status or cancel
 
@@ -138,6 +159,59 @@ GET    /api/v1/orders/cyanvision/<sample_id>
 DELETE /api/v1/orders/cyanvision/<sample_id>
 ```
 
+## Sysmex XN-330
+
+### Stage or replace an order
+
+```http
+POST /api/v1/orders/xn330
+```
+
+An FNS clinic order can select the full curated XN-330 parameter set with its
+tarification ID:
+
+```json
+{
+  "external_order_id": "LIS-FNS-7814",
+  "sample_id": "XN-260816-001",
+  "patient_id": "PAT-4821",
+  "given_name": "BENCH",
+  "family_name": "PATIENT",
+  "birth_date": "1980-06-15",
+  "sex": "F",
+  "tests": [{"service_tarification_id": 421}]
+}
+```
+
+Rules:
+
+- `sample_id` is case-sensitive, limited to 22 printable ASCII characters,
+  and must exactly match the sample component sent by the XN-330 in Q-3.
+- `patient_id` is limited to 16 characters. Given and family names are each
+  limited to 20 characters and are transmitted as `^Given^Family`.
+- `birth_date` uses `YYYY-MM-DD`; `sex` is `M`, `F`, or `U`.
+- `tests` may contain clinic identifier objects. Tarification `421` without a
+  `param_id` expands to the bridge's curated FNS/XN-330 parameters. A specific
+  `param_id` selects its exact mapped XN parameter.
+- For controlled bench compatibility, exact documented parameter strings are
+  also accepted: `WBC`, `RBC`, `HGB`, `HCT`, `MCV`, `MCH`, `MCHC`, `PLT`,
+  `RDW-SD`, `RDW-CV`, `MPV`, `NEUT#`, `LYMPH#`, `MONO#`, `EO#`, `BASO#`,
+  `NEUT%`, `LYMPH%`, `MONO%`, `EO%`, `BASO%`, `IG#`, and `IG%`.
+- Reposting the same sample replaces its contents and returns it to unarmed
+  staging. The API never auto-arms an XN-330 order.
+
+The local operator opens the **XN-330 orders** tab on port `5052`, reviews the
+patient and parameters, and clicks **Arm for XN-330**. Successful ASTM
+acknowledgement consumes and disarms the order. An unarmed or unmatched query
+is recorded in the trace but receives no patient/order payload.
+
+### Read status or cancel
+
+```http
+GET    /api/v1/orders/xn330/<sample_id>
+DELETE /api/v1/orders/xn330/<sample_id>
+```
+
 ## Example request
 
 ```bash
@@ -160,3 +234,7 @@ or arm anything.
 CYANVision staging uses the same compact acknowledgement shape, with
 `"state":"ready"` because its queue is delivered through the operator's
 explicit **Load from LIS** action on the analyzer.
+
+XN-330 staging uses the same compact acknowledgement shape with
+`"analyzer":"xn330"` and `"state":"staged"`; manual arming is intentionally
+performed only through the local console.

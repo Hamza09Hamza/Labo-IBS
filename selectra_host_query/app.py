@@ -13,6 +13,7 @@ from flask import Flask, jsonify, request, send_from_directory
 from labo_bridge import mappings as bridge_mappings, pg
 
 from .protocol import build_order_records, test_abbreviation
+from xn330_order_download import protocol as xn330_protocol
 
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -72,7 +73,7 @@ def _validate_text(name, value, required=True, maximum=80):
     value = str(value or "").strip()
     if required and not value:
         raise ValueError(f"{name} is required")
-    if len(value) > maximum:
+    if maximum is not None and len(value) > maximum:
         raise ValueError(f"{name} must be {maximum} characters or fewer")
     if value and not SAFE_VALUE.fullmatch(value):
         raise ValueError(f"{name} contains a reserved protocol delimiter")
@@ -102,7 +103,7 @@ def _validated_order(body):
     sex = str(body.get("sex") or "").upper() or _random_sex()
     if sex not in {"M", "F", "U"}:
         raise ValueError("sex must be M, F, or U")
-    sample_id = _validate_text("sample ID", body.get("sample_id"), maximum=12)
+    sample_id = _validate_text("sample ID", body.get("sample_id"), maximum=None)
     family_name = str(body.get("family_name") or "").strip() or random.choice(_RANDOM_FAMILY_NAMES)
     given_name = str(body.get("given_name") or "").strip() or random.choice(_RANDOM_GIVEN_NAMES)
     return {
@@ -238,14 +239,27 @@ def _validated_selectra_api_order(body):
     if sex not in {"M", "F", "U"}:
         raise ValueError("Selectra sex must be M, F, or U")
     order = {
-        "sample_id": _validate_text("Selectra sample ID", body.get("sample_id"), maximum=12),
+        # Do not impose the manual's historical 12-character O-3 limit at
+        # the bridge boundary. Store and match the exact value Selectra sends
+        # in Q-2; never truncate an identifier or guess a prefix match.
+        "sample_id": _validate_text("Selectra sample ID", body.get("sample_id"), maximum=None),
         "patient_id": _validate_text("Selectra patient ID", body.get("patient_id"), maximum=64),
         "family_name": _validate_text("Selectra family name", body.get("family_name"), maximum=80),
         "given_name": _validate_text("Selectra given name", body.get("given_name"), maximum=80),
         "birth_date": birth_date,
         "sex": sex,
         "specimen_type": _validate_text(
-            "Selectra specimen type", body.get("specimen_type") or "UNSPECIFIED", maximum=32,
+            "Selectra specimen type", body.get("specimen_type"), required=False, maximum=32,
+        ),
+        "outbound_specimen_type": _validate_text(
+            "Selectra specimen type", body.get("specimen_type"), required=False, maximum=32,
+        ),
+        "ordering_physician": _validate_text(
+            "Selectra ordering physician", body.get("ordering_physician"),
+            required=False, maximum=20,
+        ),
+        "comment": _validate_text(
+            "Selectra comment", body.get("comment"), required=False, maximum=100,
         ),
         "tests": tests,
         "external_order_id": _validate_text(
@@ -307,6 +321,53 @@ def _validated_cyanvision_api_order(body):
     return order
 
 
+def _resolve_xn330_tests(values):
+    if not isinstance(values, list) or not values:
+        raise ValueError("XN-330 tests must be a non-empty JSON array")
+    resolved = []
+    for value in values:
+        if isinstance(value, dict):
+            param_id = _optional_positive_id("param_id", value.get("param_id"))
+            service_id = _optional_positive_id(
+                "service_tarification_id", value.get("service_tarification_id"),
+            )
+            if param_id is None and service_id == 421:
+                # FNS is one clinic order but a set of discrete XN parameters.
+                for code in bridge_mappings.MAPS.get("xn330", {}):
+                    if code in xn330_protocol.TEST_SET:
+                        resolved.append(code)
+                continue
+            resolved.append(_resolve_machine_test("xn330", value)["machine_code"])
+        else:
+            resolved.append(_validate_text("XN-330 test", value, maximum=20).upper())
+    return xn330_protocol.validate_tests(list(dict.fromkeys(resolved)))
+
+
+def _validated_xn330_order(body):
+    birth_date = str(body.get("birth_date") or "").strip()
+    try:
+        date.fromisoformat(birth_date)
+    except ValueError:
+        raise ValueError("XN-330 birth date must use YYYY-MM-DD") from None
+    sex = str(body.get("sex") or "").strip().upper()
+    if sex not in {"M", "F", "U"}:
+        raise ValueError("XN-330 sex must be M, F, or U")
+    order = {
+        "sample_id": _validate_text("XN-330 sample ID", body.get("sample_id"), maximum=22),
+        "patient_id": _validate_text("XN-330 patient ID", body.get("patient_id"), maximum=16),
+        "given_name": _validate_text("XN-330 given name", body.get("given_name"), maximum=20),
+        "family_name": _validate_text("XN-330 family name", body.get("family_name"), maximum=20),
+        "birth_date": birth_date,
+        "sex": sex,
+        "tests": _resolve_xn330_tests(body.get("tests")),
+        "external_order_id": _validate_text(
+            "external order ID", body.get("external_order_id"), required=False, maximum=100,
+        ) or None,
+    }
+    _require_ascii(order, "XN-330")
+    return order
+
+
 def _cyanvision_test_options():
     """Exact CYANVision codes from curated mappings and received results."""
     choices = {}
@@ -337,7 +398,9 @@ def _cyanvision_test_options():
     return sorted(choices.values(), key=lambda item: item["code"].casefold())
 
 
-def create_app(store, service, cyanvision_service=None, order_api_token=None):
+def create_app(
+    store, service, cyanvision_service=None, xn330_service=None, order_api_token=None,
+):
     app = Flask(__name__, static_folder=None)
     configured_order_api_token = (
         order_api_token if order_api_token is not None
@@ -377,15 +440,110 @@ def create_app(store, service, cyanvision_service=None, order_api_token=None):
             order for order in store.list_orders()
             if order.get("status") != "cancelled"
         ]
+        active_xn330_orders = [
+            order for order in store.list_xn330_orders()
+            if order.get("status") != "cancelled"
+        ] if xn330_service else []
         return jsonify({
             **service.status(),
-            "orders": len(active_orders),
+            "orders": len(active_orders) + len(active_xn330_orders),
             "api_armed_orders": len([
                 order for order in active_orders
                 if order.get("source") == "api" and order.get("ready")
             ]),
+            "api_auto_arm": store.selectra_auto_arm_enabled(),
+            "selectra_outbound_fields": store.selectra_outbound_fields(),
             "cyanvision": cyanvision,
+            "xn330": xn330_service.status() if xn330_service else None,
         })
+
+    @app.get("/api/xn330/tests")
+    def xn330_tests():
+        return jsonify({
+            "available": xn330_service is not None,
+            "tests": [
+                {"code": code, "profile": "CBC" if code in xn330_protocol.CBC_TESTS else "DIFF"}
+                for code in xn330_protocol.ORDERABLE_TESTS
+            ] if xn330_service else [],
+        })
+
+    @app.get("/api/xn330/orders")
+    def xn330_orders():
+        if not xn330_service:
+            return jsonify({"available": False, "orders": []})
+        return jsonify({
+            "available": True,
+            "orders": [
+                order for order in store.list_xn330_orders()
+                if order.get("status") != "cancelled"
+            ],
+        })
+
+    @app.post("/api/xn330/orders")
+    def stage_xn330_order():
+        if not xn330_service:
+            return jsonify({"error": "XN-330 order service is unavailable"}), 503
+        try:
+            order = _validated_xn330_order(request.get_json(silent=True) or {})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        saved = store.upsert_xn330_order(order, source="manual", ready=False)
+        return jsonify({
+            "ok": True, "order": saved,
+            "response_preview": xn330_service.preview(saved["sample_id"]),
+        }), 201
+
+    @app.post("/api/xn330/orders/<sample_id>/arm")
+    def arm_xn330_order(sample_id):
+        if not xn330_service:
+            return jsonify({"error": "XN-330 order service is unavailable"}), 503
+        body = request.get_json(silent=True) or {}
+        if body.get("confirmation") != "ARM XN330 ORDER":
+            return jsonify({"error": "explicit ARM XN330 ORDER confirmation is required"}), 400
+        try:
+            saved = store.set_xn330_order_ready(sample_id, True)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 409
+        if not saved:
+            return jsonify({"error": "XN-330 order not found"}), 404
+        store.add_event(
+            "local", "xn330_order_armed", sample_id,
+            "XN-330 order manually armed; waiting for an exact Host Query sample ID",
+        )
+        return jsonify({"ok": True, "sample_id": sample_id, "state": "armed", "armed": True})
+
+    @app.delete("/api/xn330/orders/<sample_id>/arm")
+    def disarm_xn330_order(sample_id):
+        if not xn330_service:
+            return jsonify({"error": "XN-330 order service is unavailable"}), 503
+        saved = store.set_xn330_order_ready(sample_id, False)
+        if not saved:
+            return jsonify({"error": "XN-330 order not found"}), 404
+        store.add_event(
+            "local", "xn330_order_disarmed", sample_id,
+            "XN-330 order manually disarmed; matching queries receive no order payload",
+        )
+        return jsonify({"ok": True, "sample_id": sample_id, "state": "staged", "armed": False})
+
+    @app.delete("/api/xn330/orders/<sample_id>")
+    def remove_xn330_order(sample_id):
+        order = store.get_xn330_order(sample_id)
+        if not order or order.get("status") == "cancelled":
+            return jsonify({"error": "XN-330 order not found"}), 404
+        store.cancel_xn330_order(sample_id)
+        store.add_event("local", "xn330_order_removed", sample_id, "XN-330 order removed")
+        return jsonify({"ok": True, "sample_id": sample_id, "state": "cancelled"})
+
+    @app.post("/api/xn330/simulate-query")
+    def simulate_xn330_query():
+        if not xn330_service:
+            return jsonify({"error": "XN-330 order service is unavailable"}), 503
+        sample_id = str((request.get_json(silent=True) or {}).get("sample_id") or "").strip()
+        try:
+            records = xn330_service.preview(sample_id)
+        except KeyError:
+            return jsonify({"error": "XN-330 order not found"}), 404
+        return jsonify({"ok": True, "sample_id": sample_id, "response_records": records})
 
     @app.get("/api/cyanvision/worklist")
     def cyanvision_worklist_status():
@@ -442,13 +600,65 @@ def create_app(store, service, cyanvision_service=None, order_api_token=None):
             order, resolved_tests = _validated_selectra_api_order(body)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
-        saved = store.upsert_order(order, source="api", ready=False)
+        saved = store.upsert_order(
+            order, source="api", ready=store.selectra_auto_arm_enabled(),
+        )
         return jsonify({
             "ok": True,
             "analyzer": "selectra",
             "sample_id": saved["sample_id"],
-            "state": "staged",
+            "state": "armed" if saved["ready"] else "staged",
         }), 201
+
+    @app.post("/api/selectra/auto-arm")
+    def set_selectra_auto_arm():
+        body = request.get_json(silent=True) or {}
+        enabled = body.get("enabled") is True
+        if enabled and body.get("confirmation") != "ENABLE SELECTRA AUTO ARM":
+            return jsonify({
+                "error": "explicit ENABLE SELECTRA AUTO ARM confirmation is required"
+            }), 400
+        changed = store.set_selectra_auto_arm(enabled)
+        store.add_event(
+            "local", "selectra_auto_arm_enabled" if enabled else "selectra_auto_arm_disabled",
+            None,
+            (
+                f"Selectra API auto-arm enabled; {changed} waiting order(s) armed"
+                if enabled else
+                f"Selectra API auto-arm disabled; {changed} waiting order(s) disarmed"
+            ),
+        )
+        return jsonify({
+            "ok": True,
+            "enabled": enabled,
+            "updated_orders": changed,
+        })
+
+    @app.post("/api/selectra/outbound-fields")
+    def set_selectra_outbound_fields():
+        body = request.get_json(silent=True) or {}
+        if body.get("reset") is True:
+            fields = store.reset_selectra_outbound_fields()
+            store.add_event(
+                "local", "selectra_outbound_fields_reset", None,
+                "Selectra API output returned to minimal name, sample ID, and tests",
+            )
+            return jsonify({"ok": True, "fields": fields})
+        field = str(body.get("field") or "").strip()
+        enabled = body.get("enabled") is True
+        if enabled and body.get("confirmation") != "ENABLE SELECTRA OUTBOUND FIELD":
+            return jsonify({
+                "error": "explicit ENABLE SELECTRA OUTBOUND FIELD confirmation is required"
+            }), 400
+        try:
+            fields = store.set_selectra_outbound_field(field, enabled)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        store.add_event(
+            "local", "selectra_outbound_field_changed", None,
+            f"Selectra API outbound field {field} {'enabled' if enabled else 'disabled'}",
+        )
+        return jsonify({"ok": True, "fields": fields})
 
     @app.get("/api/v1/orders/selectra/<sample_id>")
     def api_get_selectra_order(sample_id):
@@ -501,6 +711,44 @@ def create_app(store, service, cyanvision_service=None, order_api_token=None):
             "state": "ready",
             "sample_id": saved["sample_id"],
         }), 201
+
+    @app.post("/api/v1/orders/xn330")
+    def api_stage_xn330_order():
+        if not xn330_service:
+            return jsonify({"error": "XN-330 order service is unavailable"}), 503
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "request body must be a JSON object"}), 400
+        try:
+            order = _validated_xn330_order(body)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        saved = store.upsert_xn330_order(order, source="api", ready=False)
+        return jsonify({
+            "ok": True, "analyzer": "xn330",
+            "sample_id": saved["sample_id"], "state": "staged",
+        }), 201
+
+    @app.get("/api/v1/orders/xn330/<sample_id>")
+    def api_get_xn330_order(sample_id):
+        order = store.get_xn330_order(sample_id)
+        if not order or order.get("source") != "api":
+            return jsonify({"error": "XN-330 API order not found"}), 404
+        return jsonify({
+            "analyzer": "xn330", "sample_id": sample_id,
+            "state": order["status"], "armed": order["ready"],
+            "query_count": order["query_count"], "updated_at": order["updated_at"],
+            "last_error": order["last_error"],
+        })
+
+    @app.delete("/api/v1/orders/xn330/<sample_id>")
+    def api_cancel_xn330_order(sample_id):
+        order = store.get_xn330_order(sample_id)
+        if not order or order.get("source") != "api":
+            return jsonify({"error": "XN-330 API order not found"}), 404
+        store.cancel_xn330_order(sample_id)
+        store.add_event("api", "xn330_order_cancelled", sample_id, "XN-330 API order cancelled")
+        return jsonify({"ok": True, "analyzer": "xn330", "sample_id": sample_id, "state": "cancelled"})
 
     @app.get("/api/v1/orders/cyanvision/<sample_id>")
     def api_get_cyanvision_order(sample_id):

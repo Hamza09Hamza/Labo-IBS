@@ -46,6 +46,7 @@ RESULTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir,
 # instrument listener and never replies to an unmatched sample ID.
 _selectra_host_query_service = None
 _cyanvision_worklist_service = None
+_xn330_order_download_service = None
 
 
 def configure_selectra_host_query(service):
@@ -56,6 +57,11 @@ def configure_selectra_host_query(service):
 def configure_cyanvision_worklist(service):
     global _cyanvision_worklist_service
     _cyanvision_worklist_service = service
+
+
+def configure_xn330_order_download(service):
+    global _xn330_order_download_service
+    _xn330_order_download_service = service
 
 # machine -> config. Each machine listens on its own fixed port.
 # "selectra" is the chemistry analyzer's real machine name (ELITech is the
@@ -418,6 +424,8 @@ def _handle_astm(conn, addr, cfg, machine, quiet):
                 _write_session_file(session)
                 if machine == "selectra" and _selectra_host_query_service is not None:
                     _selectra_host_query_service.handle_records(conn, batch_records)
+                if machine == "xn330" and _xn330_order_download_service is not None:
+                    _xn330_order_download_service.handle_records(conn, batch_records)
                 # A single connection can carry multiple ENQ..EOT batches -
                 # reset per-batch accumulators so each file reflects only
                 # its own batch, not every batch seen on this connection.
@@ -564,6 +572,8 @@ def _serve_one_machine(machine: str, quiet: bool, stop_event: threading.Event):
         _selectra_host_query_service.set_instrument_port(port)
     if machine == "cyanvision" and _cyanvision_worklist_service is not None:
         _cyanvision_worklist_service.set_instrument_port(port)
+    if machine == "xn330" and _xn330_order_download_service is not None:
+        _xn330_order_download_service.set_instrument_port(port)
     print(f"[{machine}] listening on {HOST}:{port} ({cfg['protocol'].upper()}). "
           f"Storage: Postgres (labo_bridge schema)")
     live_status.set_listening(machine, datetime.now().isoformat(timespec="seconds"))
@@ -587,6 +597,8 @@ def _serve_one_machine(machine: str, quiet: bool, stop_event: threading.Event):
                         _selectra_host_query_service.set_instrument_port(port)
                     if machine == "cyanvision" and _cyanvision_worklist_service is not None:
                         _cyanvision_worklist_service.set_instrument_port(port)
+                    if machine == "xn330" and _xn330_order_download_service is not None:
+                        _xn330_order_download_service.set_instrument_port(port)
                     print(f"[{machine}] now listening on {HOST}:{port}.")
                 except OSError as e:
                     print(f"[{machine}] failed to bind port {desired_port} ({e}); "
@@ -614,6 +626,8 @@ def _serve_one_machine(machine: str, quiet: bool, stop_event: threading.Event):
             query_peer = f"{addr[0]}:{addr[1]}"
             if machine == "selectra" and _selectra_host_query_service is not None:
                 _selectra_host_query_service.client_connected(query_peer)
+            if machine == "xn330" and _xn330_order_download_service is not None:
+                _xn330_order_download_service.client_connected(query_peer)
             try:
                 handler(conn, addr, cfg, machine, quiet)
             except Exception as e:
@@ -623,6 +637,8 @@ def _serve_one_machine(machine: str, quiet: bool, stop_event: threading.Event):
                     _selectra_host_query_service.client_disconnected(query_peer)
                 if machine == "cyanvision" and _cyanvision_worklist_service is not None:
                     _cyanvision_worklist_service.connection_closed()
+                if machine == "xn330" and _xn330_order_download_service is not None:
+                    _xn330_order_download_service.client_disconnected(query_peer)
                 conn.close()
             print(f"[{machine}] ready for next connection.")
             live_status.set_listening(machine, datetime.now().isoformat(timespec="seconds"))

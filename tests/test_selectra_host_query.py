@@ -72,6 +72,27 @@ class BenchCase(unittest.TestCase):
         self.assertIn("|||WINLAB|||||PROM||P|LIS2-A|", records[0])
         self.assertEqual(records[3], "L|1|F")
 
+        patient_fields = records[1].split("|")
+        self.assertEqual(patient_fields[5], "BENCH PATIENT")
+        self.assertEqual(patient_fields[7], "19800615")
+        self.assertEqual(patient_fields[8], "U")
+
+    def test_order_records_preserve_long_id_and_fill_supported_form_fields(self):
+        long_id = "CLINIC-SAMPLE-20260816-0001"
+        records = protocol.build_order_records({
+            **ORDER,
+            "sample_id": long_id,
+            "outbound_specimen_type": "Normal",
+            "ordering_physician": "DR LAB",
+            "comment": "Fasting sample",
+        })
+        self.assertEqual([record[0] for record in records], ["H", "P", "O", "C", "L"])
+        order_fields = records[2].split("|")
+        self.assertEqual(order_fields[2], long_id)
+        self.assertEqual(order_fields[15], "Normal")
+        self.assertEqual(order_fields[16], "DR LAB")
+        self.assertEqual(records[3], "C|1||Fasting sample")
+
     def test_disarmed_query_builds_but_sends_nothing(self):
         service = SelectraHostQueryServer(self.store, armed=False)
         connection = FakeConnection()
@@ -121,8 +142,10 @@ class BenchCase(unittest.TestCase):
         client = create_app(self.store, service).test_client()
         invalid = client.post("/api/orders", json={**ORDER, "sample_id": "BAD|ID"})
         self.assertEqual(invalid.status_code, 400)
-        too_long = client.post("/api/orders", json={**ORDER, "sample_id": "1234567890123"})
-        self.assertEqual(too_long.status_code, 400)
+        long_id = client.post(
+            "/api/orders", json={**ORDER, "sample_id": "12345678901234567890"}
+        )
+        self.assertEqual(long_id.status_code, 201)
         unknown_test = client.post(
             "/api/orders", json={**ORDER, "sample_id": "HQ-UNKNOWN", "tests": ["NOT-INSTALLED"]}
         )

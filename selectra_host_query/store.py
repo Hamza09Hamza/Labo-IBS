@@ -13,6 +13,11 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
+SELECTRA_OPTIONAL_OUTBOUND_FIELDS = (
+    "birth_date", "sex", "specimen_type", "ordering_physician", "comment",
+)
+
+
 class BenchStore:
     def __init__(self, path: str):
         self.path = os.path.abspath(path)
@@ -60,7 +65,10 @@ class BenchStore:
                     last_error TEXT,
                     source TEXT NOT NULL DEFAULT 'manual',
                     ready INTEGER NOT NULL DEFAULT 0,
-                    external_order_id TEXT
+                    external_order_id TEXT,
+                    outbound_specimen_type TEXT NOT NULL DEFAULT '',
+                    ordering_physician TEXT NOT NULL DEFAULT '',
+                    comment TEXT NOT NULL DEFAULT ''
                 );
                 CREATE TABLE IF NOT EXISTS cyanvision_orders (
                     sample_id TEXT PRIMARY KEY,
@@ -72,6 +80,25 @@ class BenchStore:
                     status TEXT NOT NULL DEFAULT 'staged',
                     source TEXT NOT NULL DEFAULT 'manual',
                     ready INTEGER NOT NULL DEFAULT 1,
+                    external_order_id TEXT,
+                    query_count INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    last_query_at TEXT,
+                    last_delivery_at TEXT,
+                    last_error TEXT
+                );
+                CREATE TABLE IF NOT EXISTS xn330_orders (
+                    sample_id TEXT PRIMARY KEY,
+                    patient_id TEXT NOT NULL,
+                    family_name TEXT NOT NULL,
+                    given_name TEXT NOT NULL,
+                    birth_date TEXT NOT NULL DEFAULT '',
+                    sex TEXT NOT NULL DEFAULT 'U',
+                    tests_json TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'staged',
+                    source TEXT NOT NULL DEFAULT 'manual',
+                    ready INTEGER NOT NULL DEFAULT 0,
                     external_order_id TEXT,
                     query_count INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL,
@@ -93,6 +120,11 @@ class BenchStore:
                     name TEXT PRIMARY KEY,
                     applied_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS settings (
+                    name TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
                 """
             )
             # Existing installations predate API-fed orders. SQLite's
@@ -105,6 +137,9 @@ class BenchStore:
                 ("source", "TEXT NOT NULL DEFAULT 'manual'"),
                 ("ready", "INTEGER NOT NULL DEFAULT 0"),
                 ("external_order_id", "TEXT"),
+                ("outbound_specimen_type", "TEXT NOT NULL DEFAULT ''"),
+                ("ordering_physician", "TEXT NOT NULL DEFAULT ''"),
+                ("comment", "TEXT NOT NULL DEFAULT ''"),
             ):
                 if column not in order_columns:
                     connection.execute(f"ALTER TABLE orders ADD COLUMN {column} {definition}")
@@ -148,8 +183,9 @@ class BenchStore:
                 INSERT INTO orders
                     (sample_id, patient_id, family_name, given_name, birth_date,
                      sex, specimen_type, tests_json, status, source, ready,
-                     external_order_id, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'staged', ?, ?, ?, ?, ?)
+                     external_order_id, outbound_specimen_type,
+                     ordering_physician, comment, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'staged', ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(sample_id) DO UPDATE SET
                     patient_id=excluded.patient_id,
                     family_name=excluded.family_name,
@@ -162,6 +198,9 @@ class BenchStore:
                     source=excluded.source,
                     ready=excluded.ready,
                     external_order_id=excluded.external_order_id,
+                    outbound_specimen_type=excluded.outbound_specimen_type,
+                    ordering_physician=excluded.ordering_physician,
+                    comment=excluded.comment,
                     updated_at=excluded.updated_at,
                     last_error=NULL
                 """,
@@ -169,7 +208,10 @@ class BenchStore:
                     order["sample_id"], order["patient_id"], order["family_name"],
                     order["given_name"], order.get("birth_date", ""), order.get("sex", "U"),
                     order.get("specimen_type", "SERUM"), json.dumps(order["tests"], ensure_ascii=True),
-                    source, int(bool(ready)), order.get("external_order_id"), now, now,
+                    source, int(bool(ready)), order.get("external_order_id"),
+                    order.get("outbound_specimen_type", ""),
+                    order.get("ordering_physician", ""), order.get("comment", ""),
+                    now, now,
                 ),
             )
         direction = "api" if source == "api" else "local"
@@ -259,6 +301,89 @@ class BenchStore:
                  utc_now(), sample_id),
             )
         return self.get_order(sample_id)
+
+    def selectra_auto_arm_enabled(self) -> bool:
+        with self._session() as connection:
+            row = connection.execute(
+                "SELECT value FROM settings WHERE name='selectra_api_auto_arm'"
+            ).fetchone()
+        return bool(row and row["value"] == "1")
+
+    def set_selectra_auto_arm(self, enabled: bool) -> int:
+        """Persist API auto-arm and update all still-actionable API orders."""
+        now = utc_now()
+        with self._session() as connection:
+            connection.execute(
+                """
+                INSERT INTO settings (name, value, updated_at)
+                VALUES ('selectra_api_auto_arm', ?, ?)
+                ON CONFLICT(name) DO UPDATE SET
+                    value=excluded.value, updated_at=excluded.updated_at
+                """,
+                ("1" if enabled else "0", now),
+            )
+            if enabled:
+                cursor = connection.execute(
+                    """
+                    UPDATE orders
+                    SET ready=1, status='staged', updated_at=?, last_error=NULL
+                    WHERE source='api' AND status IN ('staged', 'queried', 'error')
+                    """,
+                    (now,),
+                )
+            else:
+                cursor = connection.execute(
+                    """
+                    UPDATE orders
+                    SET ready=0, updated_at=?
+                    WHERE source='api' AND ready=1
+                      AND status IN ('staged', 'queried', 'error')
+                    """,
+                    (now,),
+                )
+        return cursor.rowcount
+
+    def selectra_outbound_fields(self) -> dict[str, bool]:
+        names = [f"selectra_outbound_{field}" for field in SELECTRA_OPTIONAL_OUTBOUND_FIELDS]
+        placeholders = ",".join("?" for _ in names)
+        with self._session() as connection:
+            rows = connection.execute(
+                f"SELECT name, value FROM settings WHERE name IN ({placeholders})", names,
+            ).fetchall()
+        stored = {row["name"]: row["value"] == "1" for row in rows}
+        return {
+            field: stored.get(f"selectra_outbound_{field}", False)
+            for field in SELECTRA_OPTIONAL_OUTBOUND_FIELDS
+        }
+
+    def set_selectra_outbound_field(self, field: str, enabled: bool) -> dict[str, bool]:
+        if field not in SELECTRA_OPTIONAL_OUTBOUND_FIELDS:
+            raise ValueError(f"unknown Selectra outbound field {field!r}")
+        with self._session() as connection:
+            connection.execute(
+                """
+                INSERT INTO settings (name, value, updated_at) VALUES (?, ?, ?)
+                ON CONFLICT(name) DO UPDATE SET
+                    value=excluded.value, updated_at=excluded.updated_at
+                """,
+                (f"selectra_outbound_{field}", "1" if enabled else "0", utc_now()),
+            )
+        return self.selectra_outbound_fields()
+
+    def reset_selectra_outbound_fields(self) -> dict[str, bool]:
+        with self._session() as connection:
+            connection.executemany(
+                """
+                INSERT INTO settings (name, value, updated_at) VALUES (?, '0', ?)
+                ON CONFLICT(name) DO UPDATE SET
+                    value='0', updated_at=excluded.updated_at
+                """,
+                [
+                    (f"selectra_outbound_{field}", utc_now())
+                    for field in SELECTRA_OPTIONAL_OUTBOUND_FIELDS
+                ],
+            )
+        return self.selectra_outbound_fields()
 
     @staticmethod
     def _cyanvision_order(row):
@@ -368,6 +493,143 @@ class BenchStore:
                 """
                 UPDATE cyanvision_orders
                 SET status='cancelled', ready=0, updated_at=?
+                WHERE sample_id=?
+                """,
+                (utc_now(), sample_id),
+            )
+        return cursor.rowcount > 0
+
+    @staticmethod
+    def _xn330_order(row):
+        if row is None:
+            return None
+        value = dict(row)
+        value["tests"] = json.loads(value.pop("tests_json"))
+        value["ready"] = bool(value["ready"])
+        return value
+
+    def upsert_xn330_order(self, order: dict, source="manual", ready=False) -> dict:
+        now = utc_now()
+        with self._session() as connection:
+            connection.execute(
+                """
+                INSERT INTO xn330_orders
+                    (sample_id, patient_id, family_name, given_name, birth_date,
+                     sex, tests_json, status, source, ready, external_order_id,
+                     created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'staged', ?, ?, ?, ?, ?)
+                ON CONFLICT(sample_id) DO UPDATE SET
+                    patient_id=excluded.patient_id,
+                    family_name=excluded.family_name,
+                    given_name=excluded.given_name,
+                    birth_date=excluded.birth_date,
+                    sex=excluded.sex,
+                    tests_json=excluded.tests_json,
+                    status='staged',
+                    source=excluded.source,
+                    ready=excluded.ready,
+                    external_order_id=excluded.external_order_id,
+                    updated_at=excluded.updated_at,
+                    last_error=NULL
+                """,
+                (
+                    order["sample_id"], order["patient_id"], order["family_name"],
+                    order["given_name"], order.get("birth_date", ""), order.get("sex", "U"),
+                    json.dumps(order["tests"], ensure_ascii=True), source, int(bool(ready)),
+                    order.get("external_order_id"), now, now,
+                ),
+            )
+        self.add_event(
+            "api" if source == "api" else "local", "xn330_order_staged", order["sample_id"],
+            f"Staged {len(order['tests'])} XN-330 parameter(s) for exact sample ID {order['sample_id']}; awaiting manual arm",
+        )
+        return self.get_xn330_order(order["sample_id"])
+
+    def get_xn330_order(self, sample_id: str):
+        with self._session() as connection:
+            row = connection.execute(
+                "SELECT * FROM xn330_orders WHERE sample_id=?", (sample_id,),
+            ).fetchone()
+        return self._xn330_order(row)
+
+    def list_xn330_orders(self, limit=100):
+        with self._session() as connection:
+            rows = connection.execute(
+                "SELECT * FROM xn330_orders ORDER BY updated_at DESC LIMIT ?", (limit,),
+            ).fetchall()
+        return [self._xn330_order(row) for row in rows]
+
+    def list_ready_xn330_orders(self, limit=100):
+        with self._session() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM xn330_orders
+                WHERE ready=1 AND status IN ('staged', 'queried', 'error')
+                ORDER BY updated_at ASC LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [self._xn330_order(row) for row in rows]
+
+    def set_xn330_order_ready(self, sample_id: str, ready: bool):
+        with self._session() as connection:
+            row = connection.execute(
+                "SELECT status FROM xn330_orders WHERE sample_id=?", (sample_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            if ready and row["status"] not in {"staged", "queried", "error"}:
+                raise ValueError(f"an XN-330 order in state {row['status']} cannot be armed")
+            connection.execute(
+                """
+                UPDATE xn330_orders
+                SET ready=?, status=?, updated_at=?, last_error=NULL
+                WHERE sample_id=?
+                """,
+                (int(bool(ready)), "staged" if ready else row["status"], utc_now(), sample_id),
+            )
+        return self.get_xn330_order(sample_id)
+
+    def mark_xn330_query(self, sample_id: str):
+        now = utc_now()
+        with self._session() as connection:
+            connection.execute(
+                """
+                UPDATE xn330_orders
+                SET status='queried', query_count=query_count+1,
+                    last_query_at=?, updated_at=? WHERE sample_id=?
+                """,
+                (now, now, sample_id),
+            )
+
+    def mark_xn330_delivered(self, sample_id: str):
+        now = utc_now()
+        with self._session() as connection:
+            connection.execute(
+                """
+                UPDATE xn330_orders
+                SET status='transport_acknowledged', ready=0,
+                    last_delivery_at=?, updated_at=?, last_error=NULL
+                WHERE sample_id=?
+                """,
+                (now, now, sample_id),
+            )
+
+    def mark_xn330_error(self, sample_id: str, message: str):
+        with self._session() as connection:
+            connection.execute(
+                """
+                UPDATE xn330_orders SET status='error', last_error=?, updated_at=?
+                WHERE sample_id=?
+                """,
+                (message, utc_now(), sample_id),
+            )
+
+    def cancel_xn330_order(self, sample_id: str) -> bool:
+        with self._session() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE xn330_orders SET status='cancelled', ready=0, updated_at=?
                 WHERE sample_id=?
                 """,
                 (utc_now(), sample_id),

@@ -32,12 +32,13 @@
 
     <ol class="handoff-rail" aria-label="Order delivery workflow">
       <li><span>1</span><div><strong>Receive</strong><small>The clinic server stages an order.</small></div></li>
-      <li><span>2</span><div><strong>Review and arm</strong><small>Confirm the sample ID and tests locally.</small></div></li>
+      <li><span>2</span><div><strong>Review or auto-arm</strong><small>Choose manual control or validated automation.</small></div></li>
       <li><span>3</span><div><strong>Analyzer pulls</strong><small>The exact query receives the order.</small></div></li>
     </ol>
 
     <nav class="view-tabs" aria-label="Analyzer console sections" role="tablist">
       <button id="selectraTab" type="button" role="tab" aria-controls="selectraView" aria-selected="true" data-console-tab="selectra">Selectra orders</button>
+      <button id="xn330Tab" type="button" role="tab" aria-controls="xn330View" aria-selected="false" data-console-tab="xn330">XN-330 orders</button>
       <button id="cyanvisionTab" type="button" role="tab" aria-controls="cyanvisionView" aria-selected="false" data-console-tab="cyanvision">CYANVision worklist</button>
       <button id="diagnosticsTab" type="button" role="tab" aria-controls="diagnosticsView" aria-selected="false" data-console-tab="diagnostics">Diagnostics</button>
     </nav>
@@ -48,12 +49,36 @@
           <div>
             <span class="section-kicker">Selectra · exact-ID delivery</span>
             <h2 id="ordersTitle">Orders waiting on this bridge</h2>
-            <p>Amber orders are inactive. Arm only the sample the operator is about to run.</p>
+            <p>Use manual review during validation, then start exact-ID auto-arm when ready.</p>
           </div>
-          <span class="connection-note"><i></i> Queue refreshes automatically</span>
+          <div class="auto-arm-control" id="autoArmControl">
+            <span><strong id="autoArmTitle">Manual arming</strong><small id="autoArmCopy">New server orders wait for review.</small></span>
+            <button id="autoArmButton" type="button">Start auto-arm</button>
+          </div>
         </header>
         <div class="orders-list" id="ordersList"><div class="orders-empty"><strong>No active Selectra orders</strong><span>Orders sent by the clinic server will appear here.</span></div></div>
       </section>
+
+      <details class="outbound-policy panel" id="outboundPolicy">
+        <summary>
+          <span><strong>Selectra outbound fields</strong><small>Name, sample ID, and tests are always sent. Optional fields start disabled.</small></span>
+          <span class="policy-summary-state" id="policySummaryState">Minimal</span>
+        </summary>
+        <div class="policy-body">
+          <div class="policy-intro">
+            <div><span class="section-kicker">Wire policy · API orders only</span><h3>Choose exactly what leaves the bridge.</h3></div>
+            <button type="button" id="resetOutboundFields">Return to minimal</button>
+          </div>
+          <div class="policy-grid">
+            <div class="policy-row"><span class="policy-code">P-8</span><div><strong>Birth date</strong><small>YYYYMMDD from the clinic order</small></div><button type="button" role="switch" aria-checked="false" data-outbound-field="birth_date" data-field-label="birth date"><span>Not sent</span></button></div>
+            <div class="policy-row"><span class="policy-code">P-9</span><div><strong>Sex</strong><small>M, F, or U from the clinic order</small></div><button type="button" role="switch" aria-checked="false" data-outbound-field="sex" data-field-label="sex"><span>Not sent</span></button></div>
+            <div class="policy-row"><span class="policy-code">O-16</span><div><strong>Sample type</strong><small>Case-sensitive; for example Normal or SERUM</small></div><button type="button" role="switch" aria-checked="false" data-outbound-field="specimen_type" data-field-label="sample type"><span>Not sent</span></button></div>
+            <div class="policy-row"><span class="policy-code">O-17</span><div><strong>Physician</strong><small>Ordering physician, maximum 20 characters</small></div><button type="button" role="switch" aria-checked="false" data-outbound-field="ordering_physician" data-field-label="physician"><span>Not sent</span></button></div>
+            <div class="policy-row"><span class="policy-code">C-4</span><div><strong>Comment</strong><small>Sample comment, maximum 100 characters</small></div><button type="button" role="switch" aria-checked="false" data-outbound-field="comment" data-field-label="comment"><span>Not sent</span></button></div>
+          </div>
+          <p class="policy-warning">Enable a field only after its value and Selectra configuration have been verified. Changes apply immediately to every staged API order.</p>
+        </div>
+      </details>
 
       <details class="manual-tools panel">
         <summary><span><strong>Manual test order</strong><small>Development tool for staging a sample without the clinic server</small></span><span aria-hidden="true">+</span></summary>
@@ -83,6 +108,49 @@
           </section>
         </div>
       </details>
+    </section>
+
+    <section class="console-view" id="xn330View" role="tabpanel" aria-labelledby="xn330Tab" data-console-view="xn330" hidden>
+      <section class="panel xn-panel" aria-labelledby="xnOrdersTitle">
+        <header class="section-head xn-head">
+          <div>
+            <span class="section-kicker">Sysmex XN-330 · ASTM Host Query</span>
+            <h2 id="xnOrdersTitle">Exact-ID hematology orders</h2>
+            <p>Every order stays inert until an operator arms its card. One matching analyzer query consumes it once.</p>
+          </div>
+          <div class="xn-link-state"><i></i><span id="xnLinkState">Port 6001 · waiting</span></div>
+        </header>
+        <div class="orders-list" id="xnOrdersList"><div class="orders-empty"><strong>No active XN-330 orders</strong><span>Stage one below or send it through the authenticated API.</span></div></div>
+      </section>
+
+      <details class="manual-tools panel xn-stage" open>
+        <summary><span><strong>Stage an XN-330 order</strong><small>Patient demographics and discrete CBC/DIFF parameters</small></span><span aria-hidden="true">+</span></summary>
+        <div class="manual-grid">
+          <form id="xnOrderForm" novalidate>
+            <div class="form-grid">
+              <label class="field field-wide"><span>Sample ID</span><input id="xnSampleId" required maxlength="22" autocomplete="off" placeholder="e.g. XN-DEMO-001"><small>Must exactly match the ID entered or scanned on the XN-330.</small></label>
+              <label class="field"><span>Patient ID</span><input id="xnPatientId" required maxlength="16" autocomplete="off" placeholder="PAT-001"></label>
+              <label class="field"><span>Birth date</span><input id="xnBirthDate" type="date" required></label>
+              <label class="field"><span>Given name</span><input id="xnGivenName" required maxlength="20" autocomplete="off" placeholder="MANEL"></label>
+              <label class="field"><span>Family name</span><input id="xnFamilyName" required maxlength="20" autocomplete="off" placeholder="PATIENT"></label>
+              <label class="field"><span>Sex</span><select id="xnSex"><option value="U">Unspecified</option><option value="F">Female</option><option value="M">Male</option></select></label>
+            </div>
+            <fieldset class="xn-tests">
+              <legend>Parameters to perform</legend>
+              <div class="xn-test-tools"><button type="button" data-xn-profile="all">CBC + DIFF</button><button type="button" data-xn-profile="cbc">CBC only</button><button type="button" data-xn-profile="none">Clear</button></div>
+              <div class="xn-test-grid" id="xnTestGrid"><span class="empty-tests">Loading documented XN-L parameter codes…</span></div>
+            </fieldset>
+            <div class="form-alert" id="xnFormAlert" role="alert" hidden></div>
+            <button class="primary-action xn-stage-action" type="submit" id="xnStageButton"><span>Stage for review</span><small>Arming remains a separate action</small></button>
+          </form>
+          <section class="preview" id="xnResponsePreview" aria-label="XN-330 response preview">
+            <div class="preview-head"><strong>ASTM order preview</strong><span>H / P / O / L</span></div>
+            <div class="preview-instruction">The live reply echoes the analyzer’s original Q-3 selector. This preview uses a manual selector.</div>
+            <pre id="xnResponseRecords">Stage an order to build the XN-330 response.</pre>
+          </section>
+        </div>
+      </details>
+      <aside class="safety-note xn-note"><strong>Delivery gate</strong><p>Staging never sends. Arming one card permits only the exact sample ID, and successful ASTM acknowledgement automatically disarms that order.</p></aside>
     </section>
 
     <section class="console-view" id="cyanvisionView" role="tabpanel" aria-labelledby="cyanvisionTab" data-console-view="cyanvision" hidden>
@@ -124,6 +192,7 @@
         <div><span>Selectra listener</span><strong class="mono" id="instrumentEndpoint">—</strong></div>
         <div><span>Selectra client</span><strong id="clientState">Waiting</strong></div>
         <div><span>CYANVision listener</span><strong class="mono"><span id="cyanvisionPort">6004</span></strong></div>
+        <div><span>XN-330 listener</span><strong class="mono"><span id="xn330Port">6001</span></strong></div>
       </section>
 
       <section class="diagnostic-controls">

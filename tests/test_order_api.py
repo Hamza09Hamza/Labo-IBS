@@ -201,6 +201,49 @@ class OrderApiCase(unittest.TestCase):
         )
         self.assertEqual(duplicate.sent, [])
 
+    def test_selectra_api_auto_arm_is_persistent_and_stoppable(self):
+        first = self.client.post(
+            "/api/v1/orders/selectra", json=SELECTRA_ORDER, headers=HEADERS,
+        )
+        self.assertEqual(first.status_code, 201)
+        self.assertFalse(self.store.get_order("SEL-API-001")["ready"])
+
+        enabled = self.client.post(
+            "/api/selectra/auto-arm",
+            json={
+                "enabled": True,
+                "confirmation": "ENABLE SELECTRA AUTO ARM",
+            },
+        )
+        self.assertEqual(enabled.status_code, 200)
+        self.assertTrue(enabled.get_json()["enabled"])
+        self.assertTrue(self.store.get_order("SEL-API-001")["ready"])
+
+        restarted_store = BenchStore(self.db_path)
+        self.assertTrue(restarted_store.selectra_auto_arm_enabled())
+        second_order = {**SELECTRA_ORDER, "sample_id": "SEL-API-AUTO-002"}
+        second = self.client.post(
+            "/api/v1/orders/selectra", json=second_order, headers=HEADERS,
+        )
+        self.assertEqual(second.status_code, 201)
+        self.assertEqual(second.get_json()["state"], "armed")
+        self.assertTrue(self.store.get_order("SEL-API-AUTO-002")["ready"])
+
+        disabled = self.client.post(
+            "/api/selectra/auto-arm", json={"enabled": False},
+        )
+        self.assertEqual(disabled.status_code, 200)
+        self.assertFalse(self.store.selectra_auto_arm_enabled())
+        self.assertFalse(self.store.get_order("SEL-API-001")["ready"])
+        self.assertFalse(self.store.get_order("SEL-API-AUTO-002")["ready"])
+
+    def test_selectra_api_auto_arm_requires_explicit_start_confirmation(self):
+        response = self.client.post(
+            "/api/selectra/auto-arm", json={"enabled": True},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(self.store.selectra_auto_arm_enabled())
+
     def test_selectra_api_resolves_clinic_ids_to_machine_codes(self):
         order = {
             **SELECTRA_ORDER,
@@ -231,6 +274,91 @@ class OrderApiCase(unittest.TestCase):
             "^^^Crea\\^^^SGPT\\^^^ALP",
             selectra_protocol.build_order_records(stored)[2],
         )
+
+    def test_selectra_api_sends_only_name_id_and_tests(self):
+        sample_id = "CLINIC-SAMPLE-20260816-0001"
+        order = {
+            **SELECTRA_ORDER,
+            "sample_id": sample_id,
+            "specimen_type": "Normal",
+            "ordering_physician": "DR LAB",
+            "comment": "Fasting sample",
+        }
+
+        response = self.client.post(
+            "/api/v1/orders/selectra", json=order, headers=HEADERS,
+        )
+
+        self.assertEqual(response.status_code, 201)
+        stored = self.store.get_order(sample_id)
+        records = selectra_protocol.build_order_records(stored)
+        patient_fields = records[1].split("|")
+        order_fields = records[2].split("|")
+        self.assertEqual(patient_fields[5], "BENCH PATIENT")
+        self.assertEqual(len(patient_fields), 6)
+        self.assertEqual(order_fields[2], sample_id)
+        self.assertEqual(order_fields[4], "^^^Crea\\^^^SGPT")
+        self.assertEqual(order_fields[15], "")
+        self.assertEqual(order_fields[16], "")
+        self.assertEqual(records[-1], "L|1|F")
+        self.assertEqual(len(records), 4)
+        self.assertNotIn("SERUM", "\n".join(records))
+        self.assertNotIn("Normal", "\n".join(records))
+        self.assertNotIn("19800615", "\n".join(records))
+        self.assertNotIn("Fasting sample", "\n".join(records))
+
+    def test_selectra_optional_outbound_fields_are_persistent_and_operator_controlled(self):
+        order = {
+            **SELECTRA_ORDER,
+            "sample_id": "SEL-FIELDS-001",
+            "specimen_type": "Normal",
+            "ordering_physician": "DR LAB",
+            "comment": "Fasting sample",
+        }
+        staged = self.client.post(
+            "/api/v1/orders/selectra", json=order, headers=HEADERS,
+        )
+        self.assertEqual(staged.status_code, 201)
+
+        rejected = self.client.post(
+            "/api/selectra/outbound-fields",
+            json={"field": "specimen_type", "enabled": True},
+        )
+        self.assertEqual(rejected.status_code, 400)
+
+        for field in (
+            "birth_date", "sex", "specimen_type", "ordering_physician", "comment",
+        ):
+            response = self.client.post(
+                "/api/selectra/outbound-fields",
+                json={
+                    "field": field,
+                    "enabled": True,
+                    "confirmation": "ENABLE SELECTRA OUTBOUND FIELD",
+                },
+            )
+            self.assertEqual(response.status_code, 200)
+
+        self.assertTrue(all(BenchStore(self.db_path).selectra_outbound_fields().values()))
+        records = self.selectra.preview("SEL-FIELDS-001")
+        patient_fields = records[1].split("|")
+        order_fields = records[2].split("|")
+        self.assertEqual(patient_fields[5], "BENCH PATIENT")
+        self.assertEqual(patient_fields[7], "19800615")
+        self.assertEqual(patient_fields[8], "F")
+        self.assertEqual(order_fields[15], "Normal")
+        self.assertEqual(order_fields[16], "DR LAB")
+        self.assertEqual(records[3], "C|1||Fasting sample")
+
+        reset = self.client.post(
+            "/api/selectra/outbound-fields", json={"reset": True},
+        )
+        self.assertEqual(reset.status_code, 200)
+        self.assertFalse(any(reset.get_json()["fields"].values()))
+        minimal = self.selectra.preview("SEL-FIELDS-001")
+        self.assertEqual(minimal[1], "P|1||||BENCH PATIENT")
+        self.assertNotIn("Normal", "\n".join(minimal))
+        self.assertEqual(len(minimal), 4)
 
     def test_selectra_api_rejects_ambiguous_or_unknown_clinic_ids(self):
         ambiguous = self.client.post(
