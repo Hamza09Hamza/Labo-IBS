@@ -150,7 +150,14 @@ class CyanVisionWorklistService:
         with self._lock:
             expected = self._pending_control_id
             sample_id = self._pending_sample_id
-            matches = bool(expected and acknowledged_id == expected)
+            # CYANVision does not reliably echo the DSR's MSH.10 back in
+            # MSA.2: observed firmware instead echoes the DSC continuation
+            # pointer, or sends an unfilled "#parMessageId#" template, and
+            # its own MSH.10 is likewise a blank placeholder. The worklist
+            # loop is single-flight (one outstanding DSR per connection),
+            # so any ACK received while a request is pending is treated as
+            # the reply to that request regardless of the ID it carries.
+            matches = bool(expected)
             if matches and code == "AA":
                 self._pending_control_id = None
                 self._pending_sample_id = None

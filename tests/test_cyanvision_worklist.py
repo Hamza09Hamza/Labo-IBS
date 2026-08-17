@@ -77,33 +77,55 @@ class CyanVisionWorklistCase(unittest.TestCase):
         self.assertEqual(records[-1], "DSC||")
         self.assertEqual(unframe(protocol.frame(records)), records)
 
-    def test_one_order_disarms_only_after_matching_positive_ack(self):
+    def test_one_order_disarms_after_positive_ack(self):
         self.service.stage_and_arm(ORDER)
         connection = FakeConnection()
         self.assertTrue(self.service.handle_message(connection, QUERY))
         self.assertEqual(len(connection.sent), 1)
         sent = unframe(connection.sent[0])
-        response_id = protocol.control_id(sent)
         self.assertEqual(protocol.message_type(sent), "DSR^Q03")
         self.assertEqual(self.service.status()["status"], "waiting_for_ack")
         self.assertTrue(self.service.status()["armed"])
 
-        wrong_ack = [
-            "MSH|^~\\&|CYPRESS|CYANVISION|||||ACK^Q03|A1|P|2.3.1",
-            "MSA|AA|SOME-OTHER-ID|Message accepted|||0|",
-        ]
-        self.service.handle_message(connection, wrong_ack)
-        self.assertTrue(self.service.status()["armed"])
-
         matching_ack = [
             "MSH|^~\\&|CYPRESS|CYANVISION|||||ACK^Q03|A2|P|2.3.1",
-            f"MSA|AA|{response_id}|Message accepted|||0|",
+            f"MSA|AA|{protocol.control_id(sent)}|Message accepted|||0|",
         ]
         self.service.handle_message(connection, matching_ack)
         status = self.service.status()
         self.assertFalse(status["armed"])
         self.assertFalse(status["pending_ack"])
         self.assertEqual(status["status"], "acknowledged")
+
+    def test_ack_advances_pending_request_even_when_id_does_not_match(self):
+        # Observed CYANVision firmware does not echo the DSR's MSH.10 back
+        # in MSA.2 (it echoes the DSC continuation pointer, or sends an
+        # unfilled "#parMessageId#" template). The loop is single-flight,
+        # so any AA ACK received while a request is outstanding must still
+        # be accepted, or the real unit stalls and drops the connection.
+        self.service.stage_and_arm(ORDER)
+        connection = FakeConnection()
+        self.assertTrue(self.service.handle_message(connection, QUERY))
+        self.assertEqual(self.service.status()["status"], "waiting_for_ack")
+
+        mismatched_ack = [
+            "MSH|^~\\&|CYPRESS|CYANVISION|||||ACK^Q03|#parMessageId#|P|2.3.1",
+            "MSA|AA|2608000603|Message accepted|||0|",
+        ]
+        self.service.handle_message(connection, mismatched_ack)
+        status = self.service.status()
+        self.assertFalse(status["armed"])
+        self.assertFalse(status["pending_ack"])
+        self.assertEqual(status["status"], "acknowledged")
+
+    def test_ack_ignored_when_no_request_is_pending(self):
+        connection = FakeConnection()
+        stray_ack = [
+            "MSH|^~\\&|CYPRESS|CYANVISION|||||ACK^Q03|A1|P|2.3.1",
+            "MSA|AA|SOME-ID|Message accepted|||0|",
+        ]
+        self.service.handle_message(connection, stray_ack)
+        self.assertEqual(self.service.status()["status"], "empty")
 
     def test_connection_loss_keeps_order_armed_for_retry(self):
         self.service.stage_and_arm(ORDER)
