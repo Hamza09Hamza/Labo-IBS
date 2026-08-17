@@ -104,8 +104,21 @@ def build_order_records(order: dict, query_selector: str | None = None) -> list[
     order_fields[11] = "N"  # normal sample analysis
     order_fields[25] = "Q"  # matching order exists for this inquiry
 
+    # H-4 (Sender Name or ID): every one of 9 real captured XN-330 sessions
+    # (results/xn330_*.txt) shows this analyzer always populates its own H-4
+    # with its identity ("    XN-330^00-29^18762^^^^CX851950") when it is the
+    # sender - never blank. We are the sender in the order-download
+    # direction, and left H-4 entirely blank. The O-3 fix above did not make
+    # tests appear on a real armed order (sample 2608217107, 2026-08-17)
+    # despite a clean ASTM ACK, consistent with the same class of problem
+    # Selectra had: a blank/unrecognized sender identity being silently
+    # discarded at the application level rather than causing a transport
+    # error. Not a guess at the exact required string - LABO-BRIDGE
+    # identifies this host descriptively, matching the structural pattern
+    # (H-4 populated, not blank) rather than inventing a value formatted
+    # like the analyzer's own instrument ID.
     return [
-        "H|\\^&|||||||||||E1394-97",
+        "H|\\^&|||LABO-BRIDGE||||||||E1394-97",
         "|".join(patient_fields).rstrip("|"),
         "|".join(order_fields),
         "L|1|N",
