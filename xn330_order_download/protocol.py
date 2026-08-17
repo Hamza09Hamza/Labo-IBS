@@ -82,27 +82,33 @@ def build_order_records(order: dict, query_selector: str | None = None) -> list[
     sex = _clean(order.get("sex") or "U").upper()
     patient_fields[8] = sex if sex in {"M", "F", "U"} else "U"
 
-    # O-2 (Specimen ID) vs O-3 (Instrument Specimen ID): a real captured
-    # XN-330 result upload (2026-07-22, results/xn330_20260722_145258_*.txt)
-    # shows this analyzer sends its own O record as
-    # "O|1||^^                   615^M|^^^^WBC\...", i.e. O-2 is left BLANK
-    # and the full rack^tube^sample^mode selector lives in O-3 in the
-    # RESULT-UPLOAD direction. That fix alone (selector in O-3 only, O-2
-    # blank) got a real, specific error back on real hardware (2026-08-17,
-    # sample 2608217113): "N echant. de l'ordi hote different de la
-    # demande. N echant. de la demande sera utilise" (Sample No. from host
-    # computer differs from the request; Sample No. from the request will
-    # be used) - the analyzer explicitly names a SAMPLE NUMBER mismatch,
-    # which is O-2's role (Specimen ID = the plain sample number), not
-    # O-3's (Instrument Specimen ID = the composite rack^tube^id^mode
-    # selector). In the host-reply direction this analyzer apparently
-    # expects BOTH: the plain sample number in O-2 (compared directly
-    # against "the request", i.e. what it itself sent in its own Q-3), and
-    # the full composite selector in O-3 as before.
+    # O-2 (Specimen ID) vs O-3 (Instrument Specimen ID):
+    #   1. Selector in O-3 only, O-2 blank (matching a real captured
+    #      RESULT-UPLOAD session) ACKed cleanly but produced no visible
+    #      order and no error message.
+    #   2. Adding the STRIPPED plain sample_id to O-2 (2026-08-17, sample
+    #      2608217116) still produced the exact same real error: "N echant.
+    #      de l'ordi hote different de la demande. N echant. de la demande
+    #      sera utilise" (Sample No. from host computer differs from the
+    #      request). The analyzer names a sample-number mismatch even
+    #      though O-2 held the identical digits it queried with.
+    # The one difference between what we sent and "the request" itself:
+    # the analyzer's own Q-3 selector is fixed-width, space-padded (e.g.
+    # "^^            2608217116^M", not "^^2608217116^M") - we were
+    # comparing/sending the STRIPPED sample_id, not the padded component
+    # exactly as the analyzer itself sent it. Using the unstripped
+    # sample-ID component of the query selector for O-2 - not the cleaned
+    # order["sample_id"] - so O-2 is a byte-for-byte match of what the
+    # analyzer itself calls "the request", per its own error text.
+    query_sample_component = sample_id
+    if query_selector is not None:
+        selector_parts = query_selector.split("^")
+        if len(selector_parts) >= 3:
+            query_sample_component = selector_parts[2]
     order_fields = [""] * 26
     order_fields[0] = "O"
     order_fields[1] = "1"
-    order_fields[2] = sample_id
+    order_fields[2] = query_sample_component
     order_fields[3] = selector
     order_fields[4] = "\\".join(f"^^^^{code}" for code in tests)
     order_fields[6] = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
