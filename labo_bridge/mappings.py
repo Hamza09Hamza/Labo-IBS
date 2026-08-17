@@ -280,6 +280,7 @@ MINIVIDAS_MAP = {
     # conversion instead of getting overwritten by a plain git pull.
     "HAVM": [(None, 438, "HAV (IgM)", "", "HAV (IgM)")],
     "RBG": [(None, 500, "Rubeole IGG", "RBG", "Rubeole IgG")],
+    "DEX2": [(None, 399, "D.Dimeres", "DEX2", "D-Dimeres (VIDAS D-Dimer Exclusion II)")],
 }
 
 MAPS = {
