@@ -113,12 +113,13 @@ class XN330OrderDownloadCase(unittest.TestCase):
         saved = self.store.get_xn330_order("XN-DEMO-001")
         self.assertFalse(saved["ready"])
         self.assertEqual(saved["status"], "transport_acknowledged")
-        # The connection is closed right after a successful delivery - see
-        # protocol.build_order_records's evidence for why (a real "TCP/IP
-        # transmission error" reported by the analyzer's own interface after
-        # an otherwise clean ASTM exchange, consistent with this XN-330
-        # expecting one connection per completed transaction).
-        self.assertTrue(connection.closed)
+        # The host does NOT force-close the connection after delivery - a
+        # real test showed forcing an immediate close reproduced the exact
+        # same "host communication timeout" error seen when nothing closed
+        # the connection at all (see service.handle_records for the full
+        # evidence). Left open for the outer ASTM loop's normal idle
+        # handling instead.
+        self.assertFalse(connection.closed)
 
         duplicate = FakeConnection(astm.B_ACK * (1 + frame_count))
         self.service.handle_records(duplicate, ["Q|1|^^XN-DEMO-001^M"])
