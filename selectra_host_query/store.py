@@ -640,6 +640,31 @@ class BenchStore:
             return False
         return (datetime.now(timezone.utc) - delivered_at).total_seconds() <= within_seconds
 
+    @staticmethod
+    def xn330_delivered_recently(order: dict, within_seconds: int = 300) -> bool:
+        """True if this order dict shows a transport-acknowledged delivery a moment ago.
+
+        mark_xn330_delivered() sets ready=0, one-shot by design so an armed
+        order can't be resent to a second, unrelated query. But the XN-330
+        re-queries the identical sample_id if its connection drops before it
+        confirms receipt (e.g. this bridge's own 90s idle timeout ending the
+        session right after delivery) - a legitimate retry, not a new
+        request, and it deserves the same answer, not silence.
+
+        Takes the order dict already fetched by the caller rather than
+        re-querying by sample_id: handle_records() calls mark_xn330_query()
+        (which overwrites status to 'queried') before this check runs, so a
+        fresh query here would always see 'queried', never
+        'transport_acknowledged', and silently never fire.
+        """
+        if order.get("status") != "transport_acknowledged" or not order.get("last_delivery_at"):
+            return False
+        try:
+            delivered_at = datetime.fromisoformat(order["last_delivery_at"].replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        return (datetime.now(timezone.utc) - delivered_at).total_seconds() <= within_seconds
+
     def mark_xn330_error(self, sample_id: str, message: str):
         with self._session() as connection:
             connection.execute(

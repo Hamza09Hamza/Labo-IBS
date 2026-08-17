@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 
 from labo_bridge.protocols import astm
 from selectra_host_query.app import create_app
@@ -137,9 +138,50 @@ class XN330OrderDownloadCase(unittest.TestCase):
         # handling instead.
         self.assertFalse(connection.closed)
 
-        duplicate = FakeConnection(astm.B_ACK * (1 + frame_count))
-        self.service.handle_records(duplicate, ["Q|1|^^XN-DEMO-001^M"])
-        self.assertEqual(duplicate.sent, [])
+    def test_recent_retry_after_delivery_resends_identical_order(self):
+        # The XN-330 re-queries the identical sample_id if its connection
+        # drops before it confirms receipt (e.g. this bridge's own 90s idle
+        # timeout ending the session right after delivery) - a legitimate
+        # retry, not a new unrelated request, and it must get the same
+        # answer rather than silence (see store.xn330_delivered_recently).
+        self.store.set_xn330_order_ready("XN-DEMO-001", True)
+        frame_count = len(protocol.build_message_frames(protocol.build_order_records(ORDER)))
+        first = FakeConnection(astm.B_ACK * (1 + frame_count))
+        self.service.handle_records(first, ["Q|1|2^2^XN-DEMO-001^B"])
+        self.assertEqual(first.sent[0], astm.B_ENQ)
+
+        retry = FakeConnection(astm.B_ACK * (1 + frame_count))
+        self.service.handle_records(retry, ["Q|1|^^XN-DEMO-001^M"])
+        self.assertEqual(retry.sent[0], astm.B_ENQ)
+        self.assertEqual(retry.sent[-1], astm.B_EOT)
+        self.assertTrue(any(
+            event["kind"] == "xn330_order_redelivered" for event in self.store.list_events()
+        ))
+
+    def test_stale_retry_after_delivery_still_blocks_resend(self):
+        self.store.set_xn330_order_ready("XN-DEMO-001", True)
+        frame_count = len(protocol.build_message_frames(protocol.build_order_records(ORDER)))
+        first = FakeConnection(astm.B_ACK * (1 + frame_count))
+        self.service.handle_records(first, ["Q|1|2^2^XN-DEMO-001^B"])
+
+        # Backdate the delivery timestamp past the default 300s window
+        # directly in storage, rather than mocking the clock, so this
+        # exercises the same recency check with a genuinely stale record.
+        with self.store._session() as connection:
+            stale = (datetime.now(timezone.utc) - timedelta(seconds=400)).isoformat(
+                timespec="seconds",
+            ).replace("+00:00", "Z")
+            connection.execute(
+                "UPDATE xn330_orders SET last_delivery_at=? WHERE sample_id=?",
+                (stale, "XN-DEMO-001"),
+            )
+
+        retry = FakeConnection(astm.B_ACK * (1 + frame_count))
+        self.service.handle_records(retry, ["Q|1|^^XN-DEMO-001^M"])
+        self.assertEqual(retry.sent, [])
+        self.assertTrue(any(
+            event["kind"] == "xn330_response_blocked" for event in self.store.list_events()
+        ))
 
     def test_portal_stages_then_requires_explicit_manual_arm(self):
         selectra = SelectraHostQueryServer(self.store, embedded=True)

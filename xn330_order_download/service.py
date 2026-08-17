@@ -96,12 +96,20 @@ class XN330OrderDownloadService:
         sample_id = order["sample_id"]
         self.store.mark_xn330_query(sample_id)
         if not order.get("ready"):
+            if not self.store.xn330_delivered_recently(order):
+                self.store.add_event(
+                    "host", "xn330_response_blocked", sample_id,
+                    "Matching XN-330 order is staged but not armed; no patient or test payload was sent",
+                    query_record,
+                )
+                return
             self.store.add_event(
-                "host", "xn330_response_blocked", sample_id,
-                "Matching XN-330 order is staged but not armed; no patient or test payload was sent",
+                "host", "xn330_order_redelivered", sample_id,
+                "XN-330 re-queried an already-delivered order shortly after delivery; "
+                "resending the identical order instead of treating it as a duplicate "
+                "(likely a dropped/closed connection before the analyzer confirmed receipt)",
                 query_record,
             )
-            return
 
         response = protocol.build_order_records(order, selector)
         self.store.add_event(

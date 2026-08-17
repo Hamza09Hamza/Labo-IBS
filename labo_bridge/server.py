@@ -405,7 +405,21 @@ def _handle_astm(conn, addr, cfg, machine, quiet):
     while True:
         try:
             data = conn.recv(4096)
-        except (ConnectionResetError, socket.timeout, OSError):
+        except socket.timeout:
+            # Distinguished from a peer disconnect below because the two
+            # looked identical in the trace (both just "xn330_disconnected")
+            # while debugging a same-sample retry that never got answered -
+            # this makes it explicit when it's this 90s idle timeout, not
+            # the analyzer, ending the session.
+            if machine == "xn330" and _xn330_order_download_service is not None:
+                _xn330_order_download_service.store.add_event(
+                    "system", "xn330_idle_timeout_closed", None,
+                    f"Bridge closed the XN-330 connection after "
+                    f"{CONNECTION_IDLE_TIMEOUT_SECONDS}s with no further data "
+                    "(host-initiated close, not a peer disconnect)",
+                )
+            break
+        except (ConnectionResetError, OSError):
             # OSError also covers recv() on a socket this same handler
             # already closed - e.g. xn330_order_download's service closing
             # the connection right after delivering an order (see its
