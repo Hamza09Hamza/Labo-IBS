@@ -86,18 +86,23 @@ def build_order_records(order: dict, query_selector: str | None = None) -> list[
     # XN-330 result upload (2026-07-22, results/xn330_20260722_145258_*.txt)
     # shows this analyzer sends its own O record as
     # "O|1||^^                   615^M|^^^^WBC\...", i.e. O-2 is left BLANK
-    # and the full rack^tube^sample^mode selector lives in O-3, not O-2.
-    # This function previously put the selector in O-2 (order_fields[2])
-    # with O-3 left blank - the reverse of what this instrument's own O
-    # records use. Two live orders (XNDEMO1, 2608217105/2608217106) sent
-    # with the selector in O-2 all ACKed cleanly at the ASTM transport
-    # level but never appeared on the analyzer's screen - consistent with
-    # the XN-330 not recognizing the response as matching any loaded
-    # specimen, since it wasn't reading O-3 for a value that was actually
-    # in O-2 instead.
+    # and the full rack^tube^sample^mode selector lives in O-3 in the
+    # RESULT-UPLOAD direction. That fix alone (selector in O-3 only, O-2
+    # blank) got a real, specific error back on real hardware (2026-08-17,
+    # sample 2608217113): "N echant. de l'ordi hote different de la
+    # demande. N echant. de la demande sera utilise" (Sample No. from host
+    # computer differs from the request; Sample No. from the request will
+    # be used) - the analyzer explicitly names a SAMPLE NUMBER mismatch,
+    # which is O-2's role (Specimen ID = the plain sample number), not
+    # O-3's (Instrument Specimen ID = the composite rack^tube^id^mode
+    # selector). In the host-reply direction this analyzer apparently
+    # expects BOTH: the plain sample number in O-2 (compared directly
+    # against "the request", i.e. what it itself sent in its own Q-3), and
+    # the full composite selector in O-3 as before.
     order_fields = [""] * 26
     order_fields[0] = "O"
     order_fields[1] = "1"
+    order_fields[2] = sample_id
     order_fields[3] = selector
     order_fields[4] = "\\".join(f"^^^^{code}" for code in tests)
     order_fields[6] = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")

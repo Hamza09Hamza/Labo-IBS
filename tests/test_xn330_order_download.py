@@ -70,10 +70,11 @@ class XN330OrderDownloadCase(unittest.TestCase):
         self.assertEqual(patient[7], "19800615")
         self.assertEqual(patient[8], "F")
         order = records[2].split("|")
-        # O-2 (Specimen ID) stays blank; O-3 (Instrument Specimen ID) carries
-        # the full selector - matches this analyzer's own real O records
-        # (see protocol.build_order_records for the captured evidence).
-        self.assertEqual(order[2], "")
+        # O-2 (Specimen ID) carries the plain sample number; O-3
+        # (Instrument Specimen ID) carries the full composite selector -
+        # see protocol.build_order_records for the real-hardware evidence
+        # for why both are populated in the host-reply direction.
+        self.assertEqual(order[2], "XN-DEMO-001")
         self.assertEqual(order[3], selector)
         self.assertIn("^^^^WBC", order[4])
         self.assertIn("^^^^NEUT%", order[4])
