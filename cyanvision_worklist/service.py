@@ -20,6 +20,8 @@ class CyanVisionWorklistService:
         self._pending_orders = []
         self._pending_query_segments = []
         self._last_status = "empty"
+        self._control_id_second = None
+        self._control_id_sequence = 0
 
     def status(self) -> dict:
         with self._lock:
@@ -38,6 +40,27 @@ class CyanVisionWorklistService:
     def set_instrument_port(self, port: int):
         with self._lock:
             self.port = int(port)
+
+    def _next_control_id(self) -> str:
+        """Return a unique, CY014-compliant MSH.10 value for this process.
+
+        CY014 permits at most 20 characters in MSH.10 and requires MSA.2 to
+        echo that exact value.  A microsecond timestamp exceeded the limit;
+        a seconds-only timestamp fits but collides when continuation items are
+        acknowledged and sent within the same second.  Two prefix characters,
+        a 14-digit timestamp, and a four-digit per-second sequence use the
+        full limit and remain unique for 10,000 DSR messages per second.
+        """
+        second = datetime.now().strftime("%Y%m%d%H%M%S")
+        with self._lock:
+            if second != self._control_id_second:
+                self._control_id_second = second
+                self._control_id_sequence = 0
+            else:
+                self._control_id_sequence += 1
+            if self._control_id_sequence > 9999:
+                raise RuntimeError("CYANVision control-ID capacity exceeded for one second")
+            return f"CV{second}{self._control_id_sequence:04d}"
 
     def stage_and_arm(self, order: dict) -> dict:
         saved = self.store.upsert_cyanvision_order(order, source="manual", ready=True)
@@ -95,7 +118,7 @@ class CyanVisionWorklistService:
             self._pending_orders = [dict(order) for order in ready_orders]
             self._pending_query_segments = list(segments)
         order = ready_orders[0] if ready_orders else None
-        response_control_id = "CV" + datetime.now().strftime("%Y%m%d%H%M%S%f")
+        response_control_id = self._next_control_id()
         if order:
             self.store.mark_cyanvision_query(order["sample_id"])
             with self._lock:
@@ -183,7 +206,7 @@ class CyanVisionWorklistService:
             )
 
     def _send_next_order(self, connection, order: dict, query_segments: list[str], has_more: bool):
-        response_control_id = "CV" + datetime.now().strftime("%Y%m%d%H%M%S%f")
+        response_control_id = self._next_control_id()
         self.store.mark_cyanvision_query(order["sample_id"])
         with self._lock:
             self._pending_control_id = response_control_id

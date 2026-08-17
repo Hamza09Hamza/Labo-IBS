@@ -236,6 +236,27 @@ class CyanVisionWorklistCase(unittest.TestCase):
         self.assertFalse(worker.is_alive())
         self.assertEqual(self.service.status()["status"], "acknowledged")
 
+    def test_continuation_control_ids_are_unique_and_within_cy014_limit(self):
+        first = {**ORDER, "sample_id": "CYAN-CONTROL-001"}
+        second = {**ORDER, "sample_id": "CYAN-CONTROL-002", "test_code": "CRE"}
+        self.store.upsert_cyanvision_order(first, source="api", ready=True)
+        self.store.upsert_cyanvision_order(second, source="api", ready=True)
+        connection = FakeConnection()
+
+        self.service.handle_message(connection, QUERY)
+        first_records = unframe(connection.sent[0])
+        first_id = protocol.control_id(first_records)
+        self.assertEqual(len(first_id), 20)
+
+        self.service.handle_message(connection, [
+            "MSH|^~\\&|CYPRESS|CYANVISION|||||ACK^Q03|ACK-1|P|2.3.1",
+            f"MSA|AA|{first_id}|Message accepted|||0|",
+        ])
+        second_records = unframe(connection.sent[1])
+        second_id = protocol.control_id(second_records)
+        self.assertEqual(len(second_id), 20)
+        self.assertNotEqual(second_id, first_id)
+
 
 if __name__ == "__main__":
     unittest.main()
