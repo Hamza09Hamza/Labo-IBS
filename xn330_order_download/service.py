@@ -115,6 +115,32 @@ class XN330OrderDownloadService:
             message = f"XN-330 order response failed: {exc}"
             self.store.mark_xn330_error(sample_id, message)
             self.store.add_event("system", "xn330_response_error", sample_id, message)
+            return
+
+        # Real test (2026-08-17, samples 2608217107-2608217109): the ASTM
+        # exchange ACKed cleanly every time, but the XN-330's own interface
+        # separately reported "host communication timeout" and then "TCP/IP
+        # transmission error on host computer" after an otherwise-successful
+        # reply, with no ASTM-level error on our side. Both errors describe
+        # a problem with the CONNECTION, not the message content, and appear
+        # only after we deliver a reply and then sit in recv() waiting for
+        # more from the analyzer on the same still-open socket. Closing the
+        # connection here - after the analyzer has ACKed every frame and our
+        # own EOT - tests whether this XN-330 expects one TCP connection per
+        # completed transaction rather than a persistent socket. Not yet
+        # confirmed against hardware; the outer ASTM loop (labo_bridge/
+        # server.py's _handle_astm) already treats a closed connection as a
+        # normal, non-error end of session.
+        try:
+            connection.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        connection.close()
+        self.store.add_event(
+            "host", "xn330_connection_closed", sample_id,
+            "Closed the TCP connection after delivering the order, in case this "
+            "XN-330 expects one connection per completed transaction",
+        )
 
     def _recv_control(self, connection: socket.socket) -> int:
         while True:
