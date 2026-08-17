@@ -70,7 +70,23 @@ def build_order_records(order: dict, query_selector: str | None = None) -> list[
     tests = validate_tests(order.get("tests"))
     selector = query_selector if query_selector is not None else f"^^{sample_id}^M"
 
-    patient_fields = [""] * 27
+    # Real captured XN-330 P record: "P|1||||^^|||U|||||^||||||||||||^^^"
+    # - 26 fields total, P-14 holds a bare "^" and P-26 holds "^^^" even
+    # though every other field in that range is blank. Our P record was
+    # being built with the same 27-slot array but then joined with
+    # .rstrip("|") - since every field past P-8 (sex) was empty, that
+    # stripped the record down to only 9 total fields, ending right after
+    # sex, with none of the real record's trailing structure (including
+    # those two non-blank markers at P-14/P-26) present at all. Not yet
+    # confirmed this is the actual cause of the analyzer's repeated "sample
+    # number differs from the request" rejection (2026-08-17, samples
+    # 2608217113/2608217116/2608217117 - every O-2 variant tried still
+    # produced the identical error), but it is a real, previously
+    # unexamined structural difference: matching this record's real shape
+    # exactly, not just its populated fields, since every fix that has
+    # worked so far in this project came from matching structure the
+    # analyzer's own real traffic actually uses rather than guessing content.
+    patient_fields = [""] * 26
     patient_fields[0] = "P"
     patient_fields[1] = "1"
     patient_fields[4] = _clean(order.get("patient_id"))[:16]
@@ -81,6 +97,8 @@ def build_order_records(order: dict, query_selector: str | None = None) -> list[
     patient_fields[7] = _clean(order.get("birth_date")).replace("-", "")
     sex = _clean(order.get("sex") or "U").upper()
     patient_fields[8] = sex if sex in {"M", "F", "U"} else "U"
+    patient_fields[13] = "^"
+    patient_fields[25] = "^^^"
 
     # O-2 (Specimen ID) vs O-3 (Instrument Specimen ID):
     #   1. Selector in O-3 only, O-2 blank (matching a real captured
@@ -130,7 +148,7 @@ def build_order_records(order: dict, query_selector: str | None = None) -> list[
     # like the analyzer's own instrument ID.
     return [
         "H|\\^&|||LABO-BRIDGE||||||||E1394-97",
-        "|".join(patient_fields).rstrip("|"),
+        "|".join(patient_fields),
         "|".join(order_fields),
         "L|1|N",
     ]
