@@ -117,30 +117,24 @@ class XN330OrderDownloadService:
             self.store.add_event("system", "xn330_response_error", sample_id, message)
             return
 
-        # Real test (2026-08-17, samples 2608217107-2608217109): the ASTM
-        # exchange ACKed cleanly every time, but the XN-330's own interface
-        # separately reported "host communication timeout" and then "TCP/IP
-        # transmission error on host computer" after an otherwise-successful
-        # reply, with no ASTM-level error on our side. Both errors describe
-        # a problem with the CONNECTION, not the message content, and appear
-        # only after we deliver a reply and then sit in recv() waiting for
-        # more from the analyzer on the same still-open socket. Closing the
-        # connection here - after the analyzer has ACKed every frame and our
-        # own EOT - tests whether this XN-330 expects one TCP connection per
-        # completed transaction rather than a persistent socket. Not yet
-        # confirmed against hardware; the outer ASTM loop (labo_bridge/
-        # server.py's _handle_astm) already treats a closed connection as a
-        # normal, non-error end of session.
-        try:
-            connection.shutdown(socket.SHUT_RDWR)
-        except OSError:
-            pass
-        connection.close()
-        self.store.add_event(
-            "host", "xn330_connection_closed", sample_id,
-            "Closed the TCP connection after delivering the order, in case this "
-            "XN-330 expects one connection per completed transaction",
-        )
+        # Real test history (2026-08-17, samples 2608217107-2608217109):
+        #   1. Connection left open after EOT (original behavior) ->
+        #      analyzer's own interface reports "host communication timeout".
+        #   2. H-4 populated, connection still left open -> analyzer reports
+        #      "TCP/IP transmission error on host computer" instead.
+        #   3. Host force-closes the connection immediately after EOT ->
+        #      the ORIGINAL "host communication timeout" error came back.
+        # All three ACKed cleanly at the ASTM level every time; every error
+        # is connection-related, not content-related, and forcing an
+        # immediate close (attempt 3) did not fix it and reproduced attempt
+        # 1's exact error - consistent with the analyzer still expecting
+        # something (its own processing time, or to be the one to end the
+        # session) that an instant unilateral close cuts off. Not closing
+        # the connection ourselves at all here; leaving the socket for the
+        # outer ASTM loop's normal idle handling (labo_bridge/server.py's
+        # CONNECTION_IDLE_TIMEOUT_SECONDS) to let the XN-330 close its own
+        # side in its own time, or time out naturally without a comm error
+        # attributable to an abrupt host-side close.
 
     def _recv_control(self, connection: socket.socket) -> int:
         while True:
