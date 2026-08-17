@@ -405,7 +405,12 @@ def _handle_astm(conn, addr, cfg, machine, quiet):
     while True:
         try:
             data = conn.recv(4096)
-        except (ConnectionResetError, socket.timeout):
+        except (ConnectionResetError, socket.timeout, OSError):
+            # OSError also covers recv() on a socket this same handler
+            # already closed - e.g. xn330_order_download's service closing
+            # the connection right after delivering an order (see its
+            # handle_records) - a normal, intentional end of session, not a
+            # real connection failure.
             break
         if not data:
             break

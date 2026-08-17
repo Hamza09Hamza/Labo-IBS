@@ -25,6 +25,7 @@ class FakeConnection:
     def __init__(self, replies=b""):
         self.replies = bytearray(replies)
         self.sent = []
+        self.closed = False
 
     def sendall(self, data):
         self.sent.append(data)
@@ -35,6 +36,12 @@ class FakeConnection:
         data = bytes(self.replies[:size])
         del self.replies[:size]
         return data
+
+    def shutdown(self, how):
+        pass
+
+    def close(self):
+        self.closed = True
 
 
 class XN330OrderDownloadCase(unittest.TestCase):
@@ -106,6 +113,12 @@ class XN330OrderDownloadCase(unittest.TestCase):
         saved = self.store.get_xn330_order("XN-DEMO-001")
         self.assertFalse(saved["ready"])
         self.assertEqual(saved["status"], "transport_acknowledged")
+        # The connection is closed right after a successful delivery - see
+        # protocol.build_order_records's evidence for why (a real "TCP/IP
+        # transmission error" reported by the analyzer's own interface after
+        # an otherwise clean ASTM exchange, consistent with this XN-330
+        # expecting one connection per completed transaction).
+        self.assertTrue(connection.closed)
 
         duplicate = FakeConnection(astm.B_ACK * (1 + frame_count))
         self.service.handle_records(duplicate, ["Q|1|^^XN-DEMO-001^M"])
