@@ -81,11 +81,24 @@ class XN330OrderDownloadCase(unittest.TestCase):
         self.assertEqual(order[25], "Q")
         self.assertEqual(records[-1], "L|1|N")
 
-    def test_large_order_is_split_into_bounded_astm_frames(self):
-        frames = protocol.build_message_frames(protocol.build_order_records(ORDER))
-        self.assertGreater(len(frames), 1)
+    def test_each_record_gets_its_own_frame_matching_real_capture(self):
+        records = protocol.build_order_records(ORDER)
+        frames = protocol.build_message_frames(records)
         self.assertTrue(all(len(frame) < 240 for frame in frames))
-        self.assertIn(bytes([astm.ETB]), frames[0])
+        # H, P, and L are short and each start their own frame, terminated
+        # ETX; the real XN-330 never uses ETB between different records
+        # (confirmed by counting terminators across a full real capture -
+        # see build_message_frames's docstring). Only a record that itself
+        # exceeds the byte cap (the O record here, with every orderable
+        # test) spans more than one frame, using ETB between its own
+        # pieces and ETX only on that record's last piece.
+        starts_of = [chr(frame[2]) for frame in frames]
+        self.assertEqual(starts_of.count("H"), 1)
+        self.assertEqual(starts_of.count("P"), 1)
+        self.assertEqual(starts_of.count("L"), 1)
+        o_frame_index = starts_of.index("O")
+        self.assertIn(bytes([astm.ETB]), frames[o_frame_index])
+        self.assertNotIn(bytes([astm.ETB]), frames[0])  # H's frame is not split
         self.assertIn(bytes([astm.ETX]), frames[-1])
 
     def test_unarmed_match_is_logged_but_sends_nothing(self):

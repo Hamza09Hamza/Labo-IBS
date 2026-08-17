@@ -137,14 +137,36 @@ def build_frame(frame_number: int, text: str, final: bool) -> bytes:
 
 
 def build_message_frames(records: list[str], max_text_bytes: int = 220) -> list[bytes]:
-    """Split one ASTM message across E1381 frames without exceeding 240 bytes."""
-    message = "\r".join(records) + "\r"
-    encoded = message.encode("ascii", errors="strict")
-    chunks = [encoded[index:index + max_text_bytes] for index in range(0, len(encoded), max_text_bytes)]
-    return [
-        build_frame(index + 1, chunk.decode("ascii"), index == len(chunks) - 1)
-        for index, chunk in enumerate(chunks)
-    ]
+    """Frame each ASTM record independently, one record per frame.
+
+    A real captured XN-330 session (2026-07-22,
+    results/xn330_20260722_145258_695713.txt - 140+ records, H/P/C/O/R/L)
+    never uses ETB (0x17) anywhere; every single one of its 294 frames is
+    terminated with ETX (0x03), one complete record per frame - confirmed
+    by counting terminator bytes across the whole raw capture, not
+    inferred. Our previous implementation ignored record boundaries
+    entirely and packed multiple different records into one frame, split
+    purely by byte count with ETB continuation between chunks - a real,
+    confirmed mismatch from how this instrument's own messages are shaped,
+    found after O-3/H-4 field fixes and connection-lifecycle changes alone
+    did not make a real armed order appear on the analyzer's screen despite
+    a clean ASTM ACK (2026-08-17). A record that itself exceeds
+    max_text_bytes is still split across multiple frames (necessary for the
+    long O record listing every requested test), using ETB between its own
+    pieces and ETX only on that record's last piece, since no real capture
+    shows a single record this XN-330 sends exceeding the byte cap to
+    confirm behavior there either way.
+    """
+    frames = []
+    frame_number = 1
+    for record in records:
+        encoded = (record + "\r").encode("ascii", errors="strict")
+        pieces = [encoded[index:index + max_text_bytes] for index in range(0, len(encoded), max_text_bytes)] or [b""]
+        for piece_index, piece in enumerate(pieces):
+            is_last_piece = piece_index == len(pieces) - 1
+            frames.append(build_frame(frame_number, piece.decode("ascii"), is_last_piece))
+            frame_number += 1
+    return frames
 
 
 def visible_bytes(data: bytes) -> str:
