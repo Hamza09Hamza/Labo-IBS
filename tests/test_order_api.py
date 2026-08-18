@@ -579,6 +579,46 @@ class OrderApiCase(unittest.TestCase):
         visible = self.client.get("/api/orders").get_json()["orders"]
         self.assertNotIn("SEL-API-001", [order["sample_id"] for order in visible])
 
+    def test_console_can_remove_multiple_selected_orders_atomically(self):
+        sample_ids = ["SEL-BULK-001", "SEL-BULK-002", "SEL-BULK-003"]
+        for sample_id in sample_ids:
+            response = self.client.post(
+                "/api/v1/orders/selectra",
+                json={**SELECTRA_ORDER, "sample_id": sample_id},
+                headers=HEADERS,
+            )
+            self.assertEqual(response.status_code, 201)
+        self.client.post(
+            "/api/orders/SEL-BULK-002/arm",
+            json={"confirmation": "ARM SELECTRA ORDER"},
+        )
+
+        unconfirmed = self.client.post(
+            "/api/orders/bulk-remove",
+            json={"sample_ids": sample_ids[:2]},
+        )
+        self.assertEqual(unconfirmed.status_code, 400)
+        self.assertTrue(self.store.get_order("SEL-BULK-002")["ready"])
+
+        removed = self.client.post(
+            "/api/orders/bulk-remove",
+            json={
+                "sample_ids": [sample_ids[0], sample_ids[1], sample_ids[0]],
+                "confirmation": "REMOVE SELECTRA ORDERS",
+            },
+        )
+        self.assertEqual(removed.status_code, 200)
+        self.assertEqual(removed.get_json()["removed_count"], 2)
+        self.assertEqual(
+            removed.get_json()["removed_sample_ids"], sample_ids[:2],
+        )
+        self.assertEqual(self.store.get_order(sample_ids[0])["status"], "cancelled")
+        self.assertEqual(self.store.get_order(sample_ids[1])["status"], "cancelled")
+        self.assertFalse(self.store.get_order(sample_ids[1])["ready"])
+        self.assertEqual(self.store.get_order(sample_ids[2])["status"], "staged")
+        visible = self.client.get("/api/orders").get_json()["orders"]
+        self.assertEqual([order["sample_id"] for order in visible], [sample_ids[2]])
+
 
 if __name__ == "__main__":
     unittest.main()

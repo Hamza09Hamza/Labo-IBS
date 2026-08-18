@@ -55,6 +55,19 @@
             <button id="autoArmButton" type="button">Start auto-arm</button>
           </div>
         </header>
+        <div class="queue-toolbar" id="queueToolbar" aria-label="Order queue controls">
+          <div class="selection-tools">
+            <button id="selectPageButton" class="quiet-button" type="button">Select this page</button>
+            <button id="clearSelectionButton" class="quiet-button" type="button" disabled>Clear selection</button>
+            <span id="selectionCount" aria-live="polite">0 selected</span>
+            <button id="bulkRemoveButton" class="bulk-remove-button" type="button" disabled>Remove selected</button>
+          </div>
+          <nav class="queue-pager" aria-label="Order pages">
+            <button id="previousOrdersButton" type="button" aria-label="Previous nine orders">←</button>
+            <span><strong id="orderRange">0 orders</strong><small id="orderPageLabel">Page 1 of 1</small></span>
+            <button id="nextOrdersButton" type="button" aria-label="Next nine orders">→</button>
+          </nav>
+        </div>
         <div class="orders-list" id="ordersList"><div class="orders-empty"><strong>No active Selectra orders</strong><span>Orders sent by the clinic server will appear here.</span></div></div>
       </section>
 

@@ -2,6 +2,7 @@ const $ = (selector) => document.querySelector(selector);
 const state = {
   tests: [], eventsAfter: 0, ordersSignature: "", outboundFields: {},
   warningNotices: new Set(),
+  orders: [], orderPage: 1, orderPageSize: 9, selectedOrders: new Set(),
 };
 let liveResponsesArmed = false;
 let continuousProbeArmed = false;
@@ -384,9 +385,16 @@ function orderCard(order) {
     ? (order.ready ? "armed" : "awaiting arm")
     : order.status;
   const warnings = Array.isArray(order.validation_warnings) ? order.validation_warnings : [];
+  const selected = state.selectedOrders.has(order.sample_id);
   return `
-    <article class="order-card ${order.ready ? "is-armed" : ""}">
-      <div class="order-card-head"><h3>${escapeHtml(order.sample_id)}</h3><span class="order-status ${statusClass}">${escapeHtml(displayStatus)}</span></div>
+    <article class="order-card ${order.ready ? "is-armed" : ""} ${selected ? "is-selected" : ""}">
+      <div class="order-card-head">
+        <label class="order-select" title="Select order ${escapeHtml(order.sample_id)}">
+          <input type="checkbox" data-select-order="${escapeHtml(order.sample_id)}" ${selected ? "checked" : ""} aria-label="Select order ${escapeHtml(order.sample_id)}">
+        </label>
+        <h3>${escapeHtml(order.sample_id)}</h3>
+        <span class="order-status ${statusClass}">${escapeHtml(displayStatus)}</span>
+      </div>
       <p class="order-person">${escapeHtml(order.family_name)} ${escapeHtml(order.given_name)} · ${escapeHtml(order.patient_id)}</p>
       <div class="order-tests">${order.tests.map(escapeHtml).join(" · ")}</div>
       ${warnings.length ? `
@@ -431,8 +439,102 @@ async function removeOrder(sampleId, button) {
   button.disabled = true;
   try {
     await api(`/api/orders/${encodeURIComponent(sampleId)}`, { method: "DELETE" });
+    state.selectedOrders.delete(sampleId);
     toast(`Order ${sampleId} removed from staging.`);
     state.ordersSignature = "";
+    await Promise.all([loadOrders(), loadEvents(), loadStatus()]);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function renderOrderQueue() {
+  const total = state.orders.length;
+  const totalPages = Math.max(1, Math.ceil(total / state.orderPageSize));
+  state.orderPage = Math.min(Math.max(1, state.orderPage), totalPages);
+  const start = (state.orderPage - 1) * state.orderPageSize;
+  const pageOrders = state.orders.slice(start, start + state.orderPageSize);
+  const end = start + pageOrders.length;
+  const selectedCount = state.selectedOrders.size;
+  const allPageSelected = pageOrders.length > 0
+    && pageOrders.every((order) => state.selectedOrders.has(order.sample_id));
+
+  $("#orderRange").textContent = total ? `${start + 1}–${end} of ${total}` : "0 orders";
+  $("#orderPageLabel").textContent = `Page ${state.orderPage} of ${totalPages}`;
+  $("#previousOrdersButton").disabled = state.orderPage <= 1;
+  $("#nextOrdersButton").disabled = state.orderPage >= totalPages;
+  $("#selectPageButton").disabled = pageOrders.length === 0;
+  $("#selectPageButton").textContent = allPageSelected ? "Deselect this page" : "Select this page";
+  $("#clearSelectionButton").disabled = selectedCount === 0;
+  $("#selectionCount").textContent = `${selectedCount} selected`;
+  $("#bulkRemoveButton").disabled = selectedCount === 0;
+  $("#bulkRemoveButton").textContent = selectedCount
+    ? `Remove selected (${selectedCount})`
+    : "Remove selected";
+
+  const container = $("#ordersList");
+  container.innerHTML = pageOrders.length
+    ? pageOrders.map(orderCard).join("")
+    : '<div class="orders-empty"><strong>No active Selectra orders</strong><span>Orders sent by the clinic server will appear here.</span></div>';
+  container.querySelectorAll("[data-select-order]").forEach((checkbox) => {
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) state.selectedOrders.add(checkbox.dataset.selectOrder);
+      else state.selectedOrders.delete(checkbox.dataset.selectOrder);
+      renderOrderQueue();
+    });
+  });
+  container.querySelectorAll("[data-simulate]").forEach((button) => {
+    button.addEventListener("click", () => simulate(button.dataset.simulate).catch((error) => toast(error.message)));
+  });
+  container.querySelectorAll("[data-arm]").forEach((button) => {
+    button.addEventListener("click", () => setOrderArmed(button.dataset.arm, true, button).catch((error) => toast(error.message)));
+  });
+  container.querySelectorAll("[data-disarm]").forEach((button) => {
+    button.addEventListener("click", () => setOrderArmed(button.dataset.disarm, false, button).catch((error) => toast(error.message)));
+  });
+  container.querySelectorAll("[data-remove-order]").forEach((button) => {
+    button.addEventListener("click", () => removeOrder(button.dataset.removeOrder, button).catch((error) => toast(error.message)));
+  });
+}
+
+function togglePageSelection() {
+  const start = (state.orderPage - 1) * state.orderPageSize;
+  const pageOrders = state.orders.slice(start, start + state.orderPageSize);
+  const allSelected = pageOrders.length > 0
+    && pageOrders.every((order) => state.selectedOrders.has(order.sample_id));
+  pageOrders.forEach((order) => {
+    if (allSelected) state.selectedOrders.delete(order.sample_id);
+    else state.selectedOrders.add(order.sample_id);
+  });
+  renderOrderQueue();
+}
+
+async function bulkRemoveOrders() {
+  const sampleIds = [...state.selectedOrders];
+  if (!sampleIds.length) return;
+  const armedCount = state.orders.filter(
+    (order) => state.selectedOrders.has(order.sample_id) && order.ready,
+  ).length;
+  const armedWarning = armedCount
+    ? ` ${armedCount} selected order${armedCount === 1 ? " is" : "s are"} currently armed.`
+    : "";
+  if (!window.confirm(
+    `Remove ${sampleIds.length} selected order${sampleIds.length === 1 ? "" : "s"}?${armedWarning} They will no longer be available to Selectra.`
+  )) return;
+  const button = $("#bulkRemoveButton");
+  button.disabled = true;
+  try {
+    const result = await api("/api/orders/bulk-remove", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sample_ids: sampleIds,
+        confirmation: "REMOVE SELECTRA ORDERS",
+      }),
+    });
+    result.removed_sample_ids.forEach((sampleId) => state.selectedOrders.delete(sampleId));
+    state.ordersSignature = "";
+    toast(`Removed ${result.removed_count} selected order${result.removed_count === 1 ? "" : "s"}.`);
     await Promise.all([loadOrders(), loadEvents(), loadStatus()]);
   } finally {
     button.disabled = false;
@@ -462,22 +564,12 @@ async function loadOrders() {
   const signature = JSON.stringify(result.orders);
   if (signature === state.ordersSignature) return;
   state.ordersSignature = signature;
-  const container = $("#ordersList");
-  container.innerHTML = result.orders.length
-    ? result.orders.map(orderCard).join("")
-    : '<div class="orders-empty">No orders staged yet.</div>';
-  container.querySelectorAll("[data-simulate]").forEach((button) => {
-    button.addEventListener("click", () => simulate(button.dataset.simulate).catch((error) => toast(error.message)));
+  state.orders = result.orders;
+  const activeIds = new Set(state.orders.map((order) => order.sample_id));
+  [...state.selectedOrders].forEach((sampleId) => {
+    if (!activeIds.has(sampleId)) state.selectedOrders.delete(sampleId);
   });
-  container.querySelectorAll("[data-arm]").forEach((button) => {
-    button.addEventListener("click", () => setOrderArmed(button.dataset.arm, true, button).catch((error) => toast(error.message)));
-  });
-  container.querySelectorAll("[data-disarm]").forEach((button) => {
-    button.addEventListener("click", () => setOrderArmed(button.dataset.disarm, false, button).catch((error) => toast(error.message)));
-  });
-  container.querySelectorAll("[data-remove-order]").forEach((button) => {
-    button.addEventListener("click", () => removeOrder(button.dataset.removeOrder, button).catch((error) => toast(error.message)));
-  });
+  renderOrderQueue();
 }
 
 async function stageOrder(event) {
@@ -556,6 +648,22 @@ $("#testCodeInput").addEventListener("keydown", (event) => {
 });
 $("#orderForm").addEventListener("submit", stageOrder);
 $("#autoArmButton").addEventListener("click", () => toggleApiAutoArm().catch((error) => toast(error.message)));
+$("#selectPageButton").addEventListener("click", togglePageSelection);
+$("#clearSelectionButton").addEventListener("click", () => {
+  state.selectedOrders.clear();
+  renderOrderQueue();
+});
+$("#bulkRemoveButton").addEventListener("click", () => bulkRemoveOrders().catch((error) => toast(error.message)));
+$("#previousOrdersButton").addEventListener("click", () => {
+  state.orderPage -= 1;
+  renderOrderQueue();
+  $("#ordersTitle").scrollIntoView({ behavior: "smooth", block: "start" });
+});
+$("#nextOrdersButton").addEventListener("click", () => {
+  state.orderPage += 1;
+  renderOrderQueue();
+  $("#ordersTitle").scrollIntoView({ behavior: "smooth", block: "start" });
+});
 document.querySelectorAll("[data-outbound-field]").forEach((button) => {
   button.addEventListener("click", () => toggleOutboundField(button).catch((error) => toast(error.message)));
 });

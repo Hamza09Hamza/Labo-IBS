@@ -275,6 +275,27 @@ class BenchStore:
             )
         return cursor.rowcount > 0
 
+    def cancel_orders(self, sample_ids: list[str]) -> list[str]:
+        """Cancel active orders together and return the IDs actually removed."""
+        if not sample_ids:
+            return []
+        placeholders = ",".join("?" for _ in sample_ids)
+        with self._session() as connection:
+            rows = connection.execute(
+                f"SELECT sample_id FROM orders WHERE status!='cancelled' AND sample_id IN ({placeholders})",
+                sample_ids,
+            ).fetchall()
+            active = {row["sample_id"] for row in rows}
+            removed = [sample_id for sample_id in sample_ids if sample_id in active]
+            if removed:
+                removed_placeholders = ",".join("?" for _ in removed)
+                connection.execute(
+                    f"UPDATE orders SET status='cancelled', ready=0, updated_at=? "
+                    f"WHERE sample_id IN ({removed_placeholders})",
+                    (utc_now(), *removed),
+                )
+        return removed
+
     def set_order_ready(self, sample_id: str, ready: bool):
         """Arm or disarm one API order without changing its clinical data."""
         with self._session() as connection:

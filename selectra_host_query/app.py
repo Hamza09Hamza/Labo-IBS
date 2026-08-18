@@ -699,6 +699,38 @@ def create_app(store, service, cyanvision_service=None, order_api_token=None):
         )
         return jsonify({"ok": True, "sample_id": sample_id, "state": "cancelled"})
 
+    @app.post("/api/orders/bulk-remove")
+    def remove_staged_orders():
+        body = request.get_json(silent=True) or {}
+        if body.get("confirmation") != "REMOVE SELECTRA ORDERS":
+            return jsonify({
+                "error": "explicit REMOVE SELECTRA ORDERS confirmation is required"
+            }), 400
+        values = body.get("sample_ids")
+        if not isinstance(values, list) or not values:
+            return jsonify({"error": "sample_ids must be a non-empty JSON array"}), 400
+        if len(values) > 200:
+            return jsonify({"error": "no more than 200 orders can be removed at once"}), 400
+        sample_ids = []
+        for value in values:
+            if not isinstance(value, str) or not value.strip():
+                return jsonify({"error": "every sample ID must be a non-empty string"}), 400
+            sample_id = value.strip()
+            if sample_id not in sample_ids:
+                sample_ids.append(sample_id)
+        removed = store.cancel_orders(sample_ids)
+        if removed:
+            store.add_event(
+                "local", "orders_bulk_removed", None,
+                f"Removed {len(removed)} selected order(s) from the active staging queue",
+                "\n".join(removed),
+            )
+        return jsonify({
+            "ok": True,
+            "removed_count": len(removed),
+            "removed_sample_ids": removed,
+        })
+
     @app.post("/api/orders")
     def stage_order():
         try:
