@@ -43,3 +43,20 @@ Result-code mappings and outbound ProgramIDs are intentionally separate. A
 successful `ACK^Q03` proves message acceptance, not that the intended program
 appeared on screen; the operator must confirm the selected test during this
 trial.
+
+## Controlled Creatinine selector trial
+
+The `5052` CYANVision tab contains a supervised control and seven-candidate
+trial for the unresolved `DSP.8` namespace. It first stages the manufacturer's
+exact `JD123 / Johnathana / Does / GLUC` example, followed by these visibly
+distinct patients in this exact order: `TRIAL 01 CREA`, `TRIAL 02 CRE`, `TRIAL 03 Crea`,
+`TRIAL 04 CREATININE`, `TRIAL 05 NUM11`, `TRIAL 06 NUM011`, and
+`TRIAL 07 BLANK`.
+
+The real analyzer currently closes its connection without `ACK^Q03`, so the
+bridge deliberately does not guess that an item was accepted or advance it
+automatically. After each **Load from LIS**, record which exam CYANVision
+selected, wait for the connection to close, then click **Mark checked → next**.
+The next uniquely named candidate will be returned on the following load.
+The staging endpoint refuses to mix this sequence with any already-ready
+non-trial CYANVision order.

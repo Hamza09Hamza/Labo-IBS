@@ -199,6 +199,90 @@ class CyanVisionWorklistCase(unittest.TestCase):
         self.assertEqual(disarmed.status_code, 200)
         self.assertFalse(disarmed.get_json()["armed"])
 
+    def test_cre_trial_queue_uses_unique_names_and_manual_advancement(self):
+        selectra = SelectraHostQueryServer(self.store, armed=False, embedded=True)
+        client = create_app(self.store, selectra, self.service).test_client()
+
+        unconfirmed = client.post("/api/cyanvision/cre-trials", json={})
+        self.assertEqual(unconfirmed.status_code, 400)
+
+        staged = client.post(
+            "/api/cyanvision/cre-trials",
+            json={"confirmation": "STAGE CYANVISION CRE TRIALS"},
+        )
+        self.assertEqual(staged.status_code, 201)
+        payload = staged.get_json()
+        self.assertEqual(payload["ready_count"], 8)
+        self.assertEqual(payload["current"]["sample_id"], "JD123")
+        self.assertEqual(payload["current"]["patient_name"], "Johnathana Does")
+        self.assertEqual(payload["current"]["dsp8"], "GLUC")
+        self.assertEqual(
+            [entry["patient_name"] for entry in payload["entries"]],
+            [
+                "Johnathana Does",
+                "TRIAL 01 CREA", "TRIAL 02 CRE", "TRIAL 03 Crea",
+                "TRIAL 04 CREATININE", "TRIAL 05 NUM11",
+                "TRIAL 06 NUM011", "TRIAL 07 BLANK",
+            ],
+        )
+
+        first_connection = FakeConnection()
+        self.service.handle_message(first_connection, QUERY)
+        first = unframe(first_connection.sent[0])
+        self.assertEqual(first[6:14], [
+            "DSP|1||JD123|||",
+            "DSP|2||Y|||",
+            "DSP|3||Johnathana|||",
+            "DSP|4||Does|||",
+            "DSP|5||F|||",
+            "DSP|6||19550604000000|||",
+            "DSP|7||1|||",
+            "DSP|8||GLUC|||",
+        ])
+
+        blocked = client.post(
+            "/api/cyanvision/cre-trials/advance",
+            json={"confirmation": "ADVANCE CYANVISION CRE TRIAL"},
+        )
+        self.assertEqual(blocked.status_code, 409)
+        self.service.connection_closed()
+
+        advanced = client.post(
+            "/api/cyanvision/cre-trials/advance",
+            json={"confirmation": "ADVANCE CYANVISION CRE TRIAL"},
+        )
+        self.assertEqual(advanced.status_code, 200)
+        self.assertEqual(advanced.get_json()["ready_count"], 7)
+        self.assertEqual(advanced.get_json()["current"]["sample_id"], "CV-01-CREA")
+        self.assertEqual(
+            self.store.get_cyanvision_order("JD123")["status"], "cancelled",
+        )
+
+        second_connection = FakeConnection()
+        self.service.handle_message(second_connection, QUERY)
+        second = unframe(second_connection.sent[0])
+        self.assertIn("DSP|4||01 CREA|||", second)
+        self.assertIn("DSP|8||CREA|||", second)
+        self.service.connection_closed()
+
+        cleared = client.delete("/api/cyanvision/cre-trials")
+        self.assertEqual(cleared.status_code, 200)
+        self.assertEqual(cleared.get_json()["ready_count"], 0)
+
+    def test_cre_trial_queue_refuses_to_mix_with_clinical_ready_orders(self):
+        selectra = SelectraHostQueryServer(self.store, armed=False, embedded=True)
+        client = create_app(self.store, selectra, self.service).test_client()
+        self.store.upsert_cyanvision_order(ORDER, source="api", ready=True)
+
+        response = client.post(
+            "/api/cyanvision/cre-trials",
+            json={"confirmation": "STAGE CYANVISION CRE TRIALS"},
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("existing CYANVision", response.get_json()["error"])
+        self.assertIsNone(self.store.get_cyanvision_order("JD123"))
+
     @patch("selectra_host_query.app.pg.list_observed_test_codes")
     def test_web_api_lists_mapped_and_observed_cyanvision_codes(self, observed):
         observed.return_value = [

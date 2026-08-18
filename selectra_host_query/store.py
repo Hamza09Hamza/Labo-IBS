@@ -460,7 +460,9 @@ class BenchStore:
                 """
                 SELECT * FROM cyanvision_orders
                 WHERE ready=1
-                ORDER BY created_at, sample_id
+                ORDER BY created_at,
+                         CASE WHEN source='trial' THEN external_order_id ELSE sample_id END,
+                         sample_id
                 LIMIT ?
                 """,
                 (limit,),

@@ -172,6 +172,99 @@ async function loadCyanvision() {
   }
 }
 
+function renderCyanTrials(status) {
+  if (status.available === false) {
+    $("#cyanTrialPanel").hidden = true;
+    return;
+  }
+  $("#cyanTrialPanel").hidden = false;
+  const entries = status.entries || [];
+  const current = status.current;
+  $("#cyanTrialCount").textContent = status.ready_count
+    ? `${status.ready_count} remaining`
+    : entries.some((entry) => entry.status !== "not_staged") ? "Sequence complete" : "Not staged";
+  $("#stageCyanTrialsButton").disabled = status.ready_count > 0 || status.pending_ack;
+  $("#advanceCyanTrialButton").disabled = !current || status.pending_ack;
+  $("#clearCyanTrialsButton").disabled = status.ready_count === 0 || status.pending_ack;
+  const next = $("#cyanTrialNext");
+  if (current) {
+    next.querySelector("strong").textContent = `${current.patient_name} · DSP.8 ${current.dsp8 || "(blank)"}`;
+    next.querySelector("small").textContent = status.pending_ack
+      ? `${current.sample_id} was sent. Wait for the connection to close, then record the selected exam.`
+      : current.query_count
+        ? `${current.sample_id} was offered ${current.query_count} time${current.query_count === 1 ? "" : "s"}. Check the analyzer, then advance.`
+        : `${current.sample_id} will be offered on the next Load from LIS.`;
+  } else {
+    next.querySelector("strong").textContent = entries.some((entry) => entry.status !== "not_staged")
+      ? "All eight candidates checked"
+      : "No trial staged";
+    next.querySelector("small").textContent = entries.some((entry) => entry.status !== "not_staged")
+      ? "Clear or restage the sequence after recording the result."
+      : "Stage the controlled sequence when no clinical CYANVision order is waiting.";
+  }
+  $("#cyanTrialSequence").innerHTML = entries.length
+    ? entries.map((entry, index) => {
+      const isCurrent = current?.sample_id === entry.sample_id;
+      const checked = !entry.ready && entry.status !== "not_staged";
+      const stateLabel = isCurrent
+        ? entry.query_count ? "sent · check screen" : "next"
+        : checked ? "checked" : entry.ready ? "queued" : "not staged";
+      return `
+        <li class="${isCurrent ? "is-current" : ""} ${checked ? "is-checked" : ""}">
+          <span class="trial-number">${String(index + 1).padStart(2, "0")}</span>
+          <strong class="trial-name">${escapeHtml(entry.patient_name)}</strong>
+          <span class="trial-value">DSP.8 ${escapeHtml(entry.dsp8 || "(blank)")}</span>
+          <span class="trial-state">${escapeHtml(stateLabel)}</span>
+        </li>
+      `;
+    }).join("")
+    : '<li class="trial-empty">Trial candidates have not been staged.</li>';
+}
+
+async function loadCyanTrials() {
+  renderCyanTrials(await api("/api/cyanvision/cre-trials"));
+}
+
+async function stageCyanTrials() {
+  if (!window.confirm(
+    "Stage the manufacturer’s exact GLUC example followed by seven uniquely named Creatinine candidates? Do this only when no clinical CYANVision order is waiting."
+  )) return;
+  const result = await api("/api/cyanvision/cre-trials", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ confirmation: "STAGE CYANVISION CRE TRIALS" }),
+  });
+  renderCyanTrials(result);
+  toast("CY014 manual control staged first. Johnathana Does / GLUC is next.");
+  await Promise.all([loadEvents(), loadStatus()]);
+}
+
+async function advanceCyanTrial() {
+  const current = (await api("/api/cyanvision/cre-trials")).current;
+  if (!current) return;
+  if (!window.confirm(
+    `Mark ${current.patient_name} / DSP.8 ${current.dsp8 || "(blank)"} checked and expose the next candidate?`
+  )) return;
+  const result = await api("/api/cyanvision/cre-trials/advance", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ confirmation: "ADVANCE CYANVISION CRE TRIAL" }),
+  });
+  renderCyanTrials(result);
+  toast(result.current
+    ? `${result.current.patient_name} is next for Load from LIS.`
+    : "All eight CYANVision candidates have been checked.");
+  await Promise.all([loadEvents(), loadStatus()]);
+}
+
+async function clearCyanTrials() {
+  if (!window.confirm("Clear every remaining CYANVision Creatinine trial candidate?")) return;
+  const result = await api("/api/cyanvision/cre-trials", { method: "DELETE" });
+  renderCyanTrials(result);
+  toast("Remaining CYANVision trial candidates cleared.");
+  await Promise.all([loadEvents(), loadStatus()]);
+}
+
 async function loadCyanvisionTests() {
   const result = await api("/api/cyanvision/tests");
   if (result.available === false) return;
@@ -607,11 +700,12 @@ async function stageOrder(event) {
 async function initialize() {
   const assays = await api("/api/assays");
   $("#assaySuggestions").innerHTML = assays.assays.map((assay) => `<option value="${escapeHtml(assay)}"></option>`).join("");
-  await Promise.all([loadStatus(), loadCyanvision(), loadCyanvisionTests(), loadOrders(), loadEvents()]);
+  await Promise.all([loadStatus(), loadCyanvision(), loadCyanTrials(), loadCyanvisionTests(), loadOrders(), loadEvents()]);
   setInterval(() => loadStatus().catch(() => {}), 2500);
   setInterval(() => loadOrders().catch(() => {}), 2200);
   setInterval(() => loadEvents().catch(() => {}), 1200);
   setInterval(() => loadCyanvision().catch(() => {}), 1800);
+  setInterval(() => loadCyanTrials().catch(() => {}), 1800);
   setInterval(() => loadCyanvisionTests().catch(() => {}), 30000);
 }
 
@@ -672,6 +766,9 @@ $("#armingButton").addEventListener("click", () => toggleLiveResponses().catch((
 $("#probeButton").addEventListener("click", () => toggleContinuousProbe().catch((error) => toast(error.message)));
 $("#cyanvisionForm").addEventListener("submit", stageCyanvision);
 $("#cyanDisarmButton").addEventListener("click", () => disarmCyanvision().catch((error) => toast(error.message)));
+$("#stageCyanTrialsButton").addEventListener("click", () => stageCyanTrials().catch((error) => toast(error.message)));
+$("#advanceCyanTrialButton").addEventListener("click", () => advanceCyanTrial().catch((error) => toast(error.message)));
+$("#clearCyanTrialsButton").addEventListener("click", () => clearCyanTrials().catch((error) => toast(error.message)));
 renderTests();
 setConsoleView(location.hash.slice(1), false);
 initialize().catch((error) => toast(`Bench failed to initialize: ${error.message}`));

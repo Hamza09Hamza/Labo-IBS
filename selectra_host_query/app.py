@@ -11,7 +11,7 @@ from datetime import date, timedelta
 from flask import Flask, jsonify, request, send_from_directory
 
 from labo_bridge import mappings as bridge_mappings, pg
-from cyanvision_worklist.programs import WORKLIST_PROGRAM_IDS
+from cyanvision_worklist.programs import CRE_DSP8_TRIAL_SEQUENCE, WORKLIST_PROGRAM_IDS
 
 from .protocol import build_order_records, test_abbreviation
 
@@ -382,6 +382,40 @@ def _cyanvision_test_options():
     return sorted(choices.values(), key=lambda item: item["code"].casefold())
 
 
+def _cyanvision_cre_trial_order(candidate):
+    return {
+        "sample_id": candidate["sample_id"],
+        "given_name": candidate.get("given_name", "TRIAL"),
+        "family_name": candidate.get("family_name", candidate["label"]),
+        "birth_date": candidate.get("birth_date", "1980-01-01"),
+        "sex": candidate.get("sex", "M"),
+        "test_code": candidate["test_code"],
+        "external_order_id": f"CYAN-CRE-TRIAL-{candidate['sequence']:02d}",
+    }
+
+
+def _cyanvision_cre_trial_status(store, cyanvision_service):
+    entries = []
+    for candidate in CRE_DSP8_TRIAL_SEQUENCE:
+        saved = store.get_cyanvision_order(candidate["sample_id"])
+        order = _cyanvision_cre_trial_order(candidate)
+        entries.append({
+            **candidate,
+            "patient_name": f"{order['given_name']} {order['family_name']}",
+            "status": saved["status"] if saved else "not_staged",
+            "ready": bool(saved and saved["ready"]),
+            "query_count": saved["query_count"] if saved else 0,
+        })
+    current = next((entry for entry in entries if entry["ready"]), None)
+    service_status = cyanvision_service.status()
+    return {
+        "entries": entries,
+        "current": current,
+        "ready_count": sum(1 for entry in entries if entry["ready"]),
+        "pending_ack": service_status["pending_ack"],
+    }
+
+
 def create_app(store, service, cyanvision_service=None, order_api_token=None):
     app = Flask(__name__, static_folder=None)
     configured_order_api_token = (
@@ -479,6 +513,101 @@ def create_app(store, service, cyanvision_service=None, order_api_token=None):
         if not cyanvision_service:
             return jsonify({"error": "CYANVision worklist service is unavailable"}), 503
         return jsonify({"ok": True, **cyanvision_service.disarm()})
+
+    @app.get("/api/cyanvision/cre-trials")
+    def cyanvision_cre_trials():
+        if not cyanvision_service:
+            return jsonify({"available": False})
+        return jsonify({
+            "available": True,
+            **_cyanvision_cre_trial_status(store, cyanvision_service),
+        })
+
+    @app.post("/api/cyanvision/cre-trials")
+    def stage_cyanvision_cre_trials():
+        if not cyanvision_service:
+            return jsonify({"error": "CYANVision worklist service is unavailable"}), 503
+        body = request.get_json(silent=True) or {}
+        if body.get("confirmation") != "STAGE CYANVISION CRE TRIALS":
+            return jsonify({
+                "error": "explicit STAGE CYANVISION CRE TRIALS confirmation is required"
+            }), 400
+        if cyanvision_service.status()["pending_ack"]:
+            return jsonify({
+                "error": "wait for the current CYANVision connection to close before staging trials"
+            }), 409
+        trial_ids = {candidate["sample_id"] for candidate in CRE_DSP8_TRIAL_SEQUENCE}
+        other_ready = [
+            order for order in store.list_ready_cyanvision_orders()
+            if order["sample_id"] not in trial_ids
+        ]
+        if other_ready:
+            return jsonify({
+                "error": "disarm or remove existing CYANVision worklist orders before staging the CRE trial"
+            }), 409
+        for candidate in CRE_DSP8_TRIAL_SEQUENCE:
+            store.upsert_cyanvision_order(
+                _cyanvision_cre_trial_order(candidate), source="trial", ready=True,
+            )
+        store.add_event(
+            "local", "cyanvision_cre_trials_staged", None,
+            "Staged the exact CY014 GLUC control plus 7 uniquely named Creatinine DSP.8 candidates",
+        )
+        return jsonify({
+            "ok": True,
+            **_cyanvision_cre_trial_status(store, cyanvision_service),
+        }), 201
+
+    @app.post("/api/cyanvision/cre-trials/advance")
+    def advance_cyanvision_cre_trials():
+        if not cyanvision_service:
+            return jsonify({"error": "CYANVision worklist service is unavailable"}), 503
+        body = request.get_json(silent=True) or {}
+        if body.get("confirmation") != "ADVANCE CYANVISION CRE TRIAL":
+            return jsonify({
+                "error": "explicit ADVANCE CYANVISION CRE TRIAL confirmation is required"
+            }), 400
+        if cyanvision_service.status()["pending_ack"]:
+            return jsonify({
+                "error": "wait for CYANVision to close the current connection before advancing"
+            }), 409
+        status_value = _cyanvision_cre_trial_status(store, cyanvision_service)
+        current = status_value["current"]
+        if not current:
+            return jsonify({"error": "no ready CYANVision CRE trial candidate remains"}), 409
+        store.cancel_cyanvision_order(current["sample_id"])
+        next_status = _cyanvision_cre_trial_status(store, cyanvision_service)
+        next_candidate = next_status["current"]
+        store.add_event(
+            "local", "cyanvision_cre_trial_advanced", current["sample_id"],
+            (
+                f"Marked {current['patient_name']} / DSP.8 {current['dsp8'] or '(blank)'} checked; "
+                + (f"{next_candidate['patient_name']} is next" if next_candidate else "trial sequence complete")
+            ),
+        )
+        return jsonify({"ok": True, **next_status})
+
+    @app.delete("/api/cyanvision/cre-trials")
+    def clear_cyanvision_cre_trials():
+        if not cyanvision_service:
+            return jsonify({"error": "CYANVision worklist service is unavailable"}), 503
+        if cyanvision_service.status()["pending_ack"]:
+            return jsonify({
+                "error": "wait for CYANVision to close the current connection before clearing trials"
+            }), 409
+        removed = 0
+        for candidate in CRE_DSP8_TRIAL_SEQUENCE:
+            saved = store.get_cyanvision_order(candidate["sample_id"])
+            if saved and saved["ready"] and store.cancel_cyanvision_order(candidate["sample_id"]):
+                removed += 1
+        store.add_event(
+            "local", "cyanvision_cre_trials_cleared", None,
+            f"Cleared {removed} remaining Creatinine trial candidate(s)",
+        )
+        return jsonify({
+            "ok": True,
+            **_cyanvision_cre_trial_status(store, cyanvision_service),
+        })
 
     @app.post("/api/v1/orders/selectra")
     def api_stage_selectra_order():

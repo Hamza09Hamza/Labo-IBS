@@ -153,6 +153,33 @@
           </section>
         </div>
       </section>
+
+      <section class="cyan-trial-panel panel" id="cyanTrialPanel" aria-labelledby="cyanTrialTitle">
+        <header class="section-head">
+          <div>
+            <span class="section-kicker">Controlled field trial · Creatinine</span>
+            <h2 id="cyanTrialTitle">Identify the DSP.8 selector CYANVision accepts</h2>
+            <p>The manufacturer’s exact GLUC example comes first, followed by seven Creatinine candidates. Check the selected exam, then advance manually.</p>
+          </div>
+          <span class="trial-count" id="cyanTrialCount">Not staged</span>
+        </header>
+        <div class="trial-command-bar">
+          <div class="trial-next" id="cyanTrialNext">
+            <span>Next candidate</span>
+            <strong>No trial staged</strong>
+            <small>Stage the controlled sequence when no clinical CYANVision order is waiting.</small>
+          </div>
+          <div class="trial-actions">
+            <button type="button" id="stageCyanTrialsButton">Stage manual control + trials</button>
+            <button type="button" id="advanceCyanTrialButton" disabled>Mark checked → next</button>
+            <button type="button" id="clearCyanTrialsButton" class="secondary-danger" disabled>Clear trial</button>
+          </div>
+        </div>
+        <ol class="trial-sequence" id="cyanTrialSequence" aria-label="Creatinine DSP.8 trial sequence">
+          <li class="trial-empty">Trial candidates have not been staged.</li>
+        </ol>
+        <p class="trial-safety">Because this CYANVision does not return ACK^Q03, the bridge cannot advance automatically. Click “Mark checked → next” only after recording which exam appeared on the analyzer.</p>
+      </section>
     </section>
 
     <section class="console-view diagnostics-view" id="diagnosticsView" role="tabpanel" aria-labelledby="diagnosticsTab" data-console-view="diagnostics" hidden>
