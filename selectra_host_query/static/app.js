@@ -1,6 +1,7 @@
 const $ = (selector) => document.querySelector(selector);
 const state = {
   tests: [], eventsAfter: 0, ordersSignature: "", outboundFields: {},
+  warningNotices: new Set(),
 };
 let liveResponsesArmed = false;
 let continuousProbeArmed = false;
@@ -382,11 +383,20 @@ function orderCard(order) {
   const displayStatus = order.source === "api" && canArm
     ? (order.ready ? "armed" : "awaiting arm")
     : order.status;
+  const warnings = Array.isArray(order.validation_warnings) ? order.validation_warnings : [];
   return `
     <article class="order-card ${order.ready ? "is-armed" : ""}">
       <div class="order-card-head"><h3>${escapeHtml(order.sample_id)}</h3><span class="order-status ${statusClass}">${escapeHtml(displayStatus)}</span></div>
       <p class="order-person">${escapeHtml(order.family_name)} ${escapeHtml(order.given_name)} · ${escapeHtml(order.patient_id)}</p>
       <div class="order-tests">${order.tests.map(escapeHtml).join(" · ")}</div>
+      ${warnings.length ? `
+        <div class="order-validation-warning" role="status">
+          <strong>${warnings.length} requested test${warnings.length === 1 ? " was" : "s were"} skipped</strong>
+          <ul>${warnings.map((warning) => `
+            <li><span>Item ${Number(warning.index) + 1}</span>${escapeHtml(warning.reason)}</li>
+          `).join("")}</ul>
+        </div>
+      ` : ""}
       <div class="order-meta"><span>${order.source === "api" ? "Server order" : "Local order"}</span><span>${order.query_count} quer${order.query_count === 1 ? "y" : "ies"}</span><span>${escapeHtml(formatTime(order.updated_at))}</span></div>
       <div class="order-actions">
         ${canArm ? `<button class="arm-order-button" type="button" data-${order.ready ? "disarm" : "arm"}="${escapeHtml(order.sample_id)}">${order.ready ? "Disarm" : "Arm for Selectra"}</button>` : ""}
@@ -441,6 +451,14 @@ async function simulate(sampleId) {
 
 async function loadOrders() {
   const result = await api("/api/orders");
+  result.orders.forEach((order) => {
+    const warnings = Array.isArray(order.validation_warnings) ? order.validation_warnings : [];
+    const noticeKey = `${order.sample_id}:${order.updated_at}`;
+    if (warnings.length && !state.warningNotices.has(noticeKey)) {
+      state.warningNotices.add(noticeKey);
+      toast(`Order ${order.sample_id} was kept, but ${warnings.length} test${warnings.length === 1 ? " was" : "s were"} skipped.`);
+    }
+  });
   const signature = JSON.stringify(result.orders);
   if (signature === state.ordersSignature) return;
   state.ordersSignature = signature;

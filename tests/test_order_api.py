@@ -151,6 +151,7 @@ class OrderApiCase(unittest.TestCase):
         self.assertEqual(migrated["source"], "manual")
         self.assertFalse(migrated["ready"])
         self.assertEqual(migrated["tests"], ["Creatinine"])
+        self.assertEqual(migrated["validation_warnings"], [])
 
     def test_upgrade_disarms_api_orders_created_before_manual_arming(self):
         legacy_path = os.path.join(self.temp.name, "pre-manual-arming.db")
@@ -394,6 +395,79 @@ class OrderApiCase(unittest.TestCase):
         )
         self.assertEqual(unknown.status_code, 400)
         self.assertIn("no curated", unknown.get_json()["error"])
+
+    def test_selectra_api_keeps_valid_tests_and_reports_invalid_ones(self):
+        order = {
+            **SELECTRA_ORDER,
+            "sample_id": "SEL-PARTIAL-001",
+            "tests": [
+                {"service_tarification_id": 392},
+                {"param_id": 99953, "service_tarification_id": 528},
+                {"param_id": 123456789},
+                {"service_tarification_id": 528},
+            ],
+        }
+        response = self.client.post(
+            "/api/v1/orders/selectra", json=order, headers=HEADERS,
+        )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.get_json()
+        self.assertEqual(payload["accepted_test_count"], 2)
+        self.assertEqual(len(payload["rejected_tests"]), 2)
+        self.assertEqual(payload["rejected_tests"][0]["index"], 2)
+        self.assertIn("no curated", payload["rejected_tests"][0]["reason"])
+        self.assertEqual(payload["rejected_tests"][1]["index"], 3)
+        self.assertIn("ambiguous", payload["rejected_tests"][1]["reason"])
+
+        stored = BenchStore(self.db_path).get_order("SEL-PARTIAL-001")
+        self.assertEqual(stored["tests"], ["Creatinine", "SGPT"])
+        self.assertEqual(stored["validation_warnings"], payload["rejected_tests"])
+        self.assertIn(
+            "^^^Crea\\^^^SGPT",
+            selectra_protocol.build_order_records(stored)[2],
+        )
+        status = self.client.get(
+            "/api/v1/orders/selectra/SEL-PARTIAL-001", headers=HEADERS,
+        )
+        self.assertEqual(status.get_json()["rejected_tests"], payload["rejected_tests"])
+        portal_order = next(
+            item for item in self.client.get("/api/orders").get_json()["orders"]
+            if item["sample_id"] == "SEL-PARTIAL-001"
+        )
+        self.assertEqual(portal_order["validation_warnings"], payload["rejected_tests"])
+
+        corrected = self.client.post(
+            "/api/v1/orders/selectra",
+            json={**order, "tests": [{"service_tarification_id": 392}]},
+            headers=HEADERS,
+        )
+        self.assertEqual(corrected.get_json(), {
+            "ok": True, "analyzer": "selectra",
+            "sample_id": "SEL-PARTIAL-001", "state": "staged",
+        })
+        self.assertEqual(
+            self.store.get_order("SEL-PARTIAL-001")["validation_warnings"], [],
+        )
+
+    def test_selectra_api_rejects_order_when_every_test_is_invalid(self):
+        response = self.client.post(
+            "/api/v1/orders/selectra",
+            json={
+                **SELECTRA_ORDER,
+                "sample_id": "SEL-NO-VALID-001",
+                "tests": [
+                    {"param_id": 123456789},
+                    {"service_tarification_id": 528},
+                ],
+            },
+            headers=HEADERS,
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("none of the requested", response.get_json()["error"])
+        self.assertEqual(len(response.get_json()["rejected_tests"]), 2)
+        self.assertIsNone(self.store.get_order("SEL-NO-VALID-001"))
 
     @patch("selectra_host_query.app.pg.list_observed_test_codes", return_value=[])
     def test_cyanvision_api_queue_uses_documented_dsr_ack_continuation(self, _observed):

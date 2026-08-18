@@ -99,6 +99,11 @@ h1 { max-width: 760px; margin: 0; font-size: clamp(30px, 4vw, 48px); line-height
 .order-status.error { background: var(--red-soft); color: var(--red); }
 .order-person { margin: 8px 0 0; color: var(--muted); font-size: 13px; }
 .order-tests { min-height: 40px; margin: 12px 0; overflow-wrap: anywhere; color: var(--ink); font: 12px/1.55 var(--mono); }
+.order-validation-warning { margin: 0 0 12px; padding: 10px 11px; border-left: 3px solid var(--amber); background: var(--amber-soft); color: #674b12; font-size: 11px; line-height: 1.45; }
+.order-validation-warning strong { display: block; margin-bottom: 5px; color: #563d0c; font-size: 11px; }
+.order-validation-warning ul { margin: 0; padding-left: 17px; }
+.order-validation-warning li + li { margin-top: 3px; }
+.order-validation-warning li span { margin-right: 6px; font: 700 10px var(--mono); text-transform: uppercase; }
 .order-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; color: var(--faint); font-size: 11px; }
 .order-actions { margin-top: 14px; display: grid; grid-template-columns: minmax(130px, 1.5fr) minmax(100px, 1fr) auto; gap: 8px; }
 .order-actions button { min-width: 0; padding: 0 12px; border-radius: 0; font-size: 12px; font-weight: 700; }

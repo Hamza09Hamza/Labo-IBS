@@ -89,9 +89,14 @@ Rules:
 - Supply both identifiers when available. For example, tarification `528`
   contains both SGOT and SGPT and is rejected as ambiguous unless its
   `param_id` is also supplied.
-- Unknown or ambiguous identifiers return HTTP `400`; LaboBridge never guesses
-  a clinical test. Legacy method-name strings remain accepted temporarily for
-  compatibility, but new integrations should use identifiers.
+- Tests are validated independently. If at least one identifier maps safely,
+  the bridge keeps the order with those valid tests and returns HTTP `201` plus
+  `accepted_test_count`, `warning`, and a `rejected_tests` array describing
+  every skipped entry. The same warning remains visible on the order card in
+  the `5052` console. If no requested test maps safely, the bridge returns HTTP
+  `400` and does not stage the order. LaboBridge never guesses an unknown or
+  ambiguous clinical test. Legacy method-name strings remain accepted
+  temporarily for compatibility, but new integrations should use identifiers.
 - Reposting the same `sample_id` replaces the stored content and returns it to
   the inactive staged state. `external_order_id` is optional correlation
   metadata.
@@ -104,6 +109,30 @@ mode survives a LaboBridge restart. Stopping auto-arm disarms all waiting API
 orders; it does not affect already delivered audit records. After Selectra
 transport-ACKs a response, that order becomes `transport_acknowledged` and is
 no longer armed.
+
+A partially accepted response looks like this:
+
+```json
+{
+  "ok": true,
+  "analyzer": "selectra",
+  "sample_id": "2608130012",
+  "state": "staged",
+  "accepted_test_count": 2,
+  "warning": "Order kept with 2 valid test(s); 1 requested test(s) rejected",
+  "rejected_tests": [
+    {
+      "index": 2,
+      "requested": {"service_tarification_id": 999999},
+      "reason": "no curated selectra mapping ..."
+    }
+  ]
+}
+```
+
+`index` is zero-based and identifies the original item in `tests`. The sender
+should record the warning and correct the rejected item, but must not retry the
+whole order blindly: the valid tests are already staged.
 
 ### Read status or cancel
 

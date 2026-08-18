@@ -68,7 +68,8 @@ class BenchStore:
                     external_order_id TEXT,
                     outbound_specimen_type TEXT NOT NULL DEFAULT '',
                     ordering_physician TEXT NOT NULL DEFAULT '',
-                    comment TEXT NOT NULL DEFAULT ''
+                    comment TEXT NOT NULL DEFAULT '',
+                    validation_warnings_json TEXT NOT NULL DEFAULT '[]'
                 );
                 CREATE TABLE IF NOT EXISTS cyanvision_orders (
                     sample_id TEXT PRIMARY KEY,
@@ -121,6 +122,7 @@ class BenchStore:
                 ("outbound_specimen_type", "TEXT NOT NULL DEFAULT ''"),
                 ("ordering_physician", "TEXT NOT NULL DEFAULT ''"),
                 ("comment", "TEXT NOT NULL DEFAULT ''"),
+                ("validation_warnings_json", "TEXT NOT NULL DEFAULT '[]'"),
             ):
                 if column not in order_columns:
                     connection.execute(f"ALTER TABLE orders ADD COLUMN {column} {definition}")
@@ -153,6 +155,9 @@ class BenchStore:
             return None
         value = dict(row)
         value["tests"] = json.loads(value.pop("tests_json"))
+        value["validation_warnings"] = json.loads(
+            value.pop("validation_warnings_json", "[]") or "[]"
+        )
         value["ready"] = bool(value.get("ready"))
         return value
 
@@ -165,8 +170,9 @@ class BenchStore:
                     (sample_id, patient_id, family_name, given_name, birth_date,
                      sex, specimen_type, tests_json, status, source, ready,
                      external_order_id, outbound_specimen_type,
-                     ordering_physician, comment, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'staged', ?, ?, ?, ?, ?, ?, ?, ?)
+                     ordering_physician, comment, validation_warnings_json,
+                     created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'staged', ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(sample_id) DO UPDATE SET
                     patient_id=excluded.patient_id,
                     family_name=excluded.family_name,
@@ -182,6 +188,7 @@ class BenchStore:
                     outbound_specimen_type=excluded.outbound_specimen_type,
                     ordering_physician=excluded.ordering_physician,
                     comment=excluded.comment,
+                    validation_warnings_json=excluded.validation_warnings_json,
                     updated_at=excluded.updated_at,
                     last_error=NULL
                 """,
@@ -192,6 +199,7 @@ class BenchStore:
                     source, int(bool(ready)), order.get("external_order_id"),
                     order.get("outbound_specimen_type", ""),
                     order.get("ordering_physician", ""), order.get("comment", ""),
+                    json.dumps(order.get("validation_warnings", []), ensure_ascii=True),
                     now, now,
                 ),
             )
@@ -199,6 +207,13 @@ class BenchStore:
         self.add_event(direction, "order_staged", order["sample_id"],
                        f"Staged {len(order['tests'])} test(s) for exact sample ID {order['sample_id']}"
                        + ("; API order is ready for Selectra" if ready else ""))
+        warnings = order.get("validation_warnings", [])
+        if warnings:
+            self.add_event(
+                direction, "order_staged_with_warnings", order["sample_id"],
+                f"Kept {len(order['tests'])} valid test(s); rejected {len(warnings)} invalid or ambiguous test(s)",
+                json.dumps(warnings, ensure_ascii=True),
+            )
         return self.get_order(order["sample_id"])
 
     def get_order(self, sample_id: str):

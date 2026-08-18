@@ -205,30 +205,60 @@ def _resolve_machine_test(machine, requested):
     return next(iter(by_wire_code.values()))
 
 
+class SelectraTestsRejected(ValueError):
+    def __init__(self, message, rejected_tests):
+        super().__init__(message)
+        self.rejected_tests = rejected_tests
+
+
+def _rejected_selectra_test(index, value, error):
+    requested = value if isinstance(value, (dict, str, int, float, bool)) or value is None else str(value)
+    return {
+        "index": index,
+        "requested": requested,
+        "reason": str(error),
+    }
+
+
 def _resolve_selectra_tests(values):
     if not isinstance(values, list) or not values:
         raise ValueError("Selectra tests must be a non-empty JSON array")
     resolved = []
-    for value in values:
-        if isinstance(value, dict):
-            resolved.append(_resolve_machine_test("selectra", value))
-        else:
-            # Backward compatibility for the local bench and existing clients.
-            method = _validate_text("Selectra test", value, maximum=60)
-            resolved.append({
-                "machine_test": method,
-                "machine_code": test_abbreviation(method),
-                "param_id": None,
-                "service_tarification_id": None,
-            })
-    unique = {item["machine_code"]: item for item in resolved}
-    if len(unique) > 40:
-        raise ValueError("no more than 40 Selectra tests can be staged")
-    return list(unique.values())
+    rejected = []
+    machine_codes = set()
+    for index, value in enumerate(values):
+        try:
+            if isinstance(value, dict):
+                item = _resolve_machine_test("selectra", value)
+            else:
+                # Backward compatibility for the local bench and existing clients.
+                method = _validate_text("Selectra test", value, maximum=60)
+                item = {
+                    "machine_test": method,
+                    "machine_code": test_abbreviation(method),
+                    "param_id": None,
+                    "service_tarification_id": None,
+                }
+            if item["machine_code"] in machine_codes:
+                continue
+            if len(resolved) >= 40:
+                raise ValueError("no more than 40 Selectra tests can be staged")
+            resolved.append(item)
+            machine_codes.add(item["machine_code"])
+        except ValueError as exc:
+            rejected.append(_rejected_selectra_test(index, value, exc))
+    if not resolved:
+        detail = rejected[0]["reason"] if rejected else "no test details were supplied"
+        raise SelectraTestsRejected(
+            "none of the requested Selectra tests could be mapped; "
+            f"order was not staged: {detail}",
+            rejected,
+        )
+    return resolved, rejected
 
 
 def _validated_selectra_api_order(body):
-    resolved_tests = _resolve_selectra_tests(body.get("tests"))
+    resolved_tests, rejected_tests = _resolve_selectra_tests(body.get("tests"))
     tests = [item["machine_test"] for item in resolved_tests]
     birth_date = str(body.get("birth_date") or "").strip()
     try:
@@ -270,7 +300,7 @@ def _validated_selectra_api_order(body):
     if len(patient_name) > 20:
         raise ValueError("Selectra family name plus given name must be 20 characters or fewer")
     _require_ascii(order, "Selectra")
-    return order, resolved_tests
+    return order, resolved_tests, rejected_tests
 
 
 def _validated_cyanvision_order(body):
@@ -456,18 +486,34 @@ def create_app(store, service, cyanvision_service=None, order_api_token=None):
         if not isinstance(body, dict):
             return jsonify({"error": "request body must be a JSON object"}), 400
         try:
-            order, resolved_tests = _validated_selectra_api_order(body)
+            order, resolved_tests, rejected_tests = _validated_selectra_api_order(body)
+        except SelectraTestsRejected as exc:
+            return jsonify({
+                "error": str(exc),
+                "rejected_tests": exc.rejected_tests,
+            }), 400
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
+        order["validation_warnings"] = rejected_tests
         saved = store.upsert_order(
             order, source="api", ready=store.selectra_auto_arm_enabled(),
         )
-        return jsonify({
+        response = {
             "ok": True,
             "analyzer": "selectra",
             "sample_id": saved["sample_id"],
             "state": "armed" if saved["ready"] else "staged",
-        }), 201
+        }
+        if rejected_tests:
+            response.update({
+                "warning": (
+                    f"Order kept with {len(resolved_tests)} valid test(s); "
+                    f"{len(rejected_tests)} requested test(s) rejected"
+                ),
+                "accepted_test_count": len(resolved_tests),
+                "rejected_tests": rejected_tests,
+            })
+        return jsonify(response), 201
 
     @app.post("/api/selectra/auto-arm")
     def set_selectra_auto_arm():
@@ -524,7 +570,7 @@ def create_app(store, service, cyanvision_service=None, order_api_token=None):
         order = store.get_order(sample_id)
         if not order or order.get("source") != "api":
             return jsonify({"error": "Selectra API order not found"}), 404
-        return jsonify({
+        response = {
             "analyzer": "selectra",
             "sample_id": order["sample_id"],
             "state": order["status"],
@@ -532,7 +578,10 @@ def create_app(store, service, cyanvision_service=None, order_api_token=None):
             "query_count": order["query_count"],
             "updated_at": order["updated_at"],
             "last_error": order["last_error"],
-        })
+        }
+        if order.get("validation_warnings"):
+            response["rejected_tests"] = order["validation_warnings"]
+        return jsonify(response)
 
     @app.delete("/api/v1/orders/selectra/<sample_id>")
     def api_cancel_selectra_order(sample_id):

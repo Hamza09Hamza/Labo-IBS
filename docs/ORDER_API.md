@@ -68,7 +68,7 @@ The token is generated locally at startup and stored in `selectra_host_query/dat
 }
 ```
 
-The bridge reverse-maps clinic identifiers to installed Selectra codes. Ambiguous tarifications require `param_id`. Patient ID and optional demographics may be retained locally while omitted from the analyzer payload according to outbound-field settings.
+The bridge reverse-maps clinic identifiers to installed Selectra codes. Ambiguous tarifications require `param_id`. Each test is validated independently: a request containing both valid and invalid tests returns `201`, stages only the valid tests, and includes a persistent `rejected_tests` warning. If every test is invalid, the bridge returns `400` and stages nothing. Patient ID and optional demographics may be retained locally while omitted from the analyzer payload according to outbound-field settings.
 
 ## CYANVision example
 
