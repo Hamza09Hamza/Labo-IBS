@@ -186,6 +186,14 @@ function renderCyanTrials(status) {
   $("#stageCyanTrialsButton").disabled = status.ready_count > 0 || status.pending_ack;
   $("#advanceCyanTrialButton").disabled = !current || status.pending_ack;
   $("#clearCyanTrialsButton").disabled = status.ready_count === 0 || status.pending_ack;
+  const autoAdvance = status.auto_advance === true;
+  const autoAdvanceControl = $("#cyanTrialAutoAdvanceControl");
+  autoAdvanceControl.classList.toggle("armed", autoAdvance);
+  $("#cyanTrialAutoAdvanceTitle").textContent = autoAdvance ? "Auto-advance is on" : "Manual advance";
+  $("#cyanTrialAutoAdvanceCopy").textContent = autoAdvance
+    ? "Every dropped connection is treated as checked; the next candidate is offered automatically."
+    : "You confirm each candidate before the next one is offered.";
+  $("#cyanTrialAutoAdvanceButton").textContent = autoAdvance ? "Turn off auto-advance" : "Turn on auto-advance";
   const next = $("#cyanTrialNext");
   if (current) {
     next.querySelector("strong").textContent = `${current.patient_name} · DSP.8 ${current.dsp8 || "(blank)"}`;
@@ -255,6 +263,22 @@ async function advanceCyanTrial() {
     ? `${result.current.patient_name} is next for Load from LIS.`
     : "All eight CYANVision candidates have been checked.");
   await Promise.all([loadEvents(), loadStatus()]);
+}
+
+async function toggleCyanTrialAutoAdvance() {
+  const enabling = !(await api("/api/cyanvision/cre-trials")).auto_advance;
+  if (enabling && !window.confirm(
+    "Turn on auto-advance? A dropped connection will be treated as checked and the next candidate offered automatically - only do this while you're watching the analyzer screen for every load."
+  )) return;
+  const body = { enabled: enabling };
+  if (enabling) body.confirmation = "AUTO-ADVANCE CYANVISION CRE TRIALS";
+  const result = await api("/api/cyanvision/cre-trials/auto-advance", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  renderCyanTrials(result);
+  toast(enabling ? "Auto-advance turned on." : "Auto-advance turned off.");
 }
 
 async function clearCyanTrials() {
@@ -768,6 +792,7 @@ $("#cyanvisionForm").addEventListener("submit", stageCyanvision);
 $("#cyanDisarmButton").addEventListener("click", () => disarmCyanvision().catch((error) => toast(error.message)));
 $("#stageCyanTrialsButton").addEventListener("click", () => stageCyanTrials().catch((error) => toast(error.message)));
 $("#advanceCyanTrialButton").addEventListener("click", () => advanceCyanTrial().catch((error) => toast(error.message)));
+$("#cyanTrialAutoAdvanceButton").addEventListener("click", () => toggleCyanTrialAutoAdvance().catch((error) => toast(error.message)));
 $("#clearCyanTrialsButton").addEventListener("click", () => clearCyanTrials().catch((error) => toast(error.message)));
 renderTests();
 setConsoleView(location.hash.slice(1), false);

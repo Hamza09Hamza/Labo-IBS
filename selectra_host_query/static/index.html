@@ -175,10 +175,14 @@
             <button type="button" id="clearCyanTrialsButton" class="secondary-danger" disabled>Clear trial</button>
           </div>
         </div>
+        <div class="auto-arm-control" id="cyanTrialAutoAdvanceControl">
+          <span><strong id="cyanTrialAutoAdvanceTitle">Manual advance</strong><small id="cyanTrialAutoAdvanceCopy">You confirm each candidate before the next one is offered.</small></span>
+          <button id="cyanTrialAutoAdvanceButton" type="button">Turn on auto-advance</button>
+        </div>
         <ol class="trial-sequence" id="cyanTrialSequence" aria-label="Creatinine DSP.8 trial sequence">
           <li class="trial-empty">Trial candidates have not been staged.</li>
         </ol>
-        <p class="trial-safety">Because this CYANVision does not return ACK^Q03, the bridge cannot advance automatically. Click “Mark checked → next” only after recording which exam appeared on the analyzer.</p>
+        <p class="trial-safety">Because this CYANVision does not return ACK^Q03, the bridge cannot tell a real acceptance from a dropped connection. With auto-advance off (default), click "Mark checked → next" yourself after recording the exam. With it on, every dropped connection is treated as checked and the next candidate is offered automatically on the next Load from LIS - only use this once you trust the sequence and are watching the analyzer screen for each one.</p>
       </section>
     </section>
 

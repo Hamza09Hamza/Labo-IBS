@@ -319,6 +319,25 @@ class BenchStore:
             )
         return self.get_order(sample_id)
 
+    def cyanvision_cre_trial_auto_advance_enabled(self) -> bool:
+        with self._session() as connection:
+            row = connection.execute(
+                "SELECT value FROM settings WHERE name='cyanvision_cre_trial_auto_advance'"
+            ).fetchone()
+        return bool(row and row["value"] == "1")
+
+    def set_cyanvision_cre_trial_auto_advance(self, enabled: bool) -> None:
+        with self._session() as connection:
+            connection.execute(
+                """
+                INSERT INTO settings (name, value, updated_at)
+                VALUES ('cyanvision_cre_trial_auto_advance', ?, ?)
+                ON CONFLICT(name) DO UPDATE SET
+                    value=excluded.value, updated_at=excluded.updated_at
+                """,
+                ("1" if enabled else "0", utc_now()),
+            )
+
     def selectra_auto_arm_enabled(self) -> bool:
         with self._session() as connection:
             row = connection.execute(

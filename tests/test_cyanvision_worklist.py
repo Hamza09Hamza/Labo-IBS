@@ -136,6 +136,34 @@ class CyanVisionWorklistCase(unittest.TestCase):
         self.assertFalse(status["pending_ack"])
         self.assertEqual(status["status"], "armed")
 
+    def test_connection_loss_does_not_auto_advance_clinical_orders(self):
+        # source="manual" (this is a plain, non-trial worklist push), so a
+        # dropped connection must never be treated as "checked" even with
+        # auto-advance on - only source="trial" rows may be auto-cancelled.
+        self.store.set_cyanvision_cre_trial_auto_advance(True)
+        self.service.stage_and_arm(ORDER)
+        self.service.handle_message(FakeConnection(), QUERY)
+        self.service.connection_closed()
+        saved = self.store.get_cyanvision_order(ORDER["sample_id"])
+        self.assertTrue(saved["ready"])
+
+    def test_connection_loss_auto_advances_trial_orders_when_enabled(self):
+        trial_order = {**ORDER, "sample_id": "CYAN-TRIAL-AUTO"}
+        self.store.upsert_cyanvision_order(trial_order, source="trial", ready=True)
+        self.store.set_cyanvision_cre_trial_auto_advance(True)
+        self.service.handle_message(FakeConnection(), QUERY)
+        self.service.connection_closed()
+        saved = self.store.get_cyanvision_order(trial_order["sample_id"])
+        self.assertFalse(saved["ready"])
+
+    def test_connection_loss_leaves_trial_order_ready_when_auto_advance_is_off(self):
+        trial_order = {**ORDER, "sample_id": "CYAN-TRIAL-MANUAL"}
+        self.store.upsert_cyanvision_order(trial_order, source="trial", ready=True)
+        self.service.handle_message(FakeConnection(), QUERY)
+        self.service.connection_closed()
+        saved = self.store.get_cyanvision_order(trial_order["sample_id"])
+        self.assertTrue(saved["ready"])
+
     def test_unarmed_query_returns_final_no_data_dataset(self):
         connection = FakeConnection()
         self.service.handle_message(connection, QUERY)

@@ -413,6 +413,7 @@ def _cyanvision_cre_trial_status(store, cyanvision_service):
         "current": current,
         "ready_count": sum(1 for entry in entries if entry["ready"]),
         "pending_ack": service_status["pending_ack"],
+        "auto_advance": store.cyanvision_cre_trial_auto_advance_enabled(),
     }
 
 
@@ -586,6 +587,26 @@ def create_app(store, service, cyanvision_service=None, order_api_token=None):
             ),
         )
         return jsonify({"ok": True, **next_status})
+
+    @app.post("/api/cyanvision/cre-trials/auto-advance")
+    def set_cyanvision_cre_trial_auto_advance():
+        if not cyanvision_service:
+            return jsonify({"error": "CYANVision worklist service is unavailable"}), 503
+        body = request.get_json(silent=True) or {}
+        enabled = bool(body.get("enabled"))
+        if enabled and body.get("confirmation") != "AUTO-ADVANCE CYANVISION CRE TRIALS":
+            return jsonify({
+                "error": "explicit AUTO-ADVANCE CYANVISION CRE TRIALS confirmation is required"
+            }), 400
+        store.set_cyanvision_cre_trial_auto_advance(enabled)
+        store.add_event(
+            "local", "cyanvision_cre_trial_auto_advance_changed", None,
+            f"CYANVision CRE trial auto-advance turned {'on' if enabled else 'off'}",
+        )
+        return jsonify({
+            "ok": True,
+            **_cyanvision_cre_trial_status(store, cyanvision_service),
+        })
 
     @app.delete("/api/cyanvision/cre-trials")
     def clear_cyanvision_cre_trials():
