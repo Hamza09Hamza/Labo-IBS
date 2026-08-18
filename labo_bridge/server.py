@@ -46,7 +46,6 @@ RESULTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir,
 # instrument listener and never replies to an unmatched sample ID.
 _selectra_host_query_service = None
 _cyanvision_worklist_service = None
-_xn330_order_download_service = None
 
 
 def configure_selectra_host_query(service):
@@ -58,10 +57,6 @@ def configure_cyanvision_worklist(service):
     global _cyanvision_worklist_service
     _cyanvision_worklist_service = service
 
-
-def configure_xn330_order_download(service):
-    global _xn330_order_download_service
-    _xn330_order_download_service = service
 
 # machine -> config. Each machine listens on its own fixed port.
 # "selectra" is the chemistry analyzer's real machine name (ELITech is the
@@ -406,25 +401,8 @@ def _handle_astm(conn, addr, cfg, machine, quiet):
         try:
             data = conn.recv(4096)
         except socket.timeout:
-            # Distinguished from a peer disconnect below because the two
-            # looked identical in the trace (both just "xn330_disconnected")
-            # while debugging a same-sample retry that never got answered -
-            # this makes it explicit when it's this 90s idle timeout, not
-            # the analyzer, ending the session.
-            if machine == "xn330" and _xn330_order_download_service is not None:
-                _xn330_order_download_service.store.add_event(
-                    "system", "xn330_idle_timeout_closed", None,
-                    f"Bridge closed the XN-330 connection after "
-                    f"{CONNECTION_IDLE_TIMEOUT_SECONDS}s with no further data "
-                    "(host-initiated close, not a peer disconnect)",
-                )
             break
         except (ConnectionResetError, OSError):
-            # OSError also covers recv() on a socket this same handler
-            # already closed - e.g. xn330_order_download's service closing
-            # the connection right after delivering an order (see its
-            # handle_records) - a normal, intentional end of session, not a
-            # real connection failure.
             break
         if not data:
             break
@@ -443,8 +421,6 @@ def _handle_astm(conn, addr, cfg, machine, quiet):
                 _write_session_file(session)
                 if machine == "selectra" and _selectra_host_query_service is not None:
                     _selectra_host_query_service.handle_records(conn, batch_records)
-                if machine == "xn330" and _xn330_order_download_service is not None:
-                    _xn330_order_download_service.handle_records(conn, batch_records)
                 # A single connection can carry multiple ENQ..EOT batches -
                 # reset per-batch accumulators so each file reflects only
                 # its own batch, not every batch seen on this connection.
@@ -591,8 +567,6 @@ def _serve_one_machine(machine: str, quiet: bool, stop_event: threading.Event):
         _selectra_host_query_service.set_instrument_port(port)
     if machine == "cyanvision" and _cyanvision_worklist_service is not None:
         _cyanvision_worklist_service.set_instrument_port(port)
-    if machine == "xn330" and _xn330_order_download_service is not None:
-        _xn330_order_download_service.set_instrument_port(port)
     print(f"[{machine}] listening on {HOST}:{port} ({cfg['protocol'].upper()}). "
           f"Storage: Postgres (labo_bridge schema)")
     live_status.set_listening(machine, datetime.now().isoformat(timespec="seconds"))
@@ -616,8 +590,6 @@ def _serve_one_machine(machine: str, quiet: bool, stop_event: threading.Event):
                         _selectra_host_query_service.set_instrument_port(port)
                     if machine == "cyanvision" and _cyanvision_worklist_service is not None:
                         _cyanvision_worklist_service.set_instrument_port(port)
-                    if machine == "xn330" and _xn330_order_download_service is not None:
-                        _xn330_order_download_service.set_instrument_port(port)
                     print(f"[{machine}] now listening on {HOST}:{port}.")
                 except OSError as e:
                     print(f"[{machine}] failed to bind port {desired_port} ({e}); "
@@ -645,8 +617,6 @@ def _serve_one_machine(machine: str, quiet: bool, stop_event: threading.Event):
             query_peer = f"{addr[0]}:{addr[1]}"
             if machine == "selectra" and _selectra_host_query_service is not None:
                 _selectra_host_query_service.client_connected(query_peer)
-            if machine == "xn330" and _xn330_order_download_service is not None:
-                _xn330_order_download_service.client_connected(query_peer)
             try:
                 handler(conn, addr, cfg, machine, quiet)
             except Exception as e:
@@ -656,8 +626,6 @@ def _serve_one_machine(machine: str, quiet: bool, stop_event: threading.Event):
                     _selectra_host_query_service.client_disconnected(query_peer)
                 if machine == "cyanvision" and _cyanvision_worklist_service is not None:
                     _cyanvision_worklist_service.connection_closed()
-                if machine == "xn330" and _xn330_order_download_service is not None:
-                    _xn330_order_download_service.client_disconnected(query_peer)
                 conn.close()
             print(f"[{machine}] ready for next connection.")
             live_status.set_listening(machine, datetime.now().isoformat(timespec="seconds"))

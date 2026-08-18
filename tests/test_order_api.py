@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from cyanvision_worklist import protocol as cyan_protocol
 from cyanvision_worklist.service import CyanVisionWorklistService
+from labo_bridge import mappings as bridge_mappings, server as bridge_server
 from labo_bridge.protocols import hl7_mllp
 from selectra_host_query import protocol as selectra_protocol
 from selectra_host_query.app import create_app
@@ -106,6 +107,23 @@ class OrderApiCase(unittest.TestCase):
             "/api/v1/orders/selectra", json=SELECTRA_ORDER, headers=HEADERS,
         )
         self.assertEqual(disabled.status_code, 503)
+
+    def test_xn330_is_receive_only_and_has_no_order_routes(self):
+        self.assertIn("xn330", bridge_server.MACHINES)
+        self.assertIn("xn330", bridge_mappings.MAPS)
+        self.assertEqual(self.client.get("/api/xn330/orders").status_code, 404)
+        self.assertEqual(
+            self.client.post(
+                "/api/v1/orders/xn330", json={}, headers=HEADERS,
+            ).status_code,
+            405,
+        )
+        self.assertNotIn("xn330", self.client.get("/api/status").get_json())
+        response = self.client.get("/")
+        portal = response.get_data(as_text=True)
+        response.close()
+        self.assertNotIn('data-console-tab="xn330"', portal)
+        self.assertIn('data-console-tab="cyanvision"', portal)
 
     def test_existing_selectra_database_is_migrated_without_losing_orders(self):
         legacy_path = os.path.join(self.temp.name, "legacy.db")
@@ -400,6 +418,7 @@ class OrderApiCase(unittest.TestCase):
         restarted_service.handle_message(connection, QUERY)
         first_dsr = unframe(connection.sent[0])
         self.assertIn("DSP|1||CYAN-API-001|||", first_dsr)
+        self.assertIn("DSP|8||3|||", first_dsr)
         self.assertEqual(first_dsr[-1], "DSC|CYAN-API-002|")
 
         first_id = cyan_protocol.control_id(first_dsr)
@@ -409,6 +428,7 @@ class OrderApiCase(unittest.TestCase):
         ])
         second_dsr = unframe(connection.sent[1])
         self.assertIn("DSP|1||CYAN-API-002|||", second_dsr)
+        self.assertIn("DSP|8||11|||", second_dsr)
         self.assertEqual(second_dsr[-1], "DSC||")
 
         second_id = cyan_protocol.control_id(second_dsr)
@@ -420,7 +440,7 @@ class OrderApiCase(unittest.TestCase):
         self.assertFalse(restarted_store.get_cyanvision_order("CYAN-API-002")["ready"])
 
     @patch("selectra_host_query.app.pg.list_observed_test_codes", return_value=[])
-    def test_cyanvision_api_resolves_clinic_ids_to_program_code(self, _observed):
+    def test_cyanvision_api_resolves_clinic_ids_to_result_code_and_program_id(self, _observed):
         response = self.client.post(
             "/api/v1/orders/cyanvision",
             json={
@@ -441,6 +461,8 @@ class OrderApiCase(unittest.TestCase):
         self.assertEqual(
             self.store.get_cyanvision_order("CYAN-ID-001")["test_code"], "ALP",
         )
+        preview = self.cyan.preview(self.store.get_cyanvision_order("CYAN-ID-001"))
+        self.assertIn("DSP|8||3|||", preview)
 
     @patch("selectra_host_query.app.pg.list_observed_test_codes", return_value=[])
     def test_api_status_and_cancellation(self, _observed):

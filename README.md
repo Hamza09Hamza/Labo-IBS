@@ -1,5 +1,9 @@
 # Labo-IBS
 
+> **Documentation:** start with [`docs/README.md`](docs/README.md). It contains
+> the maintained architecture, deployment, analyzer evidence matrix, order
+> workflows, capture procedures, testing rules, and AI/engineer handoff guide.
+
 Labo-IBS is a laboratory integration bridge that receives results from several clinical analyzers, decodes their machine-specific wire formats, maps analyzer test codes to the clinic information system, and stores the resulting data in PostgreSQL.
 
 The project was built around real laboratory integration work. It handles multiple analyzer protocols, concurrent TCP connections, machine-specific decoding rules, curated test mappings, pending-code review, and an optional downstream API path.
@@ -59,7 +63,7 @@ The ports shown above are defaults. Runtime port selection and machine metadata 
 The normal `run_all.py` process also serves:
 
 - Labo Bridge administration: `http://<server-IP>:5050/`
-- Selectra + CYANVision + XN-330 order console and trace: `http://<server-IP>:5052/`
+- Selectra + CYANVision order console and trace: `http://<server-IP>:5052/`
 
 The Selectra continues to communicate on its existing listener port (`6003`
 unless changed in machine settings). Host Query replies start disarmed after
@@ -69,7 +73,8 @@ the page.
 The same `5052` page also has a separate **CYANVision one-load worklist**.
 It uses the analyzer's existing HL7/MLLP connection on port `6004`; it does
 not open another listener. Fill one non-production sample, the patient name,
-birth date, sex, and choose one exact CYANVision test code, then press **Stage and
+birth date, sex, and choose one CYANVision test with a field-observed numeric
+Program ID, then press **Stage and
 arm one load**. On the analyzer, open **Patient Worklist** and press **Load
 from LIS**. The analyzer initiates `QRY^Q02`, the bridge returns one final
 `DSR^Q03` dataset, and the analyzer answers `ACK^Q03`. A matching positive
@@ -77,20 +82,21 @@ acknowledgment disarms the staged item automatically. A disconnect before the
 acknowledgment leaves it armed for one retry; a negative acknowledgment stops
 automatic sending and is shown as rejected in the console trace.
 
-The CYANVision test control is a locked selector, not free text. Its choices
-combine exact codes from the curated `cyanvision` mappings with codes actually
-received in `labo_bridge_results` and `pending_params`. The API applies the
-same allow-list when arming, preventing a mistyped or invented `DSP|8` value
-even if a request bypasses the browser.
+The CYANVision test control is a locked selector, not free text. Result codes
+remain mapped normally for incoming results, but worklist replies translate
+the selected result code to a separate numeric analyzer Program ID before
+placing it in `DSP.8`. The current trial values come from ProgramID values
+observed in real result `NTE.8` metadata: ALP `3`, CRE `11`, and LIPASE `23`.
+The CY014 manual shows the eighth DSP data line with `GLUC`, but does not state
+that this field must be numeric; numeric transmission is therefore a
+controlled field trial that still requires analyzer-screen confirmation.
 
-The XN-330 tab stages persistent ASTM Host Query orders on the analyzer's
-existing port `6001`. Orders start unarmed, match only the exact Q-3 sample ID,
-and are consumed after the XN-330 acknowledges the complete `H/P/O/L` response.
-The bridge uses the XN-L patient-name and discrete-parameter field layout; it
-does not reuse Selectra's LIS2-A order fields.
+XN-330 remains fully enabled for result receiving, decoding, mapping, and the
+`5050` administration interface on port `6001`. Its experimental Host Query
+order-download service, API, storage, and `5052` controls have been removed.
 
 An authenticated inbound order API is also served on port `5052`. A clinic
-server can stage persistent orders for Selectra, CYANVision, or XN-330;
+server can stage persistent orders for Selectra or CYANVision;
 see `ORDER_DOWNLOAD_SETUP.md` for deployment and token generation, and
 `ORDER_DOWNLOAD_API.md` for request schemas, authentication headers,
 lifecycle, and examples. API orders are separate from the manually armed test
@@ -183,7 +189,10 @@ These rules should remain evidence-based and machine-specific. Avoid broad filte
 
 When `USE_MACHINE_RESULT_API` is enabled in `labo_bridge/config.py`, matched results are queued during the analyzer session and sent as one JSON array at the natural message or batch boundary. Local rows track whether the clinic API accepted each result.
 
-The flag is disabled by default. Confirm the target API contract, authentication, error handling, and source-of-truth behavior before enabling it in a deployment.
+The current source enables this path with `USE_MACHINE_RESULT_API = True`.
+Confirm the target API contract, credential, failure handling, and destination
+before every production deployment; inspect `labo_bridge/config.py` rather
+than relying on an older deployment assumption.
 
 ### Administration interface
 

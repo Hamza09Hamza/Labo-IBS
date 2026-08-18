@@ -20,7 +20,7 @@ ORDER = {
     "family_name": "APPELLE FODHIL",
     "birth_date": "1980-06-15",
     "sex": "F",
-    "test_code": "ALP",
+    "test_code": "CRE",
 }
 
 QUERY = [
@@ -71,7 +71,7 @@ class CyanVisionWorklistCase(unittest.TestCase):
                 "DSP|5||F|||",
                 "DSP|6||19800615000000|||",
                 "DSP|7||1|||",
-                "DSP|8||ALP|||",
+                "DSP|8||11|||",
             ],
         )
         self.assertEqual(records[-1], "DSC||")
@@ -144,6 +144,21 @@ class CyanVisionWorklistCase(unittest.TestCase):
         self.assertFalse(any(record.startswith("DSP|") for record in records))
         self.assertEqual(records[-1], "DSC||")
 
+    def test_legacy_order_without_program_id_is_rejected_not_sent(self):
+        legacy = {**ORDER, "sample_id": "CYAN-LEGACY-01", "test_code": "GPT"}
+        self.store.upsert_cyanvision_order(legacy, source="api", ready=True)
+        connection = FakeConnection()
+
+        self.service.handle_message(connection, QUERY)
+
+        records = unframe(connection.sent[0])
+        self.assertIn("QAK|SR|NF|", records)
+        self.assertFalse(any(record.startswith("DSP|") for record in records))
+        saved = self.store.get_cyanvision_order("CYAN-LEGACY-01")
+        self.assertEqual(saved["status"], "rejected")
+        self.assertFalse(saved["ready"])
+        self.assertIn("outbound Program ID", saved["last_error"])
+
     def test_web_api_validates_stages_and_disarms_one_order(self):
         selectra = SelectraHostQueryServer(self.store, armed=False, embedded=True)
         client = create_app(self.store, selectra, self.service).test_client()
@@ -162,10 +177,10 @@ class CyanVisionWorklistCase(unittest.TestCase):
         self.assertEqual(invalid_mllp_control.status_code, 400)
         unknown_code = client.post(
             "/api/cyanvision/worklist",
-            json={**ORDER, "test_code": "ALP-TYPO", "confirmation": "ARM CYANVISION WORKLIST"},
+            json={**ORDER, "test_code": "CRE-TYPO", "confirmation": "ARM CYANVISION WORKLIST"},
         )
         self.assertEqual(unknown_code.status_code, 400)
-        self.assertIn("exact codes", unknown_code.get_json()["error"])
+        self.assertIn("outbound Program ID", unknown_code.get_json()["error"])
 
         staged = client.post(
             "/api/cyanvision/worklist",
@@ -203,8 +218,11 @@ class CyanVisionWorklistCase(unittest.TestCase):
         tests = {item["code"]: item for item in response.get_json()["tests"]}
         self.assertTrue(tests["ALP"]["mapped"])
         self.assertTrue(tests["ALP"]["observed"])
+        self.assertEqual(tests["ALP"]["program_id"], "3")
         self.assertTrue(tests["LIPASE"]["observed"])
         self.assertFalse(tests["LIPASE"]["mapped"])
+        self.assertEqual(tests["LIPASE"]["program_id"], "23")
+        self.assertNotIn("GPT", tests)
 
     def test_standalone_selectra_ui_reports_cyanvision_unavailable_without_error(self):
         selectra = SelectraHostQueryServer(self.store, armed=False, embedded=True)
@@ -260,7 +278,7 @@ class CyanVisionWorklistCase(unittest.TestCase):
 
     def test_continuation_control_ids_are_unique_and_within_cy014_limit(self):
         first = {**ORDER, "sample_id": "CYAN-CONTROL-001"}
-        second = {**ORDER, "sample_id": "CYAN-CONTROL-002", "test_code": "CRE"}
+        second = {**ORDER, "sample_id": "CYAN-CONTROL-002", "test_code": "ALP"}
         self.store.upsert_cyanvision_order(first, source="api", ready=True)
         self.store.upsert_cyanvision_order(second, source="api", ready=True)
         connection = FakeConnection()
