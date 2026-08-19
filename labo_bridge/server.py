@@ -16,6 +16,7 @@ in a single process so all four analyzers can stay connected simultaneously.
 """
 
 import os
+import re
 import socket
 import threading
 from datetime import datetime
@@ -289,7 +290,16 @@ def _write_session_file(session):
         return
     os.makedirs(RESULTS_DIR, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    fname = os.path.join(RESULTS_DIR, f"{session.machine}_{ts}.txt")
+    # Sample ID in the filename (not just the file body) so a specific
+    # sample's session files can be found by filename search instead of
+    # opening every timestamped file in results/ - the actual ask behind
+    # this: "a test failed/rescheduled on the Selectra, I can't tell which
+    # saved file has that sample's results." Falls back to "nosample" for
+    # batches with no O record yet (e.g. a connection that dropped before
+    # any order record arrived) rather than leaving it blank, so the
+    # filename shape stays predictable either way.
+    safe_sample_id = re.sub(r"[^A-Za-z0-9_-]", "_", session.sample_id or "") or "nosample"
+    fname = os.path.join(RESULTS_DIR, f"{session.machine}_{safe_sample_id}_{ts}.txt")
     with open(fname, "w") as f:
         f.write(f"=== {session.machine} session ===\n")
         f.write(f"Captured: {datetime.now().isoformat()}\n")
