@@ -6,6 +6,8 @@ from datetime import datetime
 
 from labo_bridge.protocols import hl7_mllp
 
+from .programs import program_id_for
+
 
 def _field(segments: list[str], name: str) -> list[str] | None:
     for segment in segments:
@@ -82,7 +84,10 @@ def build_dsr(
             f"DSP|5||{_clean(order['sex']).upper()}|||",
             f"DSP|6||{birth_date}|||",
             "DSP|7||1|||",
-            f"DSP|8||{_clean(order['test_code'])}|||",
+            # CY014 shows the selected program in the eighth DSP data line.
+            # Result codes and analyzer ProgramIDs are distinct namespaces on
+            # the real unit (for example CRE has observed NTE.8 ProgramID 11).
+            f"DSP|8||{program_id_for(order['test_code'])}|||",
         ])
     records.append(f"DSC|{_clean(continuation_pointer)}|")
     return records

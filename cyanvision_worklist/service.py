@@ -6,6 +6,7 @@ import threading
 from datetime import datetime
 
 from . import protocol
+from .programs import program_id_for
 
 
 class CyanVisionWorklistService:
@@ -72,7 +73,8 @@ class CyanVisionWorklistService:
             self._last_status = "armed"
         self.store.add_event(
             "local", "cyanvision_worklist_armed", order["sample_id"],
-            f"CYANVision one-load worklist armed for {order['sample_id']} / {order['test_code']}",
+            f"CYANVision one-load worklist armed for {order['sample_id']} / "
+            f"{order['test_code']} (outbound ProgramID {program_id_for(order['test_code'])})",
             "\n".join(self.preview(order)),
         )
         return self.status()
@@ -113,7 +115,21 @@ class CyanVisionWorklistService:
 
     def _handle_query(self, connection, segments: list[str]):
         query_control_id = protocol.control_id(segments) or "0"
-        ready_orders = self.store.list_ready_cyanvision_orders()
+        ready_orders = []
+        for candidate in self.store.list_ready_cyanvision_orders():
+            try:
+                program_id_for(candidate.get("test_code"))
+            except ValueError as exc:
+                # A legacy order may contain a result code for which no
+                # outbound ProgramID was observed. Do not let it block the
+                # queue or silently fall back to the analyzer's default.
+                self.store.mark_cyanvision_rejected(candidate["sample_id"], str(exc))
+                self.store.add_event(
+                    "system", "cyanvision_program_id_missing", candidate["sample_id"],
+                    f"CYANVision order was not sent: {exc}",
+                )
+                continue
+            ready_orders.append(candidate)
         with self._lock:
             self._pending_orders = [dict(order) for order in ready_orders]
             self._pending_query_segments = list(segments)
@@ -247,4 +263,31 @@ class CyanVisionWorklistService:
         self.store.add_event(
             "system", "cyanvision_ack_missing", sample_id,
             "CYANVision connection closed before ACK^Q03; worklist remains armed for retry",
+        )
+        self._maybe_auto_advance_trial(sample_id)
+
+    def _maybe_auto_advance_trial(self, sample_id):
+        """Stand in for the missing ACK^Q03 on trial candidates only.
+
+        The CY014 continuation loop (DSR -> ACK -> next DSR) can't advance on
+        its own here because this analyzer closes the connection instead of
+        acknowledging. Clinical/API orders must never be auto-cancelled on a
+        dropped connection - only "source=trial" rows, and only when the
+        operator has explicitly turned auto-advance on, get treated as
+        checked so the next Load from LIS offers the next candidate.
+        """
+        if not sample_id:
+            return
+        order = self.store.get_cyanvision_order(sample_id)
+        if not order or order.get("source") != "trial" or not order.get("ready"):
+            return
+        if not self.store.cyanvision_cre_trial_auto_advance_enabled():
+            return
+        self.store.cancel_cyanvision_order(sample_id)
+        with self._lock:
+            self._armed = False
+            self._last_status = "armed"
+        self.store.add_event(
+            "system", "cyanvision_cre_trial_auto_advanced", sample_id,
+            "Auto-advance is on: candidate marked checked without a recorded exam; next candidate is up",
         )

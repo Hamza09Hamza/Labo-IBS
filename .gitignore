@@ -10,6 +10,10 @@ selectra_host_query/data/order_api_token.txt
 selectra_packet_capture/.selectra_pktmon_active.json
 selectra_packet_capture/selectra_capture_*/
 selectra_packet_capture/selectra_capture_*.zip
+analyzer_packet_capture/.analyzer_pktmon_active.json
+analyzer_packet_capture/analyzer_capture_*/
+analyzer_packet_capture/analyzer_capture_*.zip
+analyzer_packet_capture/captures/
 
 # Local capture database (runtime data, created on first connection)
 *.db

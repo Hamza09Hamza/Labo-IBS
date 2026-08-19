@@ -12,7 +12,7 @@ Ports (see labo_bridge/server.py MACHINES for the source of truth):
     xs500i     -> 6005  (via IPU on the machine's own PC)
     minividas  -> 6006
     admin UI   -> http://127.0.0.1:5050
-    Selectra + CYANVision + XN-330 order UI -> http://127.0.0.1:5052
+    Selectra + CYANVision order UI -> http://127.0.0.1:5052
 
 Every line printed is prefixed with the machine name, and every result
 actually written to the local database (labo_bridge.db) is printed alongside
@@ -30,7 +30,6 @@ from selectra_host_query.order_api_auth import load_or_create_order_api_token
 from selectra_host_query.server import SelectraHostQueryServer
 from selectra_host_query.store import BenchStore
 from cyanvision_worklist.service import CyanVisionWorklistService
-from xn330_order_download.service import XN330OrderDownloadService
 
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -50,19 +49,14 @@ selectra_query_service = SelectraHostQueryServer(
 cyanvision_worklist_service = CyanVisionWorklistService(
     selectra_query_store, port=6004,
 )
-xn330_order_download_service = XN330OrderDownloadService(
-    selectra_query_store, port=6001,
-)
 selectra_query_app = create_selectra_query_app(
     selectra_query_store,
     selectra_query_service,
     cyanvision_worklist_service,
-    xn330_order_download_service,
     order_api_token=ORDER_API_TOKEN,
 )
 server.configure_selectra_host_query(selectra_query_service)
 server.configure_cyanvision_worklist(cyanvision_worklist_service)
-server.configure_xn330_order_download(xn330_order_download_service)
 
 
 def _run_admin():
@@ -92,11 +86,11 @@ if __name__ == "__main__":
         target=_run_selectra_query_ui, name="selectra-query-ui", daemon=True,
     )
     selectra_query_thread.start()
-    print("[orders] Selectra + CYANVision + XN-330 order console running at http://127.0.0.1:5052")
+    print("[orders] Selectra + CYANVision order console running at http://127.0.0.1:5052")
     print("[selectra] Exact-ID replies and the continuous wildcard probe start DISARMED; instrument traffic remains on port 6003.\n")
     print("[cyanvision] One-load worklist starts DISARMED; queries and results remain on port 6004.\n")
-    print("[xn330] Exact-ID order downloads require manual per-order arming; queries and results share port 6001.\n")
-    print("[orders-api] ENABLED; Selectra and XN-330 API orders persist and require operator arming on port 5052.")
+    print("[xn330] Result receiving remains active on port 6001; Host Query order download is disabled.\n")
+    print("[orders-api] ENABLED for Selectra and CYANVision orders.")
     print(f"[orders-api] The private token is stored locally at {ORDER_API_TOKEN_PATH}.\n")
 
     server.run_all()

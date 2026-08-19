@@ -1,5 +1,10 @@
 # Analyzer order download API
 
+> Documentation index: [`docs/README.md`](docs/README.md). The maintained
+> architectural and operational overview for this API is
+> [`docs/ORDER_API.md`](docs/ORDER_API.md); this file retains the detailed
+> compatibility contract and request examples.
+
 The order API accepts work from another authorized server, validates it, and
 stores it in the local SQLite database. It is served by `run_all.py` on:
 
@@ -17,9 +22,6 @@ This API does not push a connection to either analyzer:
   Load from LIS**. The bridge returns the ready CYANVision queue in creation
   order, waiting for `ACK^Q03` between `DSR^Q03` items. The final item has an
   empty `DSC` continuation pointer.
-- XN-330 orders remain inactive until a local operator arms the exact order
-  card. The XN-330 initiates an ASTM `H/Q/L` Host Query and receives `H/P/O/L`
-  only when its Q-3 sample ID exactly matches an armed order.
 
 ## Authentication
 
@@ -87,9 +89,14 @@ Rules:
 - Supply both identifiers when available. For example, tarification `528`
   contains both SGOT and SGPT and is rejected as ambiguous unless its
   `param_id` is also supplied.
-- Unknown or ambiguous identifiers return HTTP `400`; LaboBridge never guesses
-  a clinical test. Legacy method-name strings remain accepted temporarily for
-  compatibility, but new integrations should use identifiers.
+- Tests are validated independently. If at least one identifier maps safely,
+  the bridge keeps the order with those valid tests and returns HTTP `201` plus
+  `accepted_test_count`, `warning`, and a `rejected_tests` array describing
+  every skipped entry. The same warning remains visible on the order card in
+  the `5052` console. If no requested test maps safely, the bridge returns HTTP
+  `400` and does not stage the order. LaboBridge never guesses an unknown or
+  ambiguous clinical test. Legacy method-name strings remain accepted
+  temporarily for compatibility, but new integrations should use identifiers.
 - Reposting the same `sample_id` replaces the stored content and returns it to
   the inactive staged state. `external_order_id` is optional correlation
   metadata.
@@ -102,6 +109,30 @@ mode survives a LaboBridge restart. Stopping auto-arm disarms all waiting API
 orders; it does not affect already delivered audit records. After Selectra
 transport-ACKs a response, that order becomes `transport_acknowledged` and is
 no longer armed.
+
+A partially accepted response looks like this:
+
+```json
+{
+  "ok": true,
+  "analyzer": "selectra",
+  "sample_id": "2608130012",
+  "state": "staged",
+  "accepted_test_count": 2,
+  "warning": "Order kept with 2 valid test(s); 1 requested test(s) rejected",
+  "rejected_tests": [
+    {
+      "index": 2,
+      "requested": {"service_tarification_id": 999999},
+      "reason": "no curated selectra mapping ..."
+    }
+  ]
+}
+```
+
+`index` is zero-based and identifies the original item in `tests`. The sender
+should record the warning and correct the rejected item, but must not retry the
+whole order blindly: the valid tests are already staged.
 
 ### Read status or cancel
 
@@ -139,8 +170,14 @@ Rules:
   declares `ASCII` in `MSH-18`.
 - `sex` is `M` or `F`.
 - `test` requires `param_id`, `service_tarification_id`, or both. LaboBridge
-  resolves it through the curated CYANVision mappings and sends the resulting
-  program code as `DSP|8||<code>|||`.
+  first resolves the clinic identifier to its normal CYANVision result code,
+  then translates that code through the separate worklist Program ID table.
+  The numeric value is sent as `DSP|8||<ProgramID>|||`.
+- The current controlled-trial table is ALP -> `3`, CRE -> `11`, and LIPASE
+  -> `23`. These numbers were observed in real CYANVision result `NTE.8`
+  ProgramID metadata. The CY014 manual demonstrates the eighth DSP data line
+  with `GLUC`, but does not explicitly define the identifier namespace or say
+  it must be numeric. Operator screen confirmation is still required.
 - Unknown or ambiguous identifiers return HTTP `400`. The legacy `test_code`
   field remains accepted temporarily for compatibility.
 - The currently verified message layout represents one test per sample.
@@ -157,59 +194,6 @@ connection closes before an ACK, the current item remains ready for retry.
 ```http
 GET    /api/v1/orders/cyanvision/<sample_id>
 DELETE /api/v1/orders/cyanvision/<sample_id>
-```
-
-## Sysmex XN-330
-
-### Stage or replace an order
-
-```http
-POST /api/v1/orders/xn330
-```
-
-An FNS clinic order can select the full curated XN-330 parameter set with its
-tarification ID:
-
-```json
-{
-  "external_order_id": "LIS-FNS-7814",
-  "sample_id": "XN-260816-001",
-  "patient_id": "PAT-4821",
-  "given_name": "BENCH",
-  "family_name": "PATIENT",
-  "birth_date": "1980-06-15",
-  "sex": "F",
-  "tests": [{"service_tarification_id": 421}]
-}
-```
-
-Rules:
-
-- `sample_id` is case-sensitive, limited to 22 printable ASCII characters,
-  and must exactly match the sample component sent by the XN-330 in Q-3.
-- `patient_id` is limited to 16 characters. Given and family names are each
-  limited to 20 characters and are transmitted as `^Given^Family`.
-- `birth_date` uses `YYYY-MM-DD`; `sex` is `M`, `F`, or `U`.
-- `tests` may contain clinic identifier objects. Tarification `421` without a
-  `param_id` expands to the bridge's curated FNS/XN-330 parameters. A specific
-  `param_id` selects its exact mapped XN parameter.
-- For controlled bench compatibility, exact documented parameter strings are
-  also accepted: `WBC`, `RBC`, `HGB`, `HCT`, `MCV`, `MCH`, `MCHC`, `PLT`,
-  `RDW-SD`, `RDW-CV`, `MPV`, `NEUT#`, `LYMPH#`, `MONO#`, `EO#`, `BASO#`,
-  `NEUT%`, `LYMPH%`, `MONO%`, `EO%`, `BASO%`, `IG#`, and `IG%`.
-- Reposting the same sample replaces its contents and returns it to unarmed
-  staging. The API never auto-arms an XN-330 order.
-
-The local operator opens the **XN-330 orders** tab on port `5052`, reviews the
-patient and parameters, and clicks **Arm for XN-330**. Successful ASTM
-acknowledgement consumes and disarms the order. An unarmed or unmatched query
-is recorded in the trace but receives no patient/order payload.
-
-### Read status or cancel
-
-```http
-GET    /api/v1/orders/xn330/<sample_id>
-DELETE /api/v1/orders/xn330/<sample_id>
 ```
 
 ## Example request
@@ -235,6 +219,6 @@ CYANVision staging uses the same compact acknowledgement shape, with
 `"state":"ready"` because its queue is delivered through the operator's
 explicit **Load from LIS** action on the analyzer.
 
-XN-330 staging uses the same compact acknowledgement shape with
-`"analyzer":"xn330"` and `"state":"staged"`; manual arming is intentionally
-performed only through the local console.
+XN-330 is intentionally absent from this API. It remains a receive-only
+analyzer integration on port `6001`, with result decoding, mappings, and the
+`5050` administration view unchanged.

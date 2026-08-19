@@ -1,7 +1,8 @@
 const $ = (selector) => document.querySelector(selector);
 const state = {
   tests: [], eventsAfter: 0, ordersSignature: "", outboundFields: {},
-  xnTests: [], xnTestOptions: [], xnOrdersSignature: "",
+  warningNotices: new Set(),
+  orders: [], orderPage: 1, orderPageSize: 9, selectedOrders: new Set(),
 };
 let liveResponsesArmed = false;
 let continuousProbeArmed = false;
@@ -83,11 +84,9 @@ function renderOutboundPolicy(fields = {}) {
 async function loadStatus() {
   const status = await api("/api/status");
   const pill = $("#modePill");
-  const anyArmed = status.api_armed_orders || status.armed || status.probe_armed || status.cyanvision?.armed || status.xn330?.armed_orders;
+  const anyArmed = status.api_armed_orders || status.armed || status.probe_armed || status.cyanvision?.armed;
   pill.className = `mode-pill ${anyArmed ? "armed" : "safe"}`;
-  pill.querySelector("strong").textContent = status.xn330?.armed_orders
-    ? `${status.xn330.armed_orders} XN-330 order${status.xn330.armed_orders === 1 ? "" : "s"} armed`
-    : status.api_armed_orders
+  pill.querySelector("strong").textContent = status.api_armed_orders
     ? `${status.api_armed_orders} Selectra order${status.api_armed_orders === 1 ? "" : "s"} armed`
     : status.cyanvision?.armed
     ? "CYANVision load armed"
@@ -130,139 +129,6 @@ async function loadStatus() {
     ? `${status.connected_clients} connected`
     : status.last_peer ? `Last: ${status.last_peer}` : "Waiting";
   $("#orderCount").textContent = String(status.orders);
-  if (status.xn330) {
-    $("#xn330Port").textContent = String(status.xn330.listener_port);
-    $("#xnLinkState").textContent = status.xn330.connected_clients
-      ? `Port ${status.xn330.listener_port} · connected`
-      : status.xn330.last_peer
-        ? `Port ${status.xn330.listener_port} · last ${status.xn330.last_peer}`
-        : `Port ${status.xn330.listener_port} · waiting`;
-  }
-}
-
-function renderXnTestOptions() {
-  const grid = $("#xnTestGrid");
-  if (!state.xnTestOptions.length) {
-    grid.innerHTML = '<span class="empty-tests">No XN-330 parameter codes available.</span>';
-    return;
-  }
-  grid.innerHTML = state.xnTestOptions.map((test) => `
-    <label class="xn-test-option">
-      <input type="checkbox" value="${escapeHtml(test.code)}" ${state.xnTests.includes(test.code) ? "checked" : ""}>
-      <span><strong>${escapeHtml(test.code)}</strong><small>${escapeHtml(test.profile)}</small></span>
-    </label>
-  `).join("");
-  grid.querySelectorAll('input[type="checkbox"]').forEach((input) => {
-    input.addEventListener("change", () => {
-      state.xnTests = [...grid.querySelectorAll('input:checked')].map((item) => item.value);
-    });
-  });
-}
-
-async function loadXnTests() {
-  const result = await api("/api/xn330/tests");
-  if (result.available === false) return;
-  state.xnTestOptions = result.tests || [];
-  if (!state.xnTests.length) state.xnTests = state.xnTestOptions.map((test) => test.code);
-  renderXnTestOptions();
-}
-
-function xnOrderCard(order) {
-  const actionable = ["staged", "queried", "error"].includes(order.status);
-  const displayStatus = actionable ? (order.ready ? "armed" : "awaiting arm") : order.status;
-  const statusClass = order.status === "error" ? "error" : "";
-  return `
-    <article class="order-card xn-order-card ${order.ready ? "is-armed" : ""}">
-      <div class="order-card-head"><h3>${escapeHtml(order.sample_id)}</h3><span class="order-status ${statusClass}">${escapeHtml(displayStatus)}</span></div>
-      <p class="order-person">${escapeHtml(order.given_name)} ${escapeHtml(order.family_name)} · ${escapeHtml(order.patient_id)}</p>
-      <div class="order-tests">${order.tests.map(escapeHtml).join(" · ")}</div>
-      <div class="order-meta"><span>${order.source === "api" ? "Server order" : "Local order"}</span><span>${order.query_count} quer${order.query_count === 1 ? "y" : "ies"}</span><span>${escapeHtml(formatTime(order.updated_at))}</span></div>
-      <div class="order-actions">
-        ${actionable ? `<button class="arm-order-button" type="button" data-xn-${order.ready ? "disarm" : "arm"}="${escapeHtml(order.sample_id)}">${order.ready ? "Disarm" : "Arm for XN-330"}</button>` : ""}
-        <button class="simulate-button" type="button" data-xn-simulate="${escapeHtml(order.sample_id)}">Preview response</button>
-        <button class="remove-order-button" type="button" data-xn-remove="${escapeHtml(order.sample_id)}">Remove</button>
-      </div>
-    </article>`;
-}
-
-async function loadXnOrders() {
-  const result = await api("/api/xn330/orders");
-  if (result.available === false) return;
-  const signature = JSON.stringify(result.orders);
-  if (signature === state.xnOrdersSignature) return;
-  state.xnOrdersSignature = signature;
-  const container = $("#xnOrdersList");
-  container.innerHTML = result.orders.length
-    ? result.orders.map(xnOrderCard).join("")
-    : '<div class="orders-empty"><strong>No active XN-330 orders</strong><span>Stage one below or send it through the authenticated API.</span></div>';
-  container.querySelectorAll("[data-xn-arm]").forEach((button) => button.addEventListener("click", () => setXnOrderArmed(button.dataset.xnArm, true, button).catch((error) => toast(error.message))));
-  container.querySelectorAll("[data-xn-disarm]").forEach((button) => button.addEventListener("click", () => setXnOrderArmed(button.dataset.xnDisarm, false, button).catch((error) => toast(error.message))));
-  container.querySelectorAll("[data-xn-simulate]").forEach((button) => button.addEventListener("click", () => previewXnOrder(button.dataset.xnSimulate).catch((error) => toast(error.message))));
-  container.querySelectorAll("[data-xn-remove]").forEach((button) => button.addEventListener("click", () => removeXnOrder(button.dataset.xnRemove, button).catch((error) => toast(error.message))));
-}
-
-async function setXnOrderArmed(sampleId, armed, button) {
-  if (armed && !window.confirm(`Arm XN-330 order ${sampleId}? Its next exact Host Query will receive these demographics and parameters once.`)) return;
-  button.disabled = true;
-  try {
-    await api(`/api/xn330/orders/${encodeURIComponent(sampleId)}/arm`, {
-      method: armed ? "POST" : "DELETE",
-      headers: armed ? { "Content-Type": "application/json" } : undefined,
-      body: armed ? JSON.stringify({ confirmation: "ARM XN330 ORDER" }) : undefined,
-    });
-    state.xnOrdersSignature = "";
-    toast(`XN-330 order ${sampleId} ${armed ? "armed" : "disarmed"}.`);
-    await Promise.all([loadXnOrders(), loadStatus(), loadEvents()]);
-  } finally { button.disabled = false; }
-}
-
-async function previewXnOrder(sampleId) {
-  const result = await api("/api/xn330/simulate-query", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sample_id: sampleId }),
-  });
-  $("#xnResponseRecords").textContent = result.response_records.join("\n");
-  toast(`Built XN-330 preview for ${sampleId}; no bytes sent.`);
-}
-
-async function removeXnOrder(sampleId, button) {
-  if (!window.confirm(`Remove XN-330 order ${sampleId}?`)) return;
-  button.disabled = true;
-  try {
-    await api(`/api/xn330/orders/${encodeURIComponent(sampleId)}`, { method: "DELETE" });
-    state.xnOrdersSignature = "";
-    toast(`XN-330 order ${sampleId} removed.`);
-    await Promise.all([loadXnOrders(), loadStatus(), loadEvents()]);
-  } finally { button.disabled = false; }
-}
-
-async function stageXnOrder(event) {
-  event.preventDefault();
-  const alert = $("#xnFormAlert");
-  const button = $("#xnStageButton");
-  alert.hidden = true;
-  button.disabled = true;
-  try {
-    const result = await api("/api/xn330/orders", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sample_id: $("#xnSampleId").value.trim(),
-        patient_id: $("#xnPatientId").value.trim(),
-        given_name: $("#xnGivenName").value.trim(),
-        family_name: $("#xnFamilyName").value.trim(),
-        birth_date: $("#xnBirthDate").value,
-        sex: $("#xnSex").value,
-        tests: state.xnTests,
-      }),
-    });
-    $("#xnResponseRecords").textContent = result.response_preview.join("\n");
-    state.xnOrdersSignature = "";
-    toast(`XN-330 order ${result.order.sample_id} staged. Review and arm its card when ready.`);
-    await Promise.all([loadXnOrders(), loadStatus(), loadEvents()]);
-  } catch (error) {
-    alert.textContent = error.message;
-    alert.hidden = false;
-  } finally { button.disabled = false; }
 }
 
 async function loadCyanvision() {
@@ -306,24 +172,141 @@ async function loadCyanvision() {
   }
 }
 
+function renderCyanTrials(status) {
+  if (status.available === false) {
+    $("#cyanTrialPanel").hidden = true;
+    return;
+  }
+  $("#cyanTrialPanel").hidden = false;
+  const entries = status.entries || [];
+  const current = status.current;
+  $("#cyanTrialCount").textContent = status.ready_count
+    ? `${status.ready_count} remaining`
+    : entries.some((entry) => entry.status !== "not_staged") ? "Sequence complete" : "Not staged";
+  $("#stageCyanTrialsButton").disabled = status.ready_count > 0 || status.pending_ack;
+  $("#advanceCyanTrialButton").disabled = !current || status.pending_ack;
+  $("#clearCyanTrialsButton").disabled = status.ready_count === 0 || status.pending_ack;
+  const autoAdvance = status.auto_advance === true;
+  const autoAdvanceControl = $("#cyanTrialAutoAdvanceControl");
+  autoAdvanceControl.classList.toggle("armed", autoAdvance);
+  $("#cyanTrialAutoAdvanceTitle").textContent = autoAdvance ? "Auto-advance is on" : "Manual advance";
+  $("#cyanTrialAutoAdvanceCopy").textContent = autoAdvance
+    ? "Every dropped connection is treated as checked; the next candidate is offered automatically."
+    : "You confirm each candidate before the next one is offered.";
+  $("#cyanTrialAutoAdvanceButton").textContent = autoAdvance ? "Turn off auto-advance" : "Turn on auto-advance";
+  const next = $("#cyanTrialNext");
+  if (current) {
+    next.querySelector("strong").textContent = `${current.patient_name} · DSP.8 ${current.dsp8 || "(blank)"}`;
+    next.querySelector("small").textContent = status.pending_ack
+      ? `${current.sample_id} was sent. Wait for the connection to close, then record the selected exam.`
+      : current.query_count
+        ? `${current.sample_id} was offered ${current.query_count} time${current.query_count === 1 ? "" : "s"}. Check the analyzer, then advance.`
+        : `${current.sample_id} will be offered on the next Load from LIS.`;
+  } else {
+    next.querySelector("strong").textContent = entries.some((entry) => entry.status !== "not_staged")
+      ? "All eight candidates checked"
+      : "No trial staged";
+    next.querySelector("small").textContent = entries.some((entry) => entry.status !== "not_staged")
+      ? "Clear or restage the sequence after recording the result."
+      : "Stage the controlled sequence when no clinical CYANVision order is waiting.";
+  }
+  $("#cyanTrialSequence").innerHTML = entries.length
+    ? entries.map((entry, index) => {
+      const isCurrent = current?.sample_id === entry.sample_id;
+      const checked = !entry.ready && entry.status !== "not_staged";
+      const stateLabel = isCurrent
+        ? entry.query_count ? "sent · check screen" : "next"
+        : checked ? "checked" : entry.ready ? "queued" : "not staged";
+      return `
+        <li class="${isCurrent ? "is-current" : ""} ${checked ? "is-checked" : ""}">
+          <span class="trial-number">${String(index + 1).padStart(2, "0")}</span>
+          <strong class="trial-name">${escapeHtml(entry.patient_name)}</strong>
+          <span class="trial-value">DSP.8 ${escapeHtml(entry.dsp8 || "(blank)")}</span>
+          <span class="trial-state">${escapeHtml(stateLabel)}</span>
+        </li>
+      `;
+    }).join("")
+    : '<li class="trial-empty">Trial candidates have not been staged.</li>';
+}
+
+async function loadCyanTrials() {
+  renderCyanTrials(await api("/api/cyanvision/cre-trials"));
+}
+
+async function stageCyanTrials() {
+  if (!window.confirm(
+    "Stage the manufacturer’s exact GLUC example followed by seven uniquely named Creatinine candidates? Do this only when no clinical CYANVision order is waiting."
+  )) return;
+  const result = await api("/api/cyanvision/cre-trials", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ confirmation: "STAGE CYANVISION CRE TRIALS" }),
+  });
+  renderCyanTrials(result);
+  toast("CY014 manual control staged first. Johnathana Does / GLUC is next.");
+  await Promise.all([loadEvents(), loadStatus()]);
+}
+
+async function advanceCyanTrial() {
+  const current = (await api("/api/cyanvision/cre-trials")).current;
+  if (!current) return;
+  if (!window.confirm(
+    `Mark ${current.patient_name} / DSP.8 ${current.dsp8 || "(blank)"} checked and expose the next candidate?`
+  )) return;
+  const result = await api("/api/cyanvision/cre-trials/advance", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ confirmation: "ADVANCE CYANVISION CRE TRIAL" }),
+  });
+  renderCyanTrials(result);
+  toast(result.current
+    ? `${result.current.patient_name} is next for Load from LIS.`
+    : "All eight CYANVision candidates have been checked.");
+  await Promise.all([loadEvents(), loadStatus()]);
+}
+
+async function toggleCyanTrialAutoAdvance() {
+  const enabling = !(await api("/api/cyanvision/cre-trials")).auto_advance;
+  if (enabling && !window.confirm(
+    "Turn on auto-advance? A dropped connection will be treated as checked and the next candidate offered automatically - only do this while you're watching the analyzer screen for every load."
+  )) return;
+  const body = { enabled: enabling };
+  if (enabling) body.confirmation = "AUTO-ADVANCE CYANVISION CRE TRIALS";
+  const result = await api("/api/cyanvision/cre-trials/auto-advance", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  renderCyanTrials(result);
+  toast(enabling ? "Auto-advance turned on." : "Auto-advance turned off.");
+}
+
+async function clearCyanTrials() {
+  if (!window.confirm("Clear every remaining CYANVision Creatinine trial candidate?")) return;
+  const result = await api("/api/cyanvision/cre-trials", { method: "DELETE" });
+  renderCyanTrials(result);
+  toast("Remaining CYANVision trial candidates cleared.");
+  await Promise.all([loadEvents(), loadStatus()]);
+}
+
 async function loadCyanvisionTests() {
   const result = await api("/api/cyanvision/tests");
   if (result.available === false) return;
   const select = $("#cyanTestCode");
   const previous = select.value;
   const options = result.tests || [];
-  select.innerHTML = '<option value="">Choose an exact CYANVision code</option>' + options.map((test) => {
+  select.innerHTML = '<option value="">Choose a CYANVision program</option>' + options.map((test) => {
     const provenance = test.observed && test.mapped
       ? "received + mapped"
       : test.observed ? "received" : "mapped";
     const name = test.name && test.name !== test.code ? ` — ${test.name}` : "";
-    return `<option value="${escapeHtml(test.code)}">${escapeHtml(test.code)}${escapeHtml(name)} · ${provenance}</option>`;
+    return `<option value="${escapeHtml(test.code)}">${escapeHtml(test.code)}${escapeHtml(name)} · Program ID ${escapeHtml(test.program_id)} · ${provenance}</option>`;
   }).join("");
   select.disabled = options.length === 0;
   if (options.some((test) => test.code === previous)) select.value = previous;
   $("#cyanTestHelp").textContent = options.length
-    ? `${options.length} exact code${options.length === 1 ? "" : "s"} available from CYANVision history and mappings. One test is sent in DSP line 8.`
-    : "No known CYANVision codes are available. Receive or map a result before staging a worklist.";
+    ? `${options.length} test${options.length === 1 ? "" : "s"} with field-observed Program IDs. The numeric Program ID is sent in DSP line 8.`
+    : "No field-observed CYANVision Program IDs are configured.";
 }
 
 async function stageCyanvision(event) {
@@ -338,7 +321,7 @@ async function stageCyanvision(event) {
     confirmation: "ARM CYANVISION WORKLIST",
   };
   if (!window.confirm(
-    `Arm CYANVision worklist ${payload.sample_id} with program ${payload.test_code}? The next Load from LIS request will download it.`
+    `Arm CYANVision worklist ${payload.sample_id} for ${payload.test_code}? Its numeric Program ID will be sent on the next Load from LIS request.`
   )) return;
   const alert = $("#cyanFormAlert");
   const button = $("#cyanArmButton");
@@ -518,11 +501,27 @@ function orderCard(order) {
   const displayStatus = order.source === "api" && canArm
     ? (order.ready ? "armed" : "awaiting arm")
     : order.status;
+  const warnings = Array.isArray(order.validation_warnings) ? order.validation_warnings : [];
+  const selected = state.selectedOrders.has(order.sample_id);
   return `
-    <article class="order-card ${order.ready ? "is-armed" : ""}">
-      <div class="order-card-head"><h3>${escapeHtml(order.sample_id)}</h3><span class="order-status ${statusClass}">${escapeHtml(displayStatus)}</span></div>
+    <article class="order-card ${order.ready ? "is-armed" : ""} ${selected ? "is-selected" : ""}">
+      <div class="order-card-head">
+        <label class="order-select" title="Select order ${escapeHtml(order.sample_id)}">
+          <input type="checkbox" data-select-order="${escapeHtml(order.sample_id)}" ${selected ? "checked" : ""} aria-label="Select order ${escapeHtml(order.sample_id)}">
+        </label>
+        <h3>${escapeHtml(order.sample_id)}</h3>
+        <span class="order-status ${statusClass}">${escapeHtml(displayStatus)}</span>
+      </div>
       <p class="order-person">${escapeHtml(order.family_name)} ${escapeHtml(order.given_name)} · ${escapeHtml(order.patient_id)}</p>
       <div class="order-tests">${order.tests.map(escapeHtml).join(" · ")}</div>
+      ${warnings.length ? `
+        <div class="order-validation-warning" role="status">
+          <strong>${warnings.length} requested test${warnings.length === 1 ? " was" : "s were"} skipped</strong>
+          <ul>${warnings.map((warning) => `
+            <li><span>Item ${Number(warning.index) + 1}</span>${escapeHtml(warning.reason)}</li>
+          `).join("")}</ul>
+        </div>
+      ` : ""}
       <div class="order-meta"><span>${order.source === "api" ? "Server order" : "Local order"}</span><span>${order.query_count} quer${order.query_count === 1 ? "y" : "ies"}</span><span>${escapeHtml(formatTime(order.updated_at))}</span></div>
       <div class="order-actions">
         ${canArm ? `<button class="arm-order-button" type="button" data-${order.ready ? "disarm" : "arm"}="${escapeHtml(order.sample_id)}">${order.ready ? "Disarm" : "Arm for Selectra"}</button>` : ""}
@@ -557,8 +556,102 @@ async function removeOrder(sampleId, button) {
   button.disabled = true;
   try {
     await api(`/api/orders/${encodeURIComponent(sampleId)}`, { method: "DELETE" });
+    state.selectedOrders.delete(sampleId);
     toast(`Order ${sampleId} removed from staging.`);
     state.ordersSignature = "";
+    await Promise.all([loadOrders(), loadEvents(), loadStatus()]);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function renderOrderQueue() {
+  const total = state.orders.length;
+  const totalPages = Math.max(1, Math.ceil(total / state.orderPageSize));
+  state.orderPage = Math.min(Math.max(1, state.orderPage), totalPages);
+  const start = (state.orderPage - 1) * state.orderPageSize;
+  const pageOrders = state.orders.slice(start, start + state.orderPageSize);
+  const end = start + pageOrders.length;
+  const selectedCount = state.selectedOrders.size;
+  const allPageSelected = pageOrders.length > 0
+    && pageOrders.every((order) => state.selectedOrders.has(order.sample_id));
+
+  $("#orderRange").textContent = total ? `${start + 1}–${end} of ${total}` : "0 orders";
+  $("#orderPageLabel").textContent = `Page ${state.orderPage} of ${totalPages}`;
+  $("#previousOrdersButton").disabled = state.orderPage <= 1;
+  $("#nextOrdersButton").disabled = state.orderPage >= totalPages;
+  $("#selectPageButton").disabled = pageOrders.length === 0;
+  $("#selectPageButton").textContent = allPageSelected ? "Deselect this page" : "Select this page";
+  $("#clearSelectionButton").disabled = selectedCount === 0;
+  $("#selectionCount").textContent = `${selectedCount} selected`;
+  $("#bulkRemoveButton").disabled = selectedCount === 0;
+  $("#bulkRemoveButton").textContent = selectedCount
+    ? `Remove selected (${selectedCount})`
+    : "Remove selected";
+
+  const container = $("#ordersList");
+  container.innerHTML = pageOrders.length
+    ? pageOrders.map(orderCard).join("")
+    : '<div class="orders-empty"><strong>No active Selectra orders</strong><span>Orders sent by the clinic server will appear here.</span></div>';
+  container.querySelectorAll("[data-select-order]").forEach((checkbox) => {
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) state.selectedOrders.add(checkbox.dataset.selectOrder);
+      else state.selectedOrders.delete(checkbox.dataset.selectOrder);
+      renderOrderQueue();
+    });
+  });
+  container.querySelectorAll("[data-simulate]").forEach((button) => {
+    button.addEventListener("click", () => simulate(button.dataset.simulate).catch((error) => toast(error.message)));
+  });
+  container.querySelectorAll("[data-arm]").forEach((button) => {
+    button.addEventListener("click", () => setOrderArmed(button.dataset.arm, true, button).catch((error) => toast(error.message)));
+  });
+  container.querySelectorAll("[data-disarm]").forEach((button) => {
+    button.addEventListener("click", () => setOrderArmed(button.dataset.disarm, false, button).catch((error) => toast(error.message)));
+  });
+  container.querySelectorAll("[data-remove-order]").forEach((button) => {
+    button.addEventListener("click", () => removeOrder(button.dataset.removeOrder, button).catch((error) => toast(error.message)));
+  });
+}
+
+function togglePageSelection() {
+  const start = (state.orderPage - 1) * state.orderPageSize;
+  const pageOrders = state.orders.slice(start, start + state.orderPageSize);
+  const allSelected = pageOrders.length > 0
+    && pageOrders.every((order) => state.selectedOrders.has(order.sample_id));
+  pageOrders.forEach((order) => {
+    if (allSelected) state.selectedOrders.delete(order.sample_id);
+    else state.selectedOrders.add(order.sample_id);
+  });
+  renderOrderQueue();
+}
+
+async function bulkRemoveOrders() {
+  const sampleIds = [...state.selectedOrders];
+  if (!sampleIds.length) return;
+  const armedCount = state.orders.filter(
+    (order) => state.selectedOrders.has(order.sample_id) && order.ready,
+  ).length;
+  const armedWarning = armedCount
+    ? ` ${armedCount} selected order${armedCount === 1 ? " is" : "s are"} currently armed.`
+    : "";
+  if (!window.confirm(
+    `Remove ${sampleIds.length} selected order${sampleIds.length === 1 ? "" : "s"}?${armedWarning} They will no longer be available to Selectra.`
+  )) return;
+  const button = $("#bulkRemoveButton");
+  button.disabled = true;
+  try {
+    const result = await api("/api/orders/bulk-remove", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sample_ids: sampleIds,
+        confirmation: "REMOVE SELECTRA ORDERS",
+      }),
+    });
+    result.removed_sample_ids.forEach((sampleId) => state.selectedOrders.delete(sampleId));
+    state.ordersSignature = "";
+    toast(`Removed ${result.removed_count} selected order${result.removed_count === 1 ? "" : "s"}.`);
     await Promise.all([loadOrders(), loadEvents(), loadStatus()]);
   } finally {
     button.disabled = false;
@@ -577,25 +670,23 @@ async function simulate(sampleId) {
 
 async function loadOrders() {
   const result = await api("/api/orders");
+  result.orders.forEach((order) => {
+    const warnings = Array.isArray(order.validation_warnings) ? order.validation_warnings : [];
+    const noticeKey = `${order.sample_id}:${order.updated_at}`;
+    if (warnings.length && !state.warningNotices.has(noticeKey)) {
+      state.warningNotices.add(noticeKey);
+      toast(`Order ${order.sample_id} was kept, but ${warnings.length} test${warnings.length === 1 ? " was" : "s were"} skipped.`);
+    }
+  });
   const signature = JSON.stringify(result.orders);
   if (signature === state.ordersSignature) return;
   state.ordersSignature = signature;
-  const container = $("#ordersList");
-  container.innerHTML = result.orders.length
-    ? result.orders.map(orderCard).join("")
-    : '<div class="orders-empty">No orders staged yet.</div>';
-  container.querySelectorAll("[data-simulate]").forEach((button) => {
-    button.addEventListener("click", () => simulate(button.dataset.simulate).catch((error) => toast(error.message)));
+  state.orders = result.orders;
+  const activeIds = new Set(state.orders.map((order) => order.sample_id));
+  [...state.selectedOrders].forEach((sampleId) => {
+    if (!activeIds.has(sampleId)) state.selectedOrders.delete(sampleId);
   });
-  container.querySelectorAll("[data-arm]").forEach((button) => {
-    button.addEventListener("click", () => setOrderArmed(button.dataset.arm, true, button).catch((error) => toast(error.message)));
-  });
-  container.querySelectorAll("[data-disarm]").forEach((button) => {
-    button.addEventListener("click", () => setOrderArmed(button.dataset.disarm, false, button).catch((error) => toast(error.message)));
-  });
-  container.querySelectorAll("[data-remove-order]").forEach((button) => {
-    button.addEventListener("click", () => removeOrder(button.dataset.removeOrder, button).catch((error) => toast(error.message)));
-  });
+  renderOrderQueue();
 }
 
 async function stageOrder(event) {
@@ -633,17 +724,17 @@ async function stageOrder(event) {
 async function initialize() {
   const assays = await api("/api/assays");
   $("#assaySuggestions").innerHTML = assays.assays.map((assay) => `<option value="${escapeHtml(assay)}"></option>`).join("");
-  await Promise.all([loadStatus(), loadCyanvision(), loadCyanvisionTests(), loadOrders(), loadXnTests(), loadXnOrders(), loadEvents()]);
+  await Promise.all([loadStatus(), loadCyanvision(), loadCyanTrials(), loadCyanvisionTests(), loadOrders(), loadEvents()]);
   setInterval(() => loadStatus().catch(() => {}), 2500);
   setInterval(() => loadOrders().catch(() => {}), 2200);
   setInterval(() => loadEvents().catch(() => {}), 1200);
   setInterval(() => loadCyanvision().catch(() => {}), 1800);
+  setInterval(() => loadCyanTrials().catch(() => {}), 1800);
   setInterval(() => loadCyanvisionTests().catch(() => {}), 30000);
-  setInterval(() => loadXnOrders().catch(() => {}), 2200);
 }
 
 function setConsoleView(name, updateHash = true) {
-  const valid = ["selectra", "xn330", "cyanvision", "diagnostics"];
+  const valid = ["selectra", "cyanvision", "diagnostics"];
   const selected = valid.includes(name) ? name : "selectra";
   document.querySelectorAll("[data-console-tab]").forEach((button) => {
     const active = button.dataset.consoleTab === selected;
@@ -675,6 +766,22 @@ $("#testCodeInput").addEventListener("keydown", (event) => {
 });
 $("#orderForm").addEventListener("submit", stageOrder);
 $("#autoArmButton").addEventListener("click", () => toggleApiAutoArm().catch((error) => toast(error.message)));
+$("#selectPageButton").addEventListener("click", togglePageSelection);
+$("#clearSelectionButton").addEventListener("click", () => {
+  state.selectedOrders.clear();
+  renderOrderQueue();
+});
+$("#bulkRemoveButton").addEventListener("click", () => bulkRemoveOrders().catch((error) => toast(error.message)));
+$("#previousOrdersButton").addEventListener("click", () => {
+  state.orderPage -= 1;
+  renderOrderQueue();
+  $("#ordersTitle").scrollIntoView({ behavior: "smooth", block: "start" });
+});
+$("#nextOrdersButton").addEventListener("click", () => {
+  state.orderPage += 1;
+  renderOrderQueue();
+  $("#ordersTitle").scrollIntoView({ behavior: "smooth", block: "start" });
+});
 document.querySelectorAll("[data-outbound-field]").forEach((button) => {
   button.addEventListener("click", () => toggleOutboundField(button).catch((error) => toast(error.message)));
 });
@@ -683,18 +790,10 @@ $("#armingButton").addEventListener("click", () => toggleLiveResponses().catch((
 $("#probeButton").addEventListener("click", () => toggleContinuousProbe().catch((error) => toast(error.message)));
 $("#cyanvisionForm").addEventListener("submit", stageCyanvision);
 $("#cyanDisarmButton").addEventListener("click", () => disarmCyanvision().catch((error) => toast(error.message)));
-$("#xnOrderForm").addEventListener("submit", stageXnOrder);
-document.querySelectorAll("[data-xn-profile]").forEach((button) => {
-  button.addEventListener("click", () => {
-    const profile = button.dataset.xnProfile;
-    state.xnTests = profile === "all"
-      ? state.xnTestOptions.map((test) => test.code)
-      : profile === "cbc"
-        ? state.xnTestOptions.filter((test) => test.profile === "CBC").map((test) => test.code)
-        : [];
-    renderXnTestOptions();
-  });
-});
+$("#stageCyanTrialsButton").addEventListener("click", () => stageCyanTrials().catch((error) => toast(error.message)));
+$("#advanceCyanTrialButton").addEventListener("click", () => advanceCyanTrial().catch((error) => toast(error.message)));
+$("#cyanTrialAutoAdvanceButton").addEventListener("click", () => toggleCyanTrialAutoAdvance().catch((error) => toast(error.message)));
+$("#clearCyanTrialsButton").addEventListener("click", () => clearCyanTrials().catch((error) => toast(error.message)));
 renderTests();
 setConsoleView(location.hash.slice(1), false);
 initialize().catch((error) => toast(`Bench failed to initialize: ${error.message}`));

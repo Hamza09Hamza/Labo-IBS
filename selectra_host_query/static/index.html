@@ -38,7 +38,6 @@
 
     <nav class="view-tabs" aria-label="Analyzer console sections" role="tablist">
       <button id="selectraTab" type="button" role="tab" aria-controls="selectraView" aria-selected="true" data-console-tab="selectra">Selectra orders</button>
-      <button id="xn330Tab" type="button" role="tab" aria-controls="xn330View" aria-selected="false" data-console-tab="xn330">XN-330 orders</button>
       <button id="cyanvisionTab" type="button" role="tab" aria-controls="cyanvisionView" aria-selected="false" data-console-tab="cyanvision">CYANVision worklist</button>
       <button id="diagnosticsTab" type="button" role="tab" aria-controls="diagnosticsView" aria-selected="false" data-console-tab="diagnostics">Diagnostics</button>
     </nav>
@@ -56,6 +55,19 @@
             <button id="autoArmButton" type="button">Start auto-arm</button>
           </div>
         </header>
+        <div class="queue-toolbar" id="queueToolbar" aria-label="Order queue controls">
+          <div class="selection-tools">
+            <button id="selectPageButton" class="quiet-button" type="button">Select this page</button>
+            <button id="clearSelectionButton" class="quiet-button" type="button" disabled>Clear selection</button>
+            <span id="selectionCount" aria-live="polite">0 selected</span>
+            <button id="bulkRemoveButton" class="bulk-remove-button" type="button" disabled>Remove selected</button>
+          </div>
+          <nav class="queue-pager" aria-label="Order pages">
+            <button id="previousOrdersButton" type="button" aria-label="Previous nine orders">←</button>
+            <span><strong id="orderRange">0 orders</strong><small id="orderPageLabel">Page 1 of 1</small></span>
+            <button id="nextOrdersButton" type="button" aria-label="Next nine orders">→</button>
+          </nav>
+        </div>
         <div class="orders-list" id="ordersList"><div class="orders-empty"><strong>No active Selectra orders</strong><span>Orders sent by the clinic server will appear here.</span></div></div>
       </section>
 
@@ -110,56 +122,13 @@
       </details>
     </section>
 
-    <section class="console-view" id="xn330View" role="tabpanel" aria-labelledby="xn330Tab" data-console-view="xn330" hidden>
-      <section class="panel xn-panel" aria-labelledby="xnOrdersTitle">
-        <header class="section-head xn-head">
-          <div>
-            <span class="section-kicker">Sysmex XN-330 · ASTM Host Query</span>
-            <h2 id="xnOrdersTitle">Exact-ID hematology orders</h2>
-            <p>Every order stays inert until an operator arms its card. One matching analyzer query consumes it once.</p>
-          </div>
-          <div class="xn-link-state"><i></i><span id="xnLinkState">Port 6001 · waiting</span></div>
-        </header>
-        <div class="orders-list" id="xnOrdersList"><div class="orders-empty"><strong>No active XN-330 orders</strong><span>Stage one below or send it through the authenticated API.</span></div></div>
-      </section>
-
-      <details class="manual-tools panel xn-stage" open>
-        <summary><span><strong>Stage an XN-330 order</strong><small>Patient demographics and discrete CBC/DIFF parameters</small></span><span aria-hidden="true">+</span></summary>
-        <div class="manual-grid">
-          <form id="xnOrderForm" novalidate>
-            <div class="form-grid">
-              <label class="field field-wide"><span>Sample ID</span><input id="xnSampleId" required maxlength="22" autocomplete="off" placeholder="e.g. XN-DEMO-001"><small>Must exactly match the ID entered or scanned on the XN-330.</small></label>
-              <label class="field"><span>Patient ID</span><input id="xnPatientId" required maxlength="16" autocomplete="off" placeholder="PAT-001"></label>
-              <label class="field"><span>Birth date</span><input id="xnBirthDate" type="date" required></label>
-              <label class="field"><span>Given name</span><input id="xnGivenName" required maxlength="20" autocomplete="off" placeholder="MANEL"></label>
-              <label class="field"><span>Family name</span><input id="xnFamilyName" required maxlength="20" autocomplete="off" placeholder="PATIENT"></label>
-              <label class="field"><span>Sex</span><select id="xnSex"><option value="U">Unspecified</option><option value="F">Female</option><option value="M">Male</option></select></label>
-            </div>
-            <fieldset class="xn-tests">
-              <legend>Parameters to perform</legend>
-              <div class="xn-test-tools"><button type="button" data-xn-profile="all">CBC + DIFF</button><button type="button" data-xn-profile="cbc">CBC only</button><button type="button" data-xn-profile="none">Clear</button></div>
-              <div class="xn-test-grid" id="xnTestGrid"><span class="empty-tests">Loading documented XN-L parameter codes…</span></div>
-            </fieldset>
-            <div class="form-alert" id="xnFormAlert" role="alert" hidden></div>
-            <button class="primary-action xn-stage-action" type="submit" id="xnStageButton"><span>Stage for review</span><small>Arming remains a separate action</small></button>
-          </form>
-          <section class="preview" id="xnResponsePreview" aria-label="XN-330 response preview">
-            <div class="preview-head"><strong>ASTM order preview</strong><span>H / P / O / L</span></div>
-            <div class="preview-instruction">The live reply echoes the analyzer’s original Q-3 selector. This preview uses a manual selector.</div>
-            <pre id="xnResponseRecords">Stage an order to build the XN-330 response.</pre>
-          </section>
-        </div>
-      </details>
-      <aside class="safety-note xn-note"><strong>Delivery gate</strong><p>Staging never sends. Arming one card permits only the exact sample ID, and successful ASTM acknowledgement automatically disarms that order.</p></aside>
-    </section>
-
     <section class="console-view" id="cyanvisionView" role="tabpanel" aria-labelledby="cyanvisionTab" data-console-view="cyanvision" hidden>
       <section class="cyanvision-worklist panel" id="cyanvisionPanel" aria-labelledby="cyanvisionTitle">
         <header class="section-head cyanvision-head">
           <div>
             <span class="section-kicker">CYANVision · one-load worklist</span>
             <h2 id="cyanvisionTitle">Prepare the next “Load from LIS” item</h2>
-            <p>One patient and one verified program code. The analyzer receives it only after the operator requests the LIS worklist.</p>
+            <p>One patient and one field-observed numeric Program ID. The analyzer receives it only after the operator requests the LIS worklist.</p>
           </div>
           <div class="cyanvision-state" id="cyanvisionState"><i></i><span>Draft</span></div>
         </header>
@@ -171,7 +140,7 @@
               <label class="field"><span>Family name</span><input id="cyanFamilyName" required maxlength="80" autocomplete="off" placeholder="PATIENT"></label>
               <label class="field"><span>Birth date</span><input id="cyanBirthDate" type="date" required></label>
               <label class="field"><span>Sex</span><select id="cyanSex"><option value="M">Male</option><option value="F">Female</option></select></label>
-              <label class="field field-wide"><span>CYANVision test</span><select id="cyanTestCode" required disabled><option value="">Loading analyzer codes…</option></select><small id="cyanTestHelp">Only known codes are available.</small></label>
+              <label class="field field-wide"><span>CYANVision test</span><select id="cyanTestCode" required disabled><option value="">Loading analyzer programs…</option></select><small id="cyanTestHelp">Only tests with an observed numeric Program ID are available.</small></label>
             </div>
             <div class="form-alert" id="cyanFormAlert" role="alert" hidden></div>
             <button class="primary-action cyanvision-action" type="submit" id="cyanArmButton"><span>Stage and arm one load</span><small>Wait for Load from LIS</small></button>
@@ -179,10 +148,41 @@
           </form>
           <section class="preview cyanvision-preview" aria-label="CYANVision outbound preview">
             <div class="preview-head"><strong>HL7 worklist preview</strong><span>DSR^Q03</span></div>
-            <div class="preview-instruction" id="cyanvisionInstruction">Complete the form, verify the program code, then arm the worklist.</div>
+            <div class="preview-instruction" id="cyanvisionInstruction">Complete the form, verify the numeric Program ID, then arm the worklist.</div>
             <pre id="cyanResponseRecords">No worklist prepared.</pre>
           </section>
         </div>
+      </section>
+
+      <section class="cyan-trial-panel panel" id="cyanTrialPanel" aria-labelledby="cyanTrialTitle">
+        <header class="section-head">
+          <div>
+            <span class="section-kicker">Controlled field trial · Creatinine</span>
+            <h2 id="cyanTrialTitle">Identify the DSP.8 selector CYANVision accepts</h2>
+            <p>The manufacturer’s exact GLUC example comes first, followed by seven Creatinine candidates. Check the selected exam, then advance manually.</p>
+          </div>
+          <span class="trial-count" id="cyanTrialCount">Not staged</span>
+        </header>
+        <div class="trial-command-bar">
+          <div class="trial-next" id="cyanTrialNext">
+            <span>Next candidate</span>
+            <strong>No trial staged</strong>
+            <small>Stage the controlled sequence when no clinical CYANVision order is waiting.</small>
+          </div>
+          <div class="trial-actions">
+            <button type="button" id="stageCyanTrialsButton">Stage manual control + trials</button>
+            <button type="button" id="advanceCyanTrialButton" disabled>Mark checked → next</button>
+            <button type="button" id="clearCyanTrialsButton" class="secondary-danger" disabled>Clear trial</button>
+          </div>
+        </div>
+        <div class="auto-arm-control" id="cyanTrialAutoAdvanceControl">
+          <span><strong id="cyanTrialAutoAdvanceTitle">Manual advance</strong><small id="cyanTrialAutoAdvanceCopy">You confirm each candidate before the next one is offered.</small></span>
+          <button id="cyanTrialAutoAdvanceButton" type="button">Turn on auto-advance</button>
+        </div>
+        <ol class="trial-sequence" id="cyanTrialSequence" aria-label="Creatinine DSP.8 trial sequence">
+          <li class="trial-empty">Trial candidates have not been staged.</li>
+        </ol>
+        <p class="trial-safety">Because this CYANVision does not return ACK^Q03, the bridge cannot tell a real acceptance from a dropped connection. With auto-advance off (default), click "Mark checked → next" yourself after recording the exam. With it on, every dropped connection is treated as checked and the next candidate is offered automatically on the next Load from LIS - only use this once you trust the sequence and are watching the analyzer screen for each one.</p>
       </section>
     </section>
 
@@ -192,7 +192,6 @@
         <div><span>Selectra listener</span><strong class="mono" id="instrumentEndpoint">—</strong></div>
         <div><span>Selectra client</span><strong id="clientState">Waiting</strong></div>
         <div><span>CYANVision listener</span><strong class="mono"><span id="cyanvisionPort">6004</span></strong></div>
-        <div><span>XN-330 listener</span><strong class="mono"><span id="xn330Port">6001</span></strong></div>
       </section>
 
       <section class="diagnostic-controls">

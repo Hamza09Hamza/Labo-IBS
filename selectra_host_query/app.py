@@ -11,9 +11,9 @@ from datetime import date, timedelta
 from flask import Flask, jsonify, request, send_from_directory
 
 from labo_bridge import mappings as bridge_mappings, pg
+from cyanvision_worklist.programs import CRE_DSP8_TRIAL_SEQUENCE, WORKLIST_PROGRAM_IDS
 
 from .protocol import build_order_records, test_abbreviation
-from xn330_order_download import protocol as xn330_protocol
 
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -205,30 +205,60 @@ def _resolve_machine_test(machine, requested):
     return next(iter(by_wire_code.values()))
 
 
+class SelectraTestsRejected(ValueError):
+    def __init__(self, message, rejected_tests):
+        super().__init__(message)
+        self.rejected_tests = rejected_tests
+
+
+def _rejected_selectra_test(index, value, error):
+    requested = value if isinstance(value, (dict, str, int, float, bool)) or value is None else str(value)
+    return {
+        "index": index,
+        "requested": requested,
+        "reason": str(error),
+    }
+
+
 def _resolve_selectra_tests(values):
     if not isinstance(values, list) or not values:
         raise ValueError("Selectra tests must be a non-empty JSON array")
     resolved = []
-    for value in values:
-        if isinstance(value, dict):
-            resolved.append(_resolve_machine_test("selectra", value))
-        else:
-            # Backward compatibility for the local bench and existing clients.
-            method = _validate_text("Selectra test", value, maximum=60)
-            resolved.append({
-                "machine_test": method,
-                "machine_code": test_abbreviation(method),
-                "param_id": None,
-                "service_tarification_id": None,
-            })
-    unique = {item["machine_code"]: item for item in resolved}
-    if len(unique) > 40:
-        raise ValueError("no more than 40 Selectra tests can be staged")
-    return list(unique.values())
+    rejected = []
+    machine_codes = set()
+    for index, value in enumerate(values):
+        try:
+            if isinstance(value, dict):
+                item = _resolve_machine_test("selectra", value)
+            else:
+                # Backward compatibility for the local bench and existing clients.
+                method = _validate_text("Selectra test", value, maximum=60)
+                item = {
+                    "machine_test": method,
+                    "machine_code": test_abbreviation(method),
+                    "param_id": None,
+                    "service_tarification_id": None,
+                }
+            if item["machine_code"] in machine_codes:
+                continue
+            if len(resolved) >= 40:
+                raise ValueError("no more than 40 Selectra tests can be staged")
+            resolved.append(item)
+            machine_codes.add(item["machine_code"])
+        except ValueError as exc:
+            rejected.append(_rejected_selectra_test(index, value, exc))
+    if not resolved:
+        detail = rejected[0]["reason"] if rejected else "no test details were supplied"
+        raise SelectraTestsRejected(
+            "none of the requested Selectra tests could be mapped; "
+            f"order was not staged: {detail}",
+            rejected,
+        )
+    return resolved, rejected
 
 
 def _validated_selectra_api_order(body):
-    resolved_tests = _resolve_selectra_tests(body.get("tests"))
+    resolved_tests, rejected_tests = _resolve_selectra_tests(body.get("tests"))
     tests = [item["machine_test"] for item in resolved_tests]
     birth_date = str(body.get("birth_date") or "").strip()
     try:
@@ -270,7 +300,7 @@ def _validated_selectra_api_order(body):
     if len(patient_name) > 20:
         raise ValueError("Selectra family name plus given name must be 20 characters or fewer")
     _require_ascii(order, "Selectra")
-    return order, resolved_tests
+    return order, resolved_tests, rejected_tests
 
 
 def _validated_cyanvision_order(body):
@@ -302,7 +332,7 @@ def _validated_cyanvision_order(body):
         "birth_date": birth_date,
         "sex": sex,
         "test_code": _validate_text(
-            "CYANVision program/test code", body.get("test_code"), maximum=60,
+            "CYANVision result code", body.get("test_code"), maximum=60,
         ),
     }
     if any(
@@ -321,76 +351,30 @@ def _validated_cyanvision_api_order(body):
     return order
 
 
-def _resolve_xn330_tests(values):
-    if not isinstance(values, list) or not values:
-        raise ValueError("XN-330 tests must be a non-empty JSON array")
-    resolved = []
-    for value in values:
-        if isinstance(value, dict):
-            param_id = _optional_positive_id("param_id", value.get("param_id"))
-            service_id = _optional_positive_id(
-                "service_tarification_id", value.get("service_tarification_id"),
-            )
-            if param_id is None and service_id == 421:
-                # FNS is one clinic order but a set of discrete XN parameters.
-                for code in bridge_mappings.MAPS.get("xn330", {}):
-                    if code in xn330_protocol.TEST_SET:
-                        resolved.append(code)
-                continue
-            resolved.append(_resolve_machine_test("xn330", value)["machine_code"])
-        else:
-            resolved.append(_validate_text("XN-330 test", value, maximum=20).upper())
-    return xn330_protocol.validate_tests(list(dict.fromkeys(resolved)))
-
-
-def _validated_xn330_order(body):
-    birth_date = str(body.get("birth_date") or "").strip()
-    try:
-        date.fromisoformat(birth_date)
-    except ValueError:
-        raise ValueError("XN-330 birth date must use YYYY-MM-DD") from None
-    sex = str(body.get("sex") or "").strip().upper()
-    if sex not in {"M", "F", "U"}:
-        raise ValueError("XN-330 sex must be M, F, or U")
-    order = {
-        "sample_id": _validate_text("XN-330 sample ID", body.get("sample_id"), maximum=22),
-        "patient_id": _validate_text("XN-330 patient ID", body.get("patient_id"), maximum=16),
-        "given_name": _validate_text("XN-330 given name", body.get("given_name"), maximum=20),
-        "family_name": _validate_text("XN-330 family name", body.get("family_name"), maximum=20),
-        "birth_date": birth_date,
-        "sex": sex,
-        "tests": _resolve_xn330_tests(body.get("tests")),
-        "external_order_id": _validate_text(
-            "external order ID", body.get("external_order_id"), required=False, maximum=100,
-        ) or None,
-    }
-    _require_ascii(order, "XN-330")
-    return order
-
-
 def _cyanvision_test_options():
-    """Exact CYANVision codes from curated mappings and received results."""
-    choices = {}
-    for code, targets in bridge_mappings.MAPS.get("cyanvision", {}).items():
-        primary = targets[0]
-        choices[code] = {
+    """CYANVision result codes with a field-observed outbound ProgramID."""
+    choices = {
+        code: {
             "code": code,
-            "name": primary[4] or primary[3] or primary[2] or code,
-            "observed": False,
-            "mapped": True,
-            "last_seen": None,
-        }
-    for row in pg.list_observed_test_codes("cyanvision"):
-        code = str(row.get("code") or "").strip()
-        if not code:
-            continue
-        entry = choices.setdefault(code, {
-            "code": code,
-            "name": row.get("display_name") or code,
-            "observed": False,
+            "program_id": program_id,
+            "name": code,
+            "observed": True,
             "mapped": False,
             "last_seen": None,
-        })
+        }
+        for code, program_id in WORKLIST_PROGRAM_IDS.items()
+    }
+    for code, targets in bridge_mappings.MAPS.get("cyanvision", {}).items():
+        if code not in choices:
+            continue
+        primary = targets[0]
+        choices[code]["name"] = primary[4] or primary[3] or primary[2] or code
+        choices[code]["mapped"] = True
+    for row in pg.list_observed_test_codes("cyanvision"):
+        code = str(row.get("code") or "").strip()
+        if code not in choices:
+            continue
+        entry = choices[code]
         entry["observed"] = True
         entry["last_seen"] = row.get("last_seen")
         if entry["name"] == code and row.get("display_name"):
@@ -398,9 +382,42 @@ def _cyanvision_test_options():
     return sorted(choices.values(), key=lambda item: item["code"].casefold())
 
 
-def create_app(
-    store, service, cyanvision_service=None, xn330_service=None, order_api_token=None,
-):
+def _cyanvision_cre_trial_order(candidate):
+    return {
+        "sample_id": candidate["sample_id"],
+        "given_name": candidate.get("given_name", "TRIAL"),
+        "family_name": candidate.get("family_name", candidate["label"]),
+        "birth_date": candidate.get("birth_date", "1980-01-01"),
+        "sex": candidate.get("sex", "M"),
+        "test_code": candidate["test_code"],
+        "external_order_id": f"CYAN-CRE-TRIAL-{candidate['sequence']:02d}",
+    }
+
+
+def _cyanvision_cre_trial_status(store, cyanvision_service):
+    entries = []
+    for candidate in CRE_DSP8_TRIAL_SEQUENCE:
+        saved = store.get_cyanvision_order(candidate["sample_id"])
+        order = _cyanvision_cre_trial_order(candidate)
+        entries.append({
+            **candidate,
+            "patient_name": f"{order['given_name']} {order['family_name']}",
+            "status": saved["status"] if saved else "not_staged",
+            "ready": bool(saved and saved["ready"]),
+            "query_count": saved["query_count"] if saved else 0,
+        })
+    current = next((entry for entry in entries if entry["ready"]), None)
+    service_status = cyanvision_service.status()
+    return {
+        "entries": entries,
+        "current": current,
+        "ready_count": sum(1 for entry in entries if entry["ready"]),
+        "pending_ack": service_status["pending_ack"],
+        "auto_advance": store.cyanvision_cre_trial_auto_advance_enabled(),
+    }
+
+
+def create_app(store, service, cyanvision_service=None, order_api_token=None):
     app = Flask(__name__, static_folder=None)
     configured_order_api_token = (
         order_api_token if order_api_token is not None
@@ -440,13 +457,9 @@ def create_app(
             order for order in store.list_orders()
             if order.get("status") != "cancelled"
         ]
-        active_xn330_orders = [
-            order for order in store.list_xn330_orders()
-            if order.get("status") != "cancelled"
-        ] if xn330_service else []
         return jsonify({
             **service.status(),
-            "orders": len(active_orders) + len(active_xn330_orders),
+            "orders": len(active_orders),
             "api_armed_orders": len([
                 order for order in active_orders
                 if order.get("source") == "api" and order.get("ready")
@@ -454,96 +467,7 @@ def create_app(
             "api_auto_arm": store.selectra_auto_arm_enabled(),
             "selectra_outbound_fields": store.selectra_outbound_fields(),
             "cyanvision": cyanvision,
-            "xn330": xn330_service.status() if xn330_service else None,
         })
-
-    @app.get("/api/xn330/tests")
-    def xn330_tests():
-        return jsonify({
-            "available": xn330_service is not None,
-            "tests": [
-                {"code": code, "profile": "CBC" if code in xn330_protocol.CBC_TESTS else "DIFF"}
-                for code in xn330_protocol.ORDERABLE_TESTS
-            ] if xn330_service else [],
-        })
-
-    @app.get("/api/xn330/orders")
-    def xn330_orders():
-        if not xn330_service:
-            return jsonify({"available": False, "orders": []})
-        return jsonify({
-            "available": True,
-            "orders": [
-                order for order in store.list_xn330_orders()
-                if order.get("status") != "cancelled"
-            ],
-        })
-
-    @app.post("/api/xn330/orders")
-    def stage_xn330_order():
-        if not xn330_service:
-            return jsonify({"error": "XN-330 order service is unavailable"}), 503
-        try:
-            order = _validated_xn330_order(request.get_json(silent=True) or {})
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-        saved = store.upsert_xn330_order(order, source="manual", ready=False)
-        return jsonify({
-            "ok": True, "order": saved,
-            "response_preview": xn330_service.preview(saved["sample_id"]),
-        }), 201
-
-    @app.post("/api/xn330/orders/<sample_id>/arm")
-    def arm_xn330_order(sample_id):
-        if not xn330_service:
-            return jsonify({"error": "XN-330 order service is unavailable"}), 503
-        body = request.get_json(silent=True) or {}
-        if body.get("confirmation") != "ARM XN330 ORDER":
-            return jsonify({"error": "explicit ARM XN330 ORDER confirmation is required"}), 400
-        try:
-            saved = store.set_xn330_order_ready(sample_id, True)
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 409
-        if not saved:
-            return jsonify({"error": "XN-330 order not found"}), 404
-        store.add_event(
-            "local", "xn330_order_armed", sample_id,
-            "XN-330 order manually armed; waiting for an exact Host Query sample ID",
-        )
-        return jsonify({"ok": True, "sample_id": sample_id, "state": "armed", "armed": True})
-
-    @app.delete("/api/xn330/orders/<sample_id>/arm")
-    def disarm_xn330_order(sample_id):
-        if not xn330_service:
-            return jsonify({"error": "XN-330 order service is unavailable"}), 503
-        saved = store.set_xn330_order_ready(sample_id, False)
-        if not saved:
-            return jsonify({"error": "XN-330 order not found"}), 404
-        store.add_event(
-            "local", "xn330_order_disarmed", sample_id,
-            "XN-330 order manually disarmed; matching queries receive no order payload",
-        )
-        return jsonify({"ok": True, "sample_id": sample_id, "state": "staged", "armed": False})
-
-    @app.delete("/api/xn330/orders/<sample_id>")
-    def remove_xn330_order(sample_id):
-        order = store.get_xn330_order(sample_id)
-        if not order or order.get("status") == "cancelled":
-            return jsonify({"error": "XN-330 order not found"}), 404
-        store.cancel_xn330_order(sample_id)
-        store.add_event("local", "xn330_order_removed", sample_id, "XN-330 order removed")
-        return jsonify({"ok": True, "sample_id": sample_id, "state": "cancelled"})
-
-    @app.post("/api/xn330/simulate-query")
-    def simulate_xn330_query():
-        if not xn330_service:
-            return jsonify({"error": "XN-330 order service is unavailable"}), 503
-        sample_id = str((request.get_json(silent=True) or {}).get("sample_id") or "").strip()
-        try:
-            records = xn330_service.preview(sample_id)
-        except KeyError:
-            return jsonify({"error": "XN-330 order not found"}), 404
-        return jsonify({"ok": True, "sample_id": sample_id, "response_records": records})
 
     @app.get("/api/cyanvision/worklist")
     def cyanvision_worklist_status():
@@ -574,7 +498,7 @@ def create_app(
             allowed_codes = {item["code"] for item in _cyanvision_test_options()}
             if order["test_code"] not in allowed_codes:
                 raise ValueError(
-                    "Select a CYANVision test from the exact codes known to this bridge"
+                    "Select a CYANVision test with a field-observed outbound Program ID"
                 )
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
@@ -591,24 +515,155 @@ def create_app(
             return jsonify({"error": "CYANVision worklist service is unavailable"}), 503
         return jsonify({"ok": True, **cyanvision_service.disarm()})
 
+    @app.get("/api/cyanvision/cre-trials")
+    def cyanvision_cre_trials():
+        if not cyanvision_service:
+            return jsonify({"available": False})
+        return jsonify({
+            "available": True,
+            **_cyanvision_cre_trial_status(store, cyanvision_service),
+        })
+
+    @app.post("/api/cyanvision/cre-trials")
+    def stage_cyanvision_cre_trials():
+        if not cyanvision_service:
+            return jsonify({"error": "CYANVision worklist service is unavailable"}), 503
+        body = request.get_json(silent=True) or {}
+        if body.get("confirmation") != "STAGE CYANVISION CRE TRIALS":
+            return jsonify({
+                "error": "explicit STAGE CYANVISION CRE TRIALS confirmation is required"
+            }), 400
+        if cyanvision_service.status()["pending_ack"]:
+            return jsonify({
+                "error": "wait for the current CYANVision connection to close before staging trials"
+            }), 409
+        trial_ids = {candidate["sample_id"] for candidate in CRE_DSP8_TRIAL_SEQUENCE}
+        other_ready = [
+            order for order in store.list_ready_cyanvision_orders()
+            if order["sample_id"] not in trial_ids
+        ]
+        if other_ready:
+            return jsonify({
+                "error": "disarm or remove existing CYANVision worklist orders before staging the CRE trial"
+            }), 409
+        for candidate in CRE_DSP8_TRIAL_SEQUENCE:
+            store.upsert_cyanvision_order(
+                _cyanvision_cre_trial_order(candidate), source="trial", ready=True,
+            )
+        store.add_event(
+            "local", "cyanvision_cre_trials_staged", None,
+            "Staged the exact CY014 GLUC control plus 7 uniquely named Creatinine DSP.8 candidates",
+        )
+        return jsonify({
+            "ok": True,
+            **_cyanvision_cre_trial_status(store, cyanvision_service),
+        }), 201
+
+    @app.post("/api/cyanvision/cre-trials/advance")
+    def advance_cyanvision_cre_trials():
+        if not cyanvision_service:
+            return jsonify({"error": "CYANVision worklist service is unavailable"}), 503
+        body = request.get_json(silent=True) or {}
+        if body.get("confirmation") != "ADVANCE CYANVISION CRE TRIAL":
+            return jsonify({
+                "error": "explicit ADVANCE CYANVISION CRE TRIAL confirmation is required"
+            }), 400
+        if cyanvision_service.status()["pending_ack"]:
+            return jsonify({
+                "error": "wait for CYANVision to close the current connection before advancing"
+            }), 409
+        status_value = _cyanvision_cre_trial_status(store, cyanvision_service)
+        current = status_value["current"]
+        if not current:
+            return jsonify({"error": "no ready CYANVision CRE trial candidate remains"}), 409
+        store.cancel_cyanvision_order(current["sample_id"])
+        next_status = _cyanvision_cre_trial_status(store, cyanvision_service)
+        next_candidate = next_status["current"]
+        store.add_event(
+            "local", "cyanvision_cre_trial_advanced", current["sample_id"],
+            (
+                f"Marked {current['patient_name']} / DSP.8 {current['dsp8'] or '(blank)'} checked; "
+                + (f"{next_candidate['patient_name']} is next" if next_candidate else "trial sequence complete")
+            ),
+        )
+        return jsonify({"ok": True, **next_status})
+
+    @app.post("/api/cyanvision/cre-trials/auto-advance")
+    def set_cyanvision_cre_trial_auto_advance():
+        if not cyanvision_service:
+            return jsonify({"error": "CYANVision worklist service is unavailable"}), 503
+        body = request.get_json(silent=True) or {}
+        enabled = bool(body.get("enabled"))
+        if enabled and body.get("confirmation") != "AUTO-ADVANCE CYANVISION CRE TRIALS":
+            return jsonify({
+                "error": "explicit AUTO-ADVANCE CYANVISION CRE TRIALS confirmation is required"
+            }), 400
+        store.set_cyanvision_cre_trial_auto_advance(enabled)
+        store.add_event(
+            "local", "cyanvision_cre_trial_auto_advance_changed", None,
+            f"CYANVision CRE trial auto-advance turned {'on' if enabled else 'off'}",
+        )
+        return jsonify({
+            "ok": True,
+            **_cyanvision_cre_trial_status(store, cyanvision_service),
+        })
+
+    @app.delete("/api/cyanvision/cre-trials")
+    def clear_cyanvision_cre_trials():
+        if not cyanvision_service:
+            return jsonify({"error": "CYANVision worklist service is unavailable"}), 503
+        if cyanvision_service.status()["pending_ack"]:
+            return jsonify({
+                "error": "wait for CYANVision to close the current connection before clearing trials"
+            }), 409
+        removed = 0
+        for candidate in CRE_DSP8_TRIAL_SEQUENCE:
+            saved = store.get_cyanvision_order(candidate["sample_id"])
+            if saved and saved["ready"] and store.cancel_cyanvision_order(candidate["sample_id"]):
+                removed += 1
+        store.add_event(
+            "local", "cyanvision_cre_trials_cleared", None,
+            f"Cleared {removed} remaining Creatinine trial candidate(s)",
+        )
+        return jsonify({
+            "ok": True,
+            **_cyanvision_cre_trial_status(store, cyanvision_service),
+        })
+
     @app.post("/api/v1/orders/selectra")
     def api_stage_selectra_order():
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
             return jsonify({"error": "request body must be a JSON object"}), 400
         try:
-            order, resolved_tests = _validated_selectra_api_order(body)
+            order, resolved_tests, rejected_tests = _validated_selectra_api_order(body)
+        except SelectraTestsRejected as exc:
+            return jsonify({
+                "error": str(exc),
+                "rejected_tests": exc.rejected_tests,
+            }), 400
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
+        order["validation_warnings"] = rejected_tests
         saved = store.upsert_order(
             order, source="api", ready=store.selectra_auto_arm_enabled(),
         )
-        return jsonify({
+        response = {
             "ok": True,
             "analyzer": "selectra",
             "sample_id": saved["sample_id"],
             "state": "armed" if saved["ready"] else "staged",
-        }), 201
+        }
+        if rejected_tests:
+            response.update({
+                "warning": (
+                    f"Order kept with {len(resolved_tests)} valid test(s); "
+                    f"{len(rejected_tests)} requested test(s) rejected"
+                ),
+                "accepted_test_count": len(resolved_tests),
+                "rejected_tests": rejected_tests,
+            })
+        return jsonify(response), 201
 
     @app.post("/api/selectra/auto-arm")
     def set_selectra_auto_arm():
@@ -665,7 +720,7 @@ def create_app(
         order = store.get_order(sample_id)
         if not order or order.get("source") != "api":
             return jsonify({"error": "Selectra API order not found"}), 404
-        return jsonify({
+        response = {
             "analyzer": "selectra",
             "sample_id": order["sample_id"],
             "state": order["status"],
@@ -673,7 +728,10 @@ def create_app(
             "query_count": order["query_count"],
             "updated_at": order["updated_at"],
             "last_error": order["last_error"],
-        })
+        }
+        if order.get("validation_warnings"):
+            response["rejected_tests"] = order["validation_warnings"]
+        return jsonify(response)
 
     @app.delete("/api/v1/orders/selectra/<sample_id>")
     def api_cancel_selectra_order(sample_id):
@@ -700,7 +758,7 @@ def create_app(
             allowed_codes = {item["code"] for item in _cyanvision_test_options()}
             if order["test_code"] not in allowed_codes:
                 raise ValueError(
-                    "Select a CYANVision test from the exact codes known to this bridge"
+                    "Select a CYANVision test with a field-observed outbound Program ID"
                 )
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
@@ -711,44 +769,6 @@ def create_app(
             "state": "ready",
             "sample_id": saved["sample_id"],
         }), 201
-
-    @app.post("/api/v1/orders/xn330")
-    def api_stage_xn330_order():
-        if not xn330_service:
-            return jsonify({"error": "XN-330 order service is unavailable"}), 503
-        body = request.get_json(silent=True)
-        if not isinstance(body, dict):
-            return jsonify({"error": "request body must be a JSON object"}), 400
-        try:
-            order = _validated_xn330_order(body)
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-        saved = store.upsert_xn330_order(order, source="api", ready=False)
-        return jsonify({
-            "ok": True, "analyzer": "xn330",
-            "sample_id": saved["sample_id"], "state": "staged",
-        }), 201
-
-    @app.get("/api/v1/orders/xn330/<sample_id>")
-    def api_get_xn330_order(sample_id):
-        order = store.get_xn330_order(sample_id)
-        if not order or order.get("source") != "api":
-            return jsonify({"error": "XN-330 API order not found"}), 404
-        return jsonify({
-            "analyzer": "xn330", "sample_id": sample_id,
-            "state": order["status"], "armed": order["ready"],
-            "query_count": order["query_count"], "updated_at": order["updated_at"],
-            "last_error": order["last_error"],
-        })
-
-    @app.delete("/api/v1/orders/xn330/<sample_id>")
-    def api_cancel_xn330_order(sample_id):
-        order = store.get_xn330_order(sample_id)
-        if not order or order.get("source") != "api":
-            return jsonify({"error": "XN-330 API order not found"}), 404
-        store.cancel_xn330_order(sample_id)
-        store.add_event("api", "xn330_order_cancelled", sample_id, "XN-330 API order cancelled")
-        return jsonify({"ok": True, "analyzer": "xn330", "sample_id": sample_id, "state": "cancelled"})
 
     @app.get("/api/v1/orders/cyanvision/<sample_id>")
     def api_get_cyanvision_order(sample_id):
@@ -828,6 +848,38 @@ def create_app(
             "Order removed from the active staging queue",
         )
         return jsonify({"ok": True, "sample_id": sample_id, "state": "cancelled"})
+
+    @app.post("/api/orders/bulk-remove")
+    def remove_staged_orders():
+        body = request.get_json(silent=True) or {}
+        if body.get("confirmation") != "REMOVE SELECTRA ORDERS":
+            return jsonify({
+                "error": "explicit REMOVE SELECTRA ORDERS confirmation is required"
+            }), 400
+        values = body.get("sample_ids")
+        if not isinstance(values, list) or not values:
+            return jsonify({"error": "sample_ids must be a non-empty JSON array"}), 400
+        if len(values) > 200:
+            return jsonify({"error": "no more than 200 orders can be removed at once"}), 400
+        sample_ids = []
+        for value in values:
+            if not isinstance(value, str) or not value.strip():
+                return jsonify({"error": "every sample ID must be a non-empty string"}), 400
+            sample_id = value.strip()
+            if sample_id not in sample_ids:
+                sample_ids.append(sample_id)
+        removed = store.cancel_orders(sample_ids)
+        if removed:
+            store.add_event(
+                "local", "orders_bulk_removed", None,
+                f"Removed {len(removed)} selected order(s) from the active staging queue",
+                "\n".join(removed),
+            )
+        return jsonify({
+            "ok": True,
+            "removed_count": len(removed),
+            "removed_sample_ids": removed,
+        })
 
     @app.post("/api/orders")
     def stage_order():

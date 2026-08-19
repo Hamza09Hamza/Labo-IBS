@@ -68,7 +68,8 @@ class BenchStore:
                     external_order_id TEXT,
                     outbound_specimen_type TEXT NOT NULL DEFAULT '',
                     ordering_physician TEXT NOT NULL DEFAULT '',
-                    comment TEXT NOT NULL DEFAULT ''
+                    comment TEXT NOT NULL DEFAULT '',
+                    validation_warnings_json TEXT NOT NULL DEFAULT '[]'
                 );
                 CREATE TABLE IF NOT EXISTS cyanvision_orders (
                     sample_id TEXT PRIMARY KEY,
@@ -80,25 +81,6 @@ class BenchStore:
                     status TEXT NOT NULL DEFAULT 'staged',
                     source TEXT NOT NULL DEFAULT 'manual',
                     ready INTEGER NOT NULL DEFAULT 1,
-                    external_order_id TEXT,
-                    query_count INTEGER NOT NULL DEFAULT 0,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    last_query_at TEXT,
-                    last_delivery_at TEXT,
-                    last_error TEXT
-                );
-                CREATE TABLE IF NOT EXISTS xn330_orders (
-                    sample_id TEXT PRIMARY KEY,
-                    patient_id TEXT NOT NULL,
-                    family_name TEXT NOT NULL,
-                    given_name TEXT NOT NULL,
-                    birth_date TEXT NOT NULL DEFAULT '',
-                    sex TEXT NOT NULL DEFAULT 'U',
-                    tests_json TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'staged',
-                    source TEXT NOT NULL DEFAULT 'manual',
-                    ready INTEGER NOT NULL DEFAULT 0,
                     external_order_id TEXT,
                     query_count INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL,
@@ -140,6 +122,7 @@ class BenchStore:
                 ("outbound_specimen_type", "TEXT NOT NULL DEFAULT ''"),
                 ("ordering_physician", "TEXT NOT NULL DEFAULT ''"),
                 ("comment", "TEXT NOT NULL DEFAULT ''"),
+                ("validation_warnings_json", "TEXT NOT NULL DEFAULT '[]'"),
             ):
                 if column not in order_columns:
                     connection.execute(f"ALTER TABLE orders ADD COLUMN {column} {definition}")
@@ -172,6 +155,9 @@ class BenchStore:
             return None
         value = dict(row)
         value["tests"] = json.loads(value.pop("tests_json"))
+        value["validation_warnings"] = json.loads(
+            value.pop("validation_warnings_json", "[]") or "[]"
+        )
         value["ready"] = bool(value.get("ready"))
         return value
 
@@ -184,8 +170,9 @@ class BenchStore:
                     (sample_id, patient_id, family_name, given_name, birth_date,
                      sex, specimen_type, tests_json, status, source, ready,
                      external_order_id, outbound_specimen_type,
-                     ordering_physician, comment, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'staged', ?, ?, ?, ?, ?, ?, ?, ?)
+                     ordering_physician, comment, validation_warnings_json,
+                     created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'staged', ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(sample_id) DO UPDATE SET
                     patient_id=excluded.patient_id,
                     family_name=excluded.family_name,
@@ -201,6 +188,7 @@ class BenchStore:
                     outbound_specimen_type=excluded.outbound_specimen_type,
                     ordering_physician=excluded.ordering_physician,
                     comment=excluded.comment,
+                    validation_warnings_json=excluded.validation_warnings_json,
                     updated_at=excluded.updated_at,
                     last_error=NULL
                 """,
@@ -211,6 +199,7 @@ class BenchStore:
                     source, int(bool(ready)), order.get("external_order_id"),
                     order.get("outbound_specimen_type", ""),
                     order.get("ordering_physician", ""), order.get("comment", ""),
+                    json.dumps(order.get("validation_warnings", []), ensure_ascii=True),
                     now, now,
                 ),
             )
@@ -218,6 +207,13 @@ class BenchStore:
         self.add_event(direction, "order_staged", order["sample_id"],
                        f"Staged {len(order['tests'])} test(s) for exact sample ID {order['sample_id']}"
                        + ("; API order is ready for Selectra" if ready else ""))
+        warnings = order.get("validation_warnings", [])
+        if warnings:
+            self.add_event(
+                direction, "order_staged_with_warnings", order["sample_id"],
+                f"Kept {len(order['tests'])} valid test(s); rejected {len(warnings)} invalid or ambiguous test(s)",
+                json.dumps(warnings, ensure_ascii=True),
+            )
         return self.get_order(order["sample_id"])
 
     def get_order(self, sample_id: str):
@@ -279,6 +275,27 @@ class BenchStore:
             )
         return cursor.rowcount > 0
 
+    def cancel_orders(self, sample_ids: list[str]) -> list[str]:
+        """Cancel active orders together and return the IDs actually removed."""
+        if not sample_ids:
+            return []
+        placeholders = ",".join("?" for _ in sample_ids)
+        with self._session() as connection:
+            rows = connection.execute(
+                f"SELECT sample_id FROM orders WHERE status!='cancelled' AND sample_id IN ({placeholders})",
+                sample_ids,
+            ).fetchall()
+            active = {row["sample_id"] for row in rows}
+            removed = [sample_id for sample_id in sample_ids if sample_id in active]
+            if removed:
+                removed_placeholders = ",".join("?" for _ in removed)
+                connection.execute(
+                    f"UPDATE orders SET status='cancelled', ready=0, updated_at=? "
+                    f"WHERE sample_id IN ({removed_placeholders})",
+                    (utc_now(), *removed),
+                )
+        return removed
+
     def set_order_ready(self, sample_id: str, ready: bool):
         """Arm or disarm one API order without changing its clinical data."""
         with self._session() as connection:
@@ -301,6 +318,25 @@ class BenchStore:
                  utc_now(), sample_id),
             )
         return self.get_order(sample_id)
+
+    def cyanvision_cre_trial_auto_advance_enabled(self) -> bool:
+        with self._session() as connection:
+            row = connection.execute(
+                "SELECT value FROM settings WHERE name='cyanvision_cre_trial_auto_advance'"
+            ).fetchone()
+        return bool(row and row["value"] == "1")
+
+    def set_cyanvision_cre_trial_auto_advance(self, enabled: bool) -> None:
+        with self._session() as connection:
+            connection.execute(
+                """
+                INSERT INTO settings (name, value, updated_at)
+                VALUES ('cyanvision_cre_trial_auto_advance', ?, ?)
+                ON CONFLICT(name) DO UPDATE SET
+                    value=excluded.value, updated_at=excluded.updated_at
+                """,
+                ("1" if enabled else "0", utc_now()),
+            )
 
     def selectra_auto_arm_enabled(self) -> bool:
         with self._session() as connection:
@@ -443,7 +479,9 @@ class BenchStore:
                 """
                 SELECT * FROM cyanvision_orders
                 WHERE ready=1
-                ORDER BY created_at, sample_id
+                ORDER BY created_at,
+                         CASE WHEN source='trial' THEN external_order_id ELSE sample_id END,
+                         sample_id
                 LIMIT ?
                 """,
                 (limit,),
@@ -493,168 +531,6 @@ class BenchStore:
                 """
                 UPDATE cyanvision_orders
                 SET status='cancelled', ready=0, updated_at=?
-                WHERE sample_id=?
-                """,
-                (utc_now(), sample_id),
-            )
-        return cursor.rowcount > 0
-
-    @staticmethod
-    def _xn330_order(row):
-        if row is None:
-            return None
-        value = dict(row)
-        value["tests"] = json.loads(value.pop("tests_json"))
-        value["ready"] = bool(value["ready"])
-        return value
-
-    def upsert_xn330_order(self, order: dict, source="manual", ready=False) -> dict:
-        now = utc_now()
-        with self._session() as connection:
-            connection.execute(
-                """
-                INSERT INTO xn330_orders
-                    (sample_id, patient_id, family_name, given_name, birth_date,
-                     sex, tests_json, status, source, ready, external_order_id,
-                     created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'staged', ?, ?, ?, ?, ?)
-                ON CONFLICT(sample_id) DO UPDATE SET
-                    patient_id=excluded.patient_id,
-                    family_name=excluded.family_name,
-                    given_name=excluded.given_name,
-                    birth_date=excluded.birth_date,
-                    sex=excluded.sex,
-                    tests_json=excluded.tests_json,
-                    status='staged',
-                    source=excluded.source,
-                    ready=excluded.ready,
-                    external_order_id=excluded.external_order_id,
-                    updated_at=excluded.updated_at,
-                    last_error=NULL
-                """,
-                (
-                    order["sample_id"], order["patient_id"], order["family_name"],
-                    order["given_name"], order.get("birth_date", ""), order.get("sex", "U"),
-                    json.dumps(order["tests"], ensure_ascii=True), source, int(bool(ready)),
-                    order.get("external_order_id"), now, now,
-                ),
-            )
-        self.add_event(
-            "api" if source == "api" else "local", "xn330_order_staged", order["sample_id"],
-            f"Staged {len(order['tests'])} XN-330 parameter(s) for exact sample ID {order['sample_id']}; awaiting manual arm",
-        )
-        return self.get_xn330_order(order["sample_id"])
-
-    def get_xn330_order(self, sample_id: str):
-        with self._session() as connection:
-            row = connection.execute(
-                "SELECT * FROM xn330_orders WHERE sample_id=?", (sample_id,),
-            ).fetchone()
-        return self._xn330_order(row)
-
-    def list_xn330_orders(self, limit=100):
-        with self._session() as connection:
-            rows = connection.execute(
-                "SELECT * FROM xn330_orders ORDER BY updated_at DESC LIMIT ?", (limit,),
-            ).fetchall()
-        return [self._xn330_order(row) for row in rows]
-
-    def list_ready_xn330_orders(self, limit=100):
-        with self._session() as connection:
-            rows = connection.execute(
-                """
-                SELECT * FROM xn330_orders
-                WHERE ready=1 AND status IN ('staged', 'queried', 'error')
-                ORDER BY updated_at ASC LIMIT ?
-                """,
-                (limit,),
-            ).fetchall()
-        return [self._xn330_order(row) for row in rows]
-
-    def set_xn330_order_ready(self, sample_id: str, ready: bool):
-        with self._session() as connection:
-            row = connection.execute(
-                "SELECT status FROM xn330_orders WHERE sample_id=?", (sample_id,),
-            ).fetchone()
-            if row is None:
-                return None
-            if ready and row["status"] not in {"staged", "queried", "error"}:
-                raise ValueError(f"an XN-330 order in state {row['status']} cannot be armed")
-            connection.execute(
-                """
-                UPDATE xn330_orders
-                SET ready=?, status=?, updated_at=?, last_error=NULL
-                WHERE sample_id=?
-                """,
-                (int(bool(ready)), "staged" if ready else row["status"], utc_now(), sample_id),
-            )
-        return self.get_xn330_order(sample_id)
-
-    def mark_xn330_query(self, sample_id: str):
-        now = utc_now()
-        with self._session() as connection:
-            connection.execute(
-                """
-                UPDATE xn330_orders
-                SET status='queried', query_count=query_count+1,
-                    last_query_at=?, updated_at=? WHERE sample_id=?
-                """,
-                (now, now, sample_id),
-            )
-
-    def mark_xn330_delivered(self, sample_id: str):
-        now = utc_now()
-        with self._session() as connection:
-            connection.execute(
-                """
-                UPDATE xn330_orders
-                SET status='transport_acknowledged', ready=0,
-                    last_delivery_at=?, updated_at=?, last_error=NULL
-                WHERE sample_id=?
-                """,
-                (now, now, sample_id),
-            )
-
-    def has_recent_xn330_delivery(self, within_seconds: int = 120) -> bool:
-        """True if any XN-330 order was transport-acknowledged recently.
-
-        Unlike Selectra, the XN-330 order-download reply shape has not been
-        observed on real hardware yet - we don't know whether it reports an
-        application-level rejection the way Selectra's O-26=X does, or in
-        what record shape. Scoping the "capture everything unrecognized"
-        logging to a short window after a real delivery (rather than always
-        logging every non-query batch) avoids flooding the trace with
-        ordinary XN-330 patient-result uploads during normal operation,
-        while still catching whatever a real analyzer reply looks like.
-        """
-        with self._session() as connection:
-            row = connection.execute(
-                "SELECT last_delivery_at FROM xn330_orders WHERE last_delivery_at IS NOT NULL "
-                "ORDER BY last_delivery_at DESC LIMIT 1"
-            ).fetchone()
-        if row is None or row["last_delivery_at"] is None:
-            return False
-        try:
-            delivered_at = datetime.fromisoformat(row["last_delivery_at"].replace("Z", "+00:00"))
-        except ValueError:
-            return False
-        return (datetime.now(timezone.utc) - delivered_at).total_seconds() <= within_seconds
-
-    def mark_xn330_error(self, sample_id: str, message: str):
-        with self._session() as connection:
-            connection.execute(
-                """
-                UPDATE xn330_orders SET status='error', last_error=?, updated_at=?
-                WHERE sample_id=?
-                """,
-                (message, utc_now(), sample_id),
-            )
-
-    def cancel_xn330_order(self, sample_id: str) -> bool:
-        with self._session() as connection:
-            cursor = connection.execute(
-                """
-                UPDATE xn330_orders SET status='cancelled', ready=0, updated_at=?
                 WHERE sample_id=?
                 """,
                 (utc_now(), sample_id),
