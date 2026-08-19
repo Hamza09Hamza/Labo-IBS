@@ -39,6 +39,53 @@ class QueryRecorder:
 
 
 class ReceivingMergeCase(unittest.TestCase):
+    @patch.object(server.pg, "write_matched_result", return_value=True)
+    @patch.object(server.pg, "write_sample", return_value=True)
+    @patch.object(server, "_write_session_file")
+    @patch.object(server, "_flush_api_batch")
+    def test_blank_calibration_batch_does_not_suppress_later_batches(
+        self, _flush, _write_file, _write_sample, write_matched_result,
+    ):
+        """A BLANK/calibration batch must not silently kill every result
+        that follows it on the SAME connection.
+
+        Real data loss, 2026-08-19: a "O|1||BLANK|..." order set
+        is_calibration=True, which survived the ENQ..EOT batch boundary, so
+        sample 2608055103's SGPT=222 (and BILI TOTAL/DIRECT, and another
+        patient's Uree) were all dropped by "if self.is_calibration: return"
+        with no exception and no log line. These are the exact bytes.
+        """
+        blank_batch = (
+            b"\x05"
+            + astm.build_frame(1,
+                "H|\\^&|||PROM^4.3.13||||1.5|WINLAB||P|LIS2-A|20260819105643\r"
+                "P|1\r"
+                "O|1||BLANK||R||||||||||||||||||||F\r"
+                "R|1|^^^SGPT^SGPT|-0.0001|U/l||^a||F||||20260819105643\r"
+                "L|1|F")
+            + b"\x04"
+        )
+        real_batch = (
+            b"\x05"
+            + astm.build_frame(1,
+                "H|\\^&|||PROM^4.3.13||||1.5|WINLAB||P|LIS2-A|20260819105737\r"
+                "P|1||||BOUCHERIT KAMEL||19820106|F\r"
+                "O|1|2608055103|||R||||||||||Normal||||||||||I\r"
+                "R|1|^^^SGPT^SGPT|222|U/l||^a||F||||20260819105737\r"
+                "L|1|F")
+            + b"\x04"
+        )
+
+        conn = FakeAstmConnection(blank_batch + real_batch)
+        server._handle_astm(conn, ("172.16.2.254", 50000),
+                            server.MACHINES["selectra"], "selectra", quiet=True)
+
+        written = [c.args[3] for c in write_matched_result.call_args_list]
+        self.assertIn("SGPT", written,
+                      "SGPT=222 after a BLANK batch was silently dropped")
+        sample_ids = [c.args[1] for c in write_matched_result.call_args_list]
+        self.assertIn("2608055103", sample_ids)
+
     @patch.object(server.pg, "write_sample")
     def test_cyanvision_prefers_pid_patient_id_as_sample_id(self, write_sample):
         session = server._Session("cyanvision", "10.10.12.52", quiet=True)

@@ -527,11 +527,36 @@ def _handle_astm(conn, addr, cfg, machine, quiet):
                 if machine == "selectra" and _selectra_host_query_service is not None:
                     _selectra_host_query_service.handle_records(conn, batch_records)
                 # A single connection can carry multiple ENQ..EOT batches -
-                # reset per-batch accumulators so each file reflects only
-                # its own batch, not every batch seen on this connection.
+                # reset per-batch state so each batch is independent of
+                # every other batch seen on this connection.
+                #
+                # CRITICAL (two real data-loss incidents, 2026-08-19):
+                # is_calibration/sample_id/patient were NOT reset here, only
+                # the three accumulators below. A calibration or BLANK order
+                # ("O|1||BLANK|..." -> decoder returns kind="calibration")
+                # set is_calibration=True, and because that flag survived the
+                # batch boundary, EVERY subsequent result on the same
+                # connection hit "if self.is_calibration: return" in
+                # _dispatch_event and was silently discarded - no exception,
+                # no log line, empty "Parsed results".
+                #
+                # That is exactly what destroyed sample 2608055103's
+                # SGPT=222, BILI TOTAL BIO=8.07 and BILI DIRECT BIO=3.97
+                # (10:49:15-10:49:42, right after a BLANK order at 10:48:41),
+                # and sample 2608054303's SGOT=10 in the earlier incident.
+                # A stale sample_id also leaked across batches via
+                # "self.sample_id = order_sample_id or self.sample_id",
+                # which is why one session file was headed with Boucherit's
+                # 2608055103 while the record inside it was Dahmani's
+                # 2608055203 - the mismatch that exposed this bug.
                 session.raw_bytes = b""
                 session.raw_lines = []
                 session.parsed_lines = []
+                session.is_calibration = False
+                session.sample_id = None
+                session.patient_name = ""
+                session.patient_id = ""
+                session.specimen = {}
                 if not quiet:
                     print(f"[{machine}] batch complete ({session.result_count} results written)")
             elif b0 == astm.STX:
