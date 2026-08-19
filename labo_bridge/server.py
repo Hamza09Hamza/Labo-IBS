@@ -159,6 +159,25 @@ def _ingest_result(session, sample_id, rec):
     """
     machine, quiet = session.machine, session.quiet
 
+    # Unconditional arrival marker, before ANY skip/match/write logic below.
+    # Two real incidents (2026-08-19: sample 2608054303's SGOT=10, then
+    # sample 2608055103's SGPT=222 plus BILI TOTAL/DIRECT in the same
+    # ~30s window) produced session files with a COMPLETELY EMPTY "Parsed
+    # results" section - no match line, no skip line, no pending line -
+    # while the raw bytes in the same file showed the R record arrived
+    # intact and decoded correctly when replayed offline. The exception
+    # guard added for the first incident stayed empty for the second, so
+    # nothing was raising. This line makes the next occurrence
+    # unambiguous: if it IS present, the record reached ingestion and the
+    # loss happened further down (matching/write/API); if it is ABSENT,
+    # the record never reached _ingest_result at all and the problem is
+    # upstream in framing/dispatch. Cheap (one line per result) and worth
+    # keeping until this is understood.
+    session.parsed_lines.append(
+        f"INGEST start   sample={sample_id!r:14} test={rec.get('test_code',''):10s} "
+        f"value={rec.get('value',''):>10s} status={rec.get('status','')!r}"
+    )
+
     # ASTM's result-status field (R record's 8th field) marks "R" = repeat/
     # retransmission of an already-reported result - e.g. re-sending the same
     # patient's result a second time, whether deliberately (operator re-runs
@@ -480,8 +499,15 @@ def _handle_astm(conn, addr, cfg, machine, quiet):
         try:
             data = conn.recv(4096)
         except socket.timeout:
+            # Recorded (not silently swallowed) so a session file shows WHY
+            # it ended - see the empty-"Parsed results" incidents noted in
+            # _ingest_result's arrival marker.
+            session.parsed_lines.append(
+                f"CONNECTION ended: idle timeout after "
+                f"{CONNECTION_IDLE_TIMEOUT_SECONDS}s with no data")
             break
-        except (ConnectionResetError, OSError):
+        except (ConnectionResetError, OSError) as exc:
+            session.parsed_lines.append(f"CONNECTION ended: {type(exc).__name__}: {exc}")
             break
         if not data:
             break
