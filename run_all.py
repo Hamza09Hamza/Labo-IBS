@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
 Start EVERYTHING in one process: all analyzer listeners (each on its own
-port), the admin web console at http://127.0.0.1:5050, and the analyzer order
-console at http://127.0.0.1:5052. This is the one command to run.
+port), the admin web console at http://127.0.0.1:5050, the analyzer order
+console at http://127.0.0.1:5052, and the OperationBloc Bridge (operating
+block patient monitors + anesthesia machines) at http://127.0.0.1:5051. This
+is the one command to run.
 
 Ports (see labo_bridge/server.py MACHINES for the source of truth):
     xn330      -> 6001
@@ -13,12 +15,19 @@ Ports (see labo_bridge/server.py MACHINES for the source of truth):
     minividas  -> 6006
     admin UI   -> http://127.0.0.1:5050
     Selectra + CYANVision order UI -> http://127.0.0.1:5052
+    OperationBloc Bridge (clinical_portal) -> http://127.0.0.1:5051
+
+OperationBloc Bridge only starts real device collectors for machines enabled
+in clinical_portal/config.json - it never runs demo/fake data here. Its 10s
+readings history (latest value plus that window's mean/min/max/count) is
+saved continuously to clinical_portal/data/history.db. If its configuration
+cannot be loaded, everything else in this process still starts normally.
 
 Every line printed is prefixed with the machine name, and every result
 actually written to the local database (labo_bridge.db) is printed alongside
 whether it was matched to a clinic labo_param or left pending for review.
 
-Ctrl+C stops the listeners and both web interfaces together.
+Ctrl+C stops the listeners and every web interface together.
 """
 import threading
 import os
@@ -30,6 +39,10 @@ from selectra_host_query.order_api_auth import load_or_create_order_api_token
 from selectra_host_query.server import SelectraHostQueryServer
 from selectra_host_query.store import BenchStore
 from cyanvision_worklist.service import CyanVisionWorklistService
+from clinical_portal.app import app as clinical_app
+from clinical_portal.history import recorder as clinical_history_recorder
+from clinical_portal.store import store as clinical_store
+import run_clinical
 
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -77,6 +90,51 @@ def _run_selectra_query_ui():
     )
 
 
+def _start_clinical_portal(stop_event):
+    """Start the OperationBloc Bridge (doctor portal + device collectors + history)
+    alongside the lab bridge, sharing this same process. Real device collectors
+    only start for machines enabled in clinical_portal/config.json - never demo
+    data. Returns the list of started CollectorSupervisor instances, or [] if
+    the clinical configuration could not be loaded.
+    """
+    try:
+        clinical_config = run_clinical._load_config(run_clinical.DEFAULT_CONFIG)
+    except (OSError, ValueError) as exc:
+        print(f"[clinical] OperationBloc Bridge disabled: {exc}")
+        return []
+
+    clinical_store.set_demo_mode(False)
+    web = clinical_config.get("web") or {}
+    host = str(web.get("host", "0.0.0.0"))
+    port = int(web.get("port", 5051))
+
+    web_thread = threading.Thread(
+        target=lambda: clinical_app.run(
+            host=host, port=port, debug=False, use_reloader=False, threaded=True,
+        ),
+        name="clinical-web", daemon=True,
+    )
+    web_thread.start()
+
+    history_thread = threading.Thread(
+        target=clinical_history_recorder.run_loop, args=(stop_event,),
+        name="clinical-history", daemon=True,
+    )
+    history_thread.start()
+
+    supervisors = [
+        run_clinical.CollectorSupervisor(label, command, stop_event)
+        for label, command in run_clinical._collector_commands(clinical_config)
+    ]
+    for supervisor in supervisors:
+        supervisor.start()
+
+    print(f"[clinical] OperationBloc Bridge running at http://127.0.0.1:{port}")
+    print(f"[clinical] {len(supervisors)} device collector(s) enabled; "
+          f"10s history snapshots are being saved to clinical_portal/data/history.db\n")
+    return supervisors
+
+
 if __name__ == "__main__":
     admin_thread = threading.Thread(target=_run_admin, name="admin-ui", daemon=True)
     admin_thread.start()
@@ -93,4 +151,14 @@ if __name__ == "__main__":
     print("[orders-api] ENABLED for Selectra and CYANVision orders.")
     print(f"[orders-api] The private token is stored locally at {ORDER_API_TOKEN_PATH}.\n")
 
-    server.run_all()
+    clinical_stop_event = threading.Event()
+    clinical_supervisors = _start_clinical_portal(clinical_stop_event)
+
+    try:
+        server.run_all()
+    finally:
+        clinical_stop_event.set()
+        for supervisor in clinical_supervisors:
+            supervisor.stop()
+        for supervisor in clinical_supervisors:
+            supervisor.thread.join(timeout=4)

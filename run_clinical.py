@@ -21,6 +21,7 @@ import time
 
 from clinical_portal.app import app
 from clinical_portal.demo import run_demo
+from clinical_portal.history import recorder
 from clinical_portal.store import store
 
 
@@ -192,6 +193,11 @@ def main():
     )
     web_thread.start()
 
+    history_thread = threading.Thread(
+        target=recorder.run_loop, args=(stop_event,), name="clinical-history", daemon=True,
+    )
+    history_thread.start()
+
     print("\nOperationBloc Bridge started")
     if args.demo:
         print("MODE: SIMULATED DATA — real device collectors are disabled")
@@ -217,6 +223,7 @@ def main():
             supervisor.thread.join(timeout=4)
         if demo_thread is not None:
             demo_thread.join(timeout=3)
+        history_thread.join(timeout=3)
         print("Stopped.")
 
 

@@ -2,11 +2,14 @@
 
 import logging
 import os
+import socket
+import time
 
 from flask import Flask, jsonify, request, send_from_directory
 
 from clinical_portal.configuration import public_config, update_machine
-from clinical_portal.store import WINDOWS, store
+from clinical_portal.history import recorder
+from clinical_portal.store import SOURCES, WINDOWS, store
 
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -110,6 +113,120 @@ def chamber(chamber_id):
         return jsonify(_configured_snapshot(store.chamber(chamber_id, window)))
     except KeyError:
         return jsonify({"error": "unknown chamber"}), 404
+
+
+UMEC12_PDS_PORT = 4601
+
+
+def _resolve_machine(block_id, source_name):
+    """Look up a machine by block ID and machine name (e.g. "umec12", "WATO").
+
+    Raises ValueError with a caller-facing message if either is unknown.
+    """
+    source = str(source_name or "").strip().lower()
+    if source not in SOURCES:
+        raise ValueError(f"unknown machine name '{source_name}'; use one of {sorted(SOURCES)}")
+    configuration = public_config()
+    block = next((item for item in configuration["blocks"] if item["id"] == block_id), None)
+    if block is None:
+        raise ValueError("unknown operation block")
+    return block, block["machines"][source]
+
+
+@app.route("/api/machines/<int:block_id>/<source>")
+def machine_latest(block_id, source):
+    """Latest reading name/value/unit for one machine, by block ID and machine name."""
+    try:
+        block, machine = _resolve_machine(block_id, source)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404
+    try:
+        chamber_snapshot = store.chamber(block_id, 10)
+    except KeyError:
+        return jsonify({"error": "unknown operation block"}), 404
+    device = next((item for item in chamber_snapshot["devices"] if item["source"] == source), None)
+    readings = [
+        {"name": parameter["label"], "value": parameter["latest"], "unit": parameter["unit"]}
+        for parameter in (device["parameters"] if device else [])
+    ]
+    return jsonify({
+        "block_id": block_id,
+        "block_name": block["name"],
+        "source": source,
+        "machine_name": machine["label"],
+        "state": device["state"] if device else "offline",
+        "last_seen": device["last_seen"] if device else None,
+        "readings": readings,
+    })
+
+
+@app.route("/api/machines/<int:block_id>/<source>/history")
+def machine_history(block_id, source):
+    try:
+        _resolve_machine(block_id, source)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404
+    try:
+        limit = int(request.args.get("limit", "100"))
+    except ValueError:
+        return jsonify({"error": "limit must be a number"}), 400
+    limit = max(1, min(limit, 1000))
+    code = request.args.get("code") or None
+    rows = recorder.recent(block_id, source, code, limit)
+    return jsonify({"block_id": block_id, "source": source, "rows": rows})
+
+
+def _tcp_ping(ip, port, timeout=2.0):
+    started = time.monotonic()
+    try:
+        with socket.create_connection((ip, port), timeout=timeout):
+            pass
+        return True, round((time.monotonic() - started) * 1000, 1), None
+    except OSError as exc:
+        return False, None, str(exc)
+
+
+@app.route("/api/machines/<int:block_id>/<source>/ping", methods=["POST"])
+def machine_ping(block_id, source):
+    try:
+        block, machine = _resolve_machine(block_id, source)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404
+
+    base = {
+        "block_id": block_id,
+        "block_name": block["name"],
+        "source": source,
+        "machine_name": machine["label"],
+    }
+    if source == "umec12":
+        ip = machine["ip"]
+        if not ip:
+            return jsonify({**base, "pingable": False, "reason": "no monitor IP configured"}), 400
+        ok, latency_ms, error = _tcp_ping(ip, UMEC12_PDS_PORT)
+        return jsonify({
+            **base, "pingable": True, "ok": ok, "ip": ip, "port": UMEC12_PDS_PORT,
+            "latency_ms": latency_ms, "error": error,
+        })
+    # WATO only connects outbound to us (it's an HL7 listener on our side);
+    # we never learn the machine's own IP, so there is nothing to dial. The
+    # closest honest signal is whether it has actually been talking to us.
+    try:
+        chamber_snapshot = store.chamber(block_id, 10)
+    except KeyError:
+        chamber_snapshot = None
+    device = next(
+        (item for item in (chamber_snapshot["devices"] if chamber_snapshot else [])
+         if item["source"] == source),
+        None,
+    )
+    return jsonify({
+        **base, "pingable": False,
+        "reason": "WATO is a listener; the bridge cannot dial out to it. "
+                  "Reporting its last known connection state instead.",
+        "device_state": device["state"] if device else "offline",
+        "last_seen": device["last_seen"] if device else None,
+    })
 
 
 @app.route("/api/chambers/<int:chamber_id>/readings", methods=["POST"])
