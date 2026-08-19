@@ -101,8 +101,10 @@ def _source_public(block: dict, source: str, block_id: int) -> dict:
         port = int(raw.get("listen_port", defaults["default_port"] + block_id - 1))
         ip_address = str(raw.get("destination_ip") or "")
         local_port = None
+    default_machine_id = f"{source.upper()}-{block_id:02d}"
     return {
         "source": source,
+        "machine_id": str(raw.get("machine_id") or default_machine_id),
         "label": str(raw.get("label") or defaults["label"]),
         "kind": str(raw.get("kind") or defaults["kind"]),
         "enabled": bool(raw.get("enabled", False)),
@@ -201,6 +203,24 @@ def update_machine(block_id: int, source: str, fields, photo_file=None) -> dict:
             if not (len(color) == 7 and color.startswith("#") and all(c in "0123456789abcdefABCDEF" for c in color[1:])):
                 raise ValueError("accent color must be a six-digit hex color")
             block["color"] = color
+
+        if "machine_id" in fields:
+            machine_id = str(fields.get("machine_id") or "").strip()
+            if not machine_id:
+                raise ValueError("machine ID cannot be empty")
+            if len(machine_id) > 40 or not all(c.isalnum() or c in "-_" for c in machine_id):
+                raise ValueError("machine ID must be 40 characters or fewer, using only letters, digits, - or _")
+            for other_block in config.get("chambers") or []:
+                for other_source in SOURCE_DEFAULTS:
+                    if int(other_block.get("id", 0)) == block_id and other_source == source:
+                        continue
+                    other_machine = other_block.get(other_source) or {}
+                    if str(other_machine.get("machine_id") or "") == machine_id:
+                        raise ValueError(
+                            f"machine ID '{machine_id}' is already assigned to "
+                            f"{other_block.get('name') or 'another block'} / {other_source}"
+                        )
+            machine["machine_id"] = machine_id
 
         if "label" in fields:
             label = str(fields.get("label") or "").strip()

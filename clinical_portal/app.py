@@ -140,6 +140,7 @@ def machine_latest(block_id, source):
         block, machine = _resolve_machine(block_id, source)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 404
+    source = machine["source"]
     try:
         chamber_snapshot = store.chamber(block_id, 10)
     except KeyError:
@@ -153,6 +154,7 @@ def machine_latest(block_id, source):
         "block_id": block_id,
         "block_name": block["name"],
         "source": source,
+        "machine_id": machine["machine_id"],
         "machine_name": machine["label"],
         "state": device["state"] if device else "offline",
         "last_seen": device["last_seen"] if device else None,
@@ -163,9 +165,10 @@ def machine_latest(block_id, source):
 @app.route("/api/machines/<int:block_id>/<source>/history")
 def machine_history(block_id, source):
     try:
-        _resolve_machine(block_id, source)
+        _block, machine = _resolve_machine(block_id, source)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 404
+    source = machine["source"]
     try:
         limit = int(request.args.get("limit", "100"))
     except ValueError:
@@ -173,7 +176,25 @@ def machine_history(block_id, source):
     limit = max(1, min(limit, 1000))
     code = request.args.get("code") or None
     rows = recorder.recent(block_id, source, code, limit)
-    return jsonify({"block_id": block_id, "source": source, "rows": rows})
+    return jsonify({
+        "block_id": block_id, "source": source, "machine_id": machine["machine_id"], "rows": rows,
+    })
+
+
+@app.route("/api/machines/by-id/<machine_id>/history")
+def machine_history_by_id(machine_id):
+    """History for one physical device across its whole lifetime, including
+    any block it was moved to - use this instead of the block-scoped history
+    endpoint when a machine may have been physically swapped between blocks.
+    """
+    try:
+        limit = int(request.args.get("limit", "100"))
+    except ValueError:
+        return jsonify({"error": "limit must be a number"}), 400
+    limit = max(1, min(limit, 1000))
+    code = request.args.get("code") or None
+    rows = recorder.recent_by_machine_id(machine_id, code, limit)
+    return jsonify({"machine_id": machine_id, "rows": rows})
 
 
 def _tcp_ping(ip, port, timeout=2.0):
@@ -192,11 +213,13 @@ def machine_ping(block_id, source):
         block, machine = _resolve_machine(block_id, source)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 404
+    source = machine["source"]
 
     base = {
         "block_id": block_id,
         "block_name": block["name"],
         "source": source,
+        "machine_id": machine["machine_id"],
         "machine_name": machine["label"],
     }
     if source == "umec12":
