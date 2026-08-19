@@ -19,6 +19,7 @@ import os
 import re
 import socket
 import threading
+import traceback
 from datetime import datetime
 
 from .protocols import astm, hl7_mllp
@@ -41,6 +42,35 @@ CONNECTION_IDLE_TIMEOUT_SECONDS = 90
 # actually carries a value a decoder is reading from the wrong place)
 # instead of relying on live terminal output nobody captured.
 RESULTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, "results"))
+
+# Durable, file-based record of any exception raised while ingesting a
+# result - added after a real incident (2026-08-19, Selectra sample
+# 2608054303): an SGOT rerun (value 10, correct sample ID, correct patient,
+# status F, no REJECT marker) never appeared in labo_bridge_results,
+# pending_params, or the clinic API log - it simply vanished between decode
+# and persistence, and no console/NSSM log was available afterward to show
+# why. _ingest_result's own write calls already catch their own exceptions
+# internally (pg.py's broad except blocks) and return False rather than
+# raise, so this specifically guards the ONE thing that couldn't be ruled
+# out from static reading alone: an unexpected exception somewhere in
+# _ingest_result's own logic (not the DB write itself) that would otherwise
+# be swallowed by _serve_one_machine's outer except Exception - which logs
+# only to a console nobody may be watching and drops the rest of that
+# connection's processing silently. Never assume this file is unused just
+# because it's usually empty; check it first when a result is missing with
+# no other explanation.
+INGEST_ERROR_LOG = os.path.join(RESULTS_DIR, "ingest_errors.log")
+
+
+def _log_ingest_error(machine, sample_id, rec, exc):
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    with open(INGEST_ERROR_LOG, "a", encoding="utf-8") as f:
+        f.write(f"=== {datetime.now().isoformat()} ===\n")
+        f.write(f"machine={machine!r} sample_id={sample_id!r} rec={rec!r}\n")
+        f.write("".join(traceback.format_exception(type(exc), exc, exc.__traceback__)))
+        f.write("\n")
+    print(f"[{machine}] ERROR ingesting result for sample={sample_id!r}: {exc} "
+          f"(full traceback in {INGEST_ERROR_LOG})")
 
 # Optional Selectra Host Query service installed by run_all.py.  It shares
 # the production Selectra socket on port 6003; it never opens a second
@@ -349,6 +379,24 @@ class _Session:
         self.is_calibration = False
 
     def handle_event(self, ev):
+        # An uncaught exception anywhere in _dispatch_event (header/patient/
+        # order/result handling, or any pg.py write not already guarded
+        # internally) would otherwise propagate out of this call, abort the
+        # frame-processing loop in _handle_astm mid-batch, and silently
+        # drop every record still queued after it in the SAME frame or
+        # batch - with only a console print (which may not be watched) as
+        # the only trace. This is the one failure mode that could explain a
+        # real incident (2026-08-19, sample 2608054303) where an SGOT rerun
+        # arriving as R after H/P/O in one frame never reached
+        # _ingest_result at all, despite the raw bytes (captured
+        # unconditionally, before this call) showing it arrived intact. See
+        # INGEST_ERROR_LOG's docstring for the full incident writeup.
+        try:
+            self._dispatch_event(ev)
+        except Exception as exc:
+            _log_ingest_error(self.machine, self.sample_id, ev, exc)
+
+    def _dispatch_event(self, ev):
         kind = ev.get("kind")
         if ev.get("raw"):
             self.raw_lines.append(ev["raw"])
