@@ -165,7 +165,7 @@ def send_batch(machine: str, queued: list) -> list:
     outcomes = [{"sample_id": e["sample_id"], "test_code": e["test_code"],
                 "param_id": e.get("param_id"),
                 "service_tarification_id": e.get("service_tarification_id"),
-                "api_sent": False, "api_result_id": None} for e in queued]
+                "api_sent": False, "api_result_id": None, "reason": None} for e in queued]
 
     def target_label(entry):
         pid, sid = entry.get("param_id"), entry.get("service_tarification_id")
@@ -208,6 +208,7 @@ def send_batch(machine: str, queued: list) -> list:
                           f"target={target_label(entry)} -> SENT id={r.get('laboResultId')}")
             else:
                 _print(f"[api] << REJECTED {label}: {r.get('message', r)}")
+                outcome["reason"] = str(r.get("message", r))
                 _log_line(f"machine={machine} sample={entry['sample_id']} test={entry['test_code']} "
                           f"target={target_label(entry)} -> REJECTED: {r.get('message', r)}")
         return outcomes
@@ -215,7 +216,8 @@ def send_batch(machine: str, queued: list) -> list:
     if result["ok"]:
         _print(f"[api] << batch response: {body}")
     reason = result.get("error") or (str(body) if body else "no response body")
-    for entry in queued:
+    for entry, outcome in zip(queued, outcomes):
+        outcome["reason"] = reason
         _log_line(f"machine={machine} sample={entry['sample_id']} test={entry['test_code']} "
                   f"target={target_label(entry)} -> FAILED: {reason} (status={result['status']})")
     return outcomes

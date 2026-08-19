@@ -290,6 +290,18 @@ def _flush_api_batch(session):
     written by _ingest_result before queueing) with whether the clinic API
     actually accepted each one - purely local bookkeeping so the admin UI
     can show it; does not affect or delay the send itself.
+
+    Also records the REAL outcome (sent/rejected/failed, with the clinic
+    API's own reason when it rejected something) into session.parsed_lines,
+    which _write_session_file dumps to results/<machine>_<sample>_<ts>.txt.
+    Before this, _ingest_result's own line only ever said "[queued for
+    batched clinic API send]" - true at match time, but never updated with
+    what actually happened once the send completed a moment later. A
+    session file could show every result as "queued" even if the clinic API
+    silently rejected one, with nothing in the file itself to tell the two
+    apart - exactly the gap that made a real incident (2026-08-19, sample
+    2608054303's missing SGOT) impossible to diagnose from the .txt file
+    alone.
     """
     if session.api_batch:
         outcomes = api_client.send_batch(session.machine, session.api_batch)
@@ -298,6 +310,15 @@ def _flush_api_batch(session):
                 pg.mark_api_sent(session.machine, o["sample_id"], o["test_code"],
                                  o["api_result_id"], param_id=o.get("param_id"),
                                  service_tarification_id=o.get("service_tarification_id"))
+                session.parsed_lines.append(
+                    f"CLINIC API result  sample={o['sample_id']!r:14} test={o['test_code']:10s} "
+                    f"-> SENT (labo_result_id={o['api_result_id']})"
+                )
+            else:
+                session.parsed_lines.append(
+                    f"CLINIC API result  sample={o['sample_id']!r:14} test={o['test_code']:10s} "
+                    f"-> NOT SENT: {o.get('reason') or 'no reason returned'}"
+                )
         session.api_batch = []
 
 
