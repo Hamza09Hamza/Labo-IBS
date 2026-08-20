@@ -63,14 +63,22 @@ INGEST_ERROR_LOG = os.path.join(RESULTS_DIR, "ingest_errors.log")
 
 
 def _log_ingest_error(machine, sample_id, rec, exc):
-    os.makedirs(RESULTS_DIR, exist_ok=True)
-    with open(INGEST_ERROR_LOG, "a", encoding="utf-8") as f:
-        f.write(f"=== {datetime.now().isoformat()} ===\n")
-        f.write(f"machine={machine!r} sample_id={sample_id!r} rec={rec!r}\n")
-        f.write("".join(traceback.format_exception(type(exc), exc, exc.__traceback__)))
-        f.write("\n")
-    print(f"[{machine}] ERROR ingesting result for sample={sample_id!r}: {exc} "
-          f"(full traceback in {INGEST_ERROR_LOG})")
+    # Never let the error-logging path itself become a silent-failure point
+    # (e.g. results/ is missing, unwritable, or on a drive that changed
+    # after a manual cleanup) - if the file write fails, still print the
+    # real exception to the console instead of losing it entirely.
+    try:
+        os.makedirs(RESULTS_DIR, exist_ok=True)
+        with open(INGEST_ERROR_LOG, "a", encoding="utf-8") as f:
+            f.write(f"=== {datetime.now().isoformat()} ===\n")
+            f.write(f"machine={machine!r} sample_id={sample_id!r} rec={rec!r}\n")
+            f.write("".join(traceback.format_exception(type(exc), exc, exc.__traceback__)))
+            f.write("\n")
+        print(f"[{machine}] ERROR ingesting result for sample={sample_id!r}: {exc} "
+              f"(full traceback in {INGEST_ERROR_LOG})")
+    except Exception as log_exc:
+        print(f"[{machine}] ERROR ingesting result for sample={sample_id!r}: {exc} "
+              f"(ALSO could not write {INGEST_ERROR_LOG}: {log_exc})")
 
 # Optional Selectra Host Query service installed by run_all.py.  It shares
 # the production Selectra socket on port 6003; it never opens a second
@@ -342,6 +350,27 @@ def _flush_api_batch(session):
 
 
 def _write_session_file(session):
+    """
+    Thin guard around _write_session_file_unsafe: this write must NEVER be
+    able to take down the rest of a connection's processing. It previously
+    ran with no exception handling at any of its 4 call sites, all inside
+    _handle_astm/_handle_hl7's main loop - a single failure here (missing
+    results/ directory, a permissions/disk issue, anything) would propagate
+    out uncaught, get swallowed by _serve_one_machine's outer except
+    Exception, and silently end that connection with zero trace: no
+    exception log, no session file, nothing. That is a real, previously
+    unguarded gap in the exact code path a real incident (2026-08-19) was
+    already found in once (see INGEST_ERROR_LOG's docstring) - this closes
+    the other half of it.
+    """
+    try:
+        _write_session_file_unsafe(session)
+    except Exception as exc:
+        _log_ingest_error(session.machine, session.sample_id,
+                          {"stage": "write_session_file"}, exc)
+
+
+def _write_session_file_unsafe(session):
     """
     Disabled on deployed/production servers for every machine except
     CyanVision and Selectra while their wire formats are being audited:
