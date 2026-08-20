@@ -317,6 +317,7 @@ async function stageCyanvision(event) {
     family_name: $("#cyanFamilyName").value.trim(),
     birth_date: $("#cyanBirthDate").value,
     sex: $("#cyanSex").value,
+    dsp7: $("#cyanDsp7").value.trim(),
     test_code: $("#cyanTestCode").value.trim(),
     confirmation: "ARM CYANVISION WORKLIST",
   };
