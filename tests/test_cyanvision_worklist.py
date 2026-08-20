@@ -71,11 +71,35 @@ class CyanVisionWorklistCase(unittest.TestCase):
                 "DSP|5||F|||",
                 "DSP|6||19800615000000|||",
                 "DSP|7||1|||",
-                "DSP|8||11|||",
+                "DSP|8||CRE|||",
             ],
         )
         self.assertEqual(records[-1], "DSC||")
         self.assertEqual(unframe(protocol.frame(records)), records)
+
+    def test_dsp7_defaults_to_one_but_is_overridable_for_a_field_trial(self):
+        default_records = protocol.build_dsr(ORDER, QUERY, "DSR-1", "QUERY-1")
+        self.assertIn("DSP|7||1|||", default_records)
+
+        overridden = protocol.build_dsr({**ORDER, "dsp7": "2"}, QUERY, "DSR-2", "QUERY-1")
+        self.assertIn("DSP|7||2|||", overridden)
+        self.assertIn("DSP|8||CRE|||", overridden)
+
+    def test_web_api_stages_a_dsp7_override_for_a_controlled_trial(self):
+        selectra = SelectraHostQueryServer(self.store, armed=False, embedded=True)
+        client = create_app(self.store, selectra, self.service).test_client()
+        staged = client.post(
+            "/api/cyanvision/worklist",
+            json={**ORDER, "test_code": "GPT", "dsp7": "2", "confirmation": "ARM CYANVISION WORKLIST"},
+        )
+        self.assertEqual(staged.status_code, 201)
+        self.assertEqual(self.store.get_cyanvision_order(ORDER["sample_id"])["dsp7"], "2")
+
+        connection = FakeConnection()
+        self.service.handle_message(connection, QUERY)
+        sent = unframe(connection.sent[0])
+        self.assertIn("DSP|7||2|||", sent)
+        self.assertIn("DSP|8||GPT|||", sent)
 
     def test_one_order_disarms_after_positive_ack(self):
         self.service.stage_and_arm(ORDER)
@@ -173,7 +197,7 @@ class CyanVisionWorklistCase(unittest.TestCase):
         self.assertEqual(records[-1], "DSC||")
 
     def test_legacy_order_without_program_id_is_rejected_not_sent(self):
-        legacy = {**ORDER, "sample_id": "CYAN-LEGACY-01", "test_code": "GPT"}
+        legacy = {**ORDER, "sample_id": "CYAN-LEGACY-01", "test_code": "UA"}
         self.store.upsert_cyanvision_order(legacy, source="api", ready=True)
         connection = FakeConnection()
 
@@ -226,6 +250,82 @@ class CyanVisionWorklistCase(unittest.TestCase):
         disarmed = client.delete("/api/cyanvision/worklist")
         self.assertEqual(disarmed.status_code, 200)
         self.assertFalse(disarmed.get_json()["armed"])
+
+    def test_batch_stage_validates_and_delivers_multiple_program_types(self):
+        selectra = SelectraHostQueryServer(self.store, armed=False, embedded=True)
+        client = create_app(self.store, selectra, self.service).test_client()
+        batch = [
+            {**ORDER, "sample_id": "BATCH-01-ALP", "test_code": "ALP"},
+            {**ORDER, "sample_id": "BATCH-02-CRE", "test_code": "CRE"},
+            {**ORDER, "sample_id": "BATCH-03-GPT", "test_code": "GPT"},
+            {**ORDER, "sample_id": "BATCH-04-LIPASE", "test_code": "LIPASE"},
+        ]
+
+        missing_confirmation = client.post("/api/cyanvision/worklist/batch", json={"orders": batch})
+        self.assertEqual(missing_confirmation.status_code, 400)
+
+        empty_batch = client.post(
+            "/api/cyanvision/worklist/batch",
+            json={"orders": [], "confirmation": "ARM CYANVISION WORKLIST"},
+        )
+        self.assertEqual(empty_batch.status_code, 400)
+
+        duplicate_ids = client.post(
+            "/api/cyanvision/worklist/batch",
+            json={"orders": [batch[0], batch[0]], "confirmation": "ARM CYANVISION WORKLIST"},
+        )
+        self.assertEqual(duplicate_ids.status_code, 400)
+        self.assertIn("duplicate", duplicate_ids.get_json()["error"])
+
+        unknown_code = client.post(
+            "/api/cyanvision/worklist/batch",
+            json={
+                "orders": [{**ORDER, "sample_id": "BATCH-BAD", "test_code": "UA"}],
+                "confirmation": "ARM CYANVISION WORKLIST",
+            },
+        )
+        self.assertEqual(unknown_code.status_code, 400)
+        self.assertIn("BATCH-BAD", unknown_code.get_json()["error"])
+        self.assertIsNone(self.store.get_cyanvision_order("BATCH-BAD"))
+
+        staged = client.post(
+            "/api/cyanvision/worklist/batch",
+            json={"orders": batch, "confirmation": "ARM CYANVISION WORKLIST"},
+        )
+        self.assertEqual(staged.status_code, 201)
+        self.assertEqual(staged.get_json()["staged"], 4)
+
+        connection = FakeConnection()
+        self.service.handle_message(connection, QUERY)
+        first = unframe(connection.sent[0])
+        self.assertIn("DSP|1||BATCH-01-ALP|||", first)
+        self.assertIn("DSP|8||ALP|||", first)
+        self.assertEqual(first[-1], "DSC|BATCH-02-CRE|")
+
+        for expected_sample, expected_code, next_sample in (
+            ("BATCH-02-CRE", "CRE", "BATCH-03-GPT"),
+            ("BATCH-03-GPT", "GPT", "BATCH-04-LIPASE"),
+            ("BATCH-04-LIPASE", "LIPASE", ""),
+        ):
+            control_id = protocol.control_id(unframe(connection.sent[-1]))
+            self.service.handle_message(connection, [
+                "MSH|^~\\&|CYPRESS|CYANVISION|||||ACK^Q03|ACK|P|2.3.1",
+                f"MSA|AA|{control_id}|Message accepted|||0|",
+            ])
+            record = unframe(connection.sent[-1])
+            self.assertIn(f"DSP|1||{expected_sample}|||", record)
+            self.assertIn(f"DSP|8||{expected_code}|||", record)
+            self.assertEqual(record[-1], f"DSC|{next_sample}|")
+
+        for sample_id in ("BATCH-01-ALP", "BATCH-02-CRE", "BATCH-03-GPT"):
+            self.assertFalse(self.store.get_cyanvision_order(sample_id)["ready"])
+        self.assertTrue(self.store.get_cyanvision_order("BATCH-04-LIPASE")["ready"])
+
+        pending_ack = client.post(
+            "/api/cyanvision/worklist/batch",
+            json={"orders": batch, "confirmation": "ARM CYANVISION WORKLIST"},
+        )
+        self.assertEqual(pending_ack.status_code, 409)
 
     def test_cre_trial_queue_uses_unique_names_and_manual_advancement(self):
         selectra = SelectraHostQueryServer(self.store, armed=False, embedded=True)
@@ -311,6 +411,60 @@ class CyanVisionWorklistCase(unittest.TestCase):
         self.assertIn("existing CYANVision", response.get_json()["error"])
         self.assertIsNone(self.store.get_cyanvision_order("JD123"))
 
+    def test_leftover_trial_candidate_blocks_real_orders_instead_of_jumping_the_queue(self):
+        """A trial run left ready from an earlier session must not silently
+        cut in front of a real worklist: list_ready_cyanvision_orders()
+        sorts by created_at, so an older, unfinished trial candidate would
+        otherwise be served to the analyzer before today's real batch,
+        exactly as happened in the field (CV-04-FULL / "CREATININE" was sent
+        instead of a freshly staged demo batch, and the analyzer dropped the
+        connection because that candidate's DSP.8 was never a confirmed
+        value). Staging real orders must refuse instead of racing the trial.
+        """
+        selectra = SelectraHostQueryServer(self.store, armed=False, embedded=True)
+        client = create_app(self.store, selectra, self.service).test_client()
+        client.post(
+            "/api/cyanvision/cre-trials",
+            json={"confirmation": "STAGE CYANVISION CRE TRIALS"},
+        )
+
+        single = client.post(
+            "/api/cyanvision/worklist",
+            json={**ORDER, "confirmation": "ARM CYANVISION WORKLIST"},
+        )
+        self.assertEqual(single.status_code, 409)
+        self.assertIn("trial", single.get_json()["error"])
+        self.assertIsNone(self.store.get_cyanvision_order(ORDER["sample_id"]))
+
+        batch = client.post(
+            "/api/cyanvision/worklist/batch",
+            json={
+                "orders": [{**ORDER, "sample_id": "BATCH-DURING-TRIAL"}],
+                "confirmation": "ARM CYANVISION WORKLIST",
+            },
+        )
+        self.assertEqual(batch.status_code, 409)
+        self.assertIn("trial", batch.get_json()["error"])
+        self.assertIsNone(self.store.get_cyanvision_order("BATCH-DURING-TRIAL"))
+
+        cleared = client.delete("/api/cyanvision/cre-trials")
+        self.assertEqual(cleared.status_code, 200)
+        self.assertEqual(cleared.get_json()["ready_count"], 0)
+
+        retried = client.post(
+            "/api/cyanvision/worklist/batch",
+            json={
+                "orders": [{**ORDER, "sample_id": "BATCH-DURING-TRIAL"}],
+                "confirmation": "ARM CYANVISION WORKLIST",
+            },
+        )
+        self.assertEqual(retried.status_code, 201)
+
+        connection = FakeConnection()
+        self.service.handle_message(connection, QUERY)
+        sent = unframe(connection.sent[0])
+        self.assertIn("DSP|1||BATCH-DURING-TRIAL|||", sent)
+
     @patch("selectra_host_query.app.pg.list_observed_test_codes")
     def test_web_api_lists_mapped_and_observed_cyanvision_codes(self, observed):
         observed.return_value = [
@@ -330,11 +484,11 @@ class CyanVisionWorklistCase(unittest.TestCase):
         tests = {item["code"]: item for item in response.get_json()["tests"]}
         self.assertTrue(tests["ALP"]["mapped"])
         self.assertTrue(tests["ALP"]["observed"])
-        self.assertEqual(tests["ALP"]["program_id"], "3")
+        self.assertEqual(tests["ALP"]["program_id"], "ALP")
         self.assertTrue(tests["LIPASE"]["observed"])
         self.assertFalse(tests["LIPASE"]["mapped"])
-        self.assertEqual(tests["LIPASE"]["program_id"], "23")
-        self.assertNotIn("GPT", tests)
+        self.assertEqual(tests["LIPASE"]["program_id"], "LIPASE")
+        self.assertNotIn("UA", tests)
 
     def test_standalone_selectra_ui_reports_cyanvision_unavailable_without_error(self):
         selectra = SelectraHostQueryServer(self.store, armed=False, embedded=True)

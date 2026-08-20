@@ -177,17 +177,27 @@ and returned even if it isn't listed here.
 | NIBP systolic | `170` | mmHg |
 | NIBP diastolic | `171` | mmHg |
 | NIBP mean | `172` | mmHg |
-| Temperature 1 / 2 | `200` / `201` | °C |
+| NIBP pulse | `173` | bpm |
+| Temperature 1 | `200` | °C |
+| Temperature 2 | `201` | °C |
+| Temperature difference | `202` | °C |
 
 | wato | code | unit |
 |---|---|---|
 | Peak airway pressure | `MDC_VENT_PRESS_MAX` | cmH₂O |
+| Mean airway pressure | `MDC_PRESS_AWAY_INSP_MEAN` | cmH₂O |
+| Plateau pressure | `MDC_PRESS_RESP_PLAT` | cmH₂O |
 | PEEP | `MDC_VENT_PRESS_AWAY_END_EXP_POS` | cmH₂O |
 | Minute volume | `MDC_VOL_MINUTE_AWAY` | L/min |
 | Expiratory tidal volume | `MDC_VOL_AWAY_TIDAL` | mL |
+| Ventilator respiratory rate | `MDC_VENT_RESP_RATE` | rpm |
+| O₂ fresh gas flow | `MDC_FLOW_O2_FG` | L/min |
 | Inspired oxygen | `MDC_CONC_AWAY_O2_INSP` | % |
+| End-tidal oxygen | `MDC_CONC_AWAY_O2_ET` | % |
 | End-tidal CO₂ | `MDC_CONC_AWAY_CO2_ET` | mmHg |
-| MAC | `MDC_CONC_MAC` | — |
+| Inspired CO₂ | `MDC_CONC_AWAY_CO2_INSP` | mmHg |
+| CO₂ respiratory rate | `MDC_CO2_RESP_RATE` | rpm |
+| Minimum alveolar concentration | `MDC_CONC_MAC` | — |
 
 ## GET /api/chambers
 

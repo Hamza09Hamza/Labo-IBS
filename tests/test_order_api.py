@@ -492,7 +492,7 @@ class OrderApiCase(unittest.TestCase):
         restarted_service.handle_message(connection, QUERY)
         first_dsr = unframe(connection.sent[0])
         self.assertIn("DSP|1||CYAN-API-001|||", first_dsr)
-        self.assertIn("DSP|8||3|||", first_dsr)
+        self.assertIn("DSP|8||ALP|||", first_dsr)
         self.assertEqual(first_dsr[-1], "DSC|CYAN-API-002|")
 
         first_id = cyan_protocol.control_id(first_dsr)
@@ -502,7 +502,7 @@ class OrderApiCase(unittest.TestCase):
         ])
         second_dsr = unframe(connection.sent[1])
         self.assertIn("DSP|1||CYAN-API-002|||", second_dsr)
-        self.assertIn("DSP|8||11|||", second_dsr)
+        self.assertIn("DSP|8||CRE|||", second_dsr)
         self.assertEqual(second_dsr[-1], "DSC||")
 
         second_id = cyan_protocol.control_id(second_dsr)
@@ -536,7 +536,7 @@ class OrderApiCase(unittest.TestCase):
             self.store.get_cyanvision_order("CYAN-ID-001")["test_code"], "ALP",
         )
         preview = self.cyan.preview(self.store.get_cyanvision_order("CYAN-ID-001"))
-        self.assertIn("DSP|8||3|||", preview)
+        self.assertIn("DSP|8||ALP|||", preview)
 
     @patch("selectra_host_query.app.pg.list_observed_test_codes", return_value=[])
     def test_api_status_and_cancellation(self, _observed):

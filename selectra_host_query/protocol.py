@@ -39,10 +39,20 @@ KNOWN_SHORT_CODES = {
     "Proteines U": "PrtU",
     # Alternate labels already exposed by the staging page.
     "Phosphatase Alc": "PAL",
-    "Calcium": "CAL",
-    "CALCUIM": "CA2+",
     "CRP IP V3": "CRP3",
     "CK-NAC": "CPK",
+    # Calcium aliases. "Calcium"->"CAL" and "CALCUIM"->"CA2+" were confirmed
+    # wrong 2026-08-20: WINLAB accepted the transport frame but rejected both
+    # at the application level (O-26=X, R record "UNKNOWN"). The analyzer's
+    # real installed method is "CAL elitech" with wire code "cal" (confirmed
+    # working the same day). Every spelling an operator or upstream system
+    # is likely to send now routes to that one confirmed-correct code.
+    "Calcium": "cal",
+    "CALCIUM": "cal",
+    "CALCUIM": "cal",
+    "CA2+": "cal",
+    "Ca2+": "cal",
+    "CA": "cal",
 }
 
 ENQ = 0x05

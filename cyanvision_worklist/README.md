@@ -9,11 +9,15 @@ CYANVision                       Labo Bridge
     | QRY^Q02  (Load from LIS)       |
     |------------------------------->|
     |                                |
-    | DSR^Q03 (one final dataset)    |
+    | DSR^Q03 (one item)             |
     |<-------------------------------|
     |                                |
     | ACK^Q03                        |
     |------------------------------->|
+    |                                |
+    | DSR^Q03 (next item, if any)    |
+    |<-------------------------------|
+    ...repeats until an empty DSC marks the final item
 ```
 
 The outgoing message contains the manual's exact positional data records:
@@ -24,39 +28,85 @@ The outgoing message contains the manual's exact positional data records:
 - `DSP.4`: family name
 - `DSP.5`: sex (`M` or `F`)
 - `DSP.6`: birth date as `YYYYMMDD000000`
-- `DSP.7`: `1`
-- `DSP.8`: one outbound analyzer program selector. CY014 demonstrates `GLUC`
-  but does not define the selector namespace. This implementation currently
-  trials numeric ProgramID values observed in real result `NTE.8` metadata:
-  ALP `3`, CRE `11`, and LIPASE `23`.
+- `DSP.7`: `1` by default (CY014's own example always shows `1` here).
+  Overridable per order via `"dsp7"` in the staging request body -
+  **under investigation as of 2026-08-20**: a 7-item continuation-loop
+  delivery sent 7 distinct, correctly-formed DSP.8 values and got a real
+  positive ACK for every one, but every row landed on the same program on
+  the analyzer's own screen regardless of DSP.8. DSP.7 had never been
+  varied before that point, so it isn't ruled out as the field CY014
+  actually keys the program selection off.
+- `DSP.8`: the outbound analyzer program selector. **Confirmed single-item,
+  2026-08-20**: for one isolated (non-continuation) delivery, this must be
+  the exact literal program name shown on the analyzer's own "Selection du
+  programme" screen (`ALP`, `CRE`, `GPT`, `GLUC`, `GGT`, `LIPASE`, `IRON`,
+  ...), not a numeric ID. A value the analyzer doesn't recognize makes it
+  drop the connection without sending `ACK^Q03`; a recognized one gets
+  acknowledged and the program checkbox visibly changes on screen. See
+  `cyanvision_worklist/programs.py` for the confirmed table and how it was
+  found. **Not yet confirmed for multi-item continuation-loop delivery** -
+  see the DSP.7 note above.
 - empty `DSC`: final dataset, with no continuation page
 
 The web form is served by `run_all.py` at `http://<server-IP>:5052/`.
 Manual CYANVision work starts disarmed after every bridge restart. Orders
 received through the authenticated order API are stored in SQLite and remain
-ready across restarts. Multiple ready API items use the documented
-`DSR^Q03 -> ACK^Q03` continuation loop; an empty `DSC` marks the final item.
-Result upload in the opposite direction remains handled by the existing
-CYANVision decoder and receives the normal HL7 ACK.
+ready across restarts. Multiple ready items - from the API, or staged
+together via `POST /api/cyanvision/worklist/batch` - use the documented
+`DSR^Q03 -> ACK^Q03` continuation loop to deliver in one `Load from LIS`
+press; an empty `DSC` marks the final item. Result upload in the opposite
+direction remains handled by the existing CYANVision decoder and receives
+the normal HL7 ACK.
 
-Result-code mappings and outbound ProgramIDs are intentionally separate. A
-successful `ACK^Q03` proves message acceptance, not that the intended program
-appeared on screen; the operator must confirm the selected test during this
-trial.
+## Staging a full worklist (multiple items, one download)
 
-## Controlled Creatinine selector trial
+`POST /api/cyanvision/worklist/batch` stages several orders at once so they
+deliver together instead of one `Load from LIS` press per sample:
 
-The `5052` CYANVision tab contains a supervised control and seven-candidate
-trial for the unresolved `DSP.8` namespace. It first stages the manufacturer's
-exact `JD123 / Johnathana / Does / GLUC` example, followed by these visibly
-distinct patients in this exact order: `TRIAL 01 CREA`, `TRIAL 02 CRE`, `TRIAL 03 Crea`,
-`TRIAL 04 CREATININE`, `TRIAL 05 NUM11`, `TRIAL 06 NUM011`, and
-`TRIAL 07 BLANK`.
+```bash
+curl -X POST http://<server-IP>:5052/api/cyanvision/worklist/batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "confirmation": "ARM CYANVISION WORKLIST",
+    "orders": [
+      {"sample_id": "S-001", "given_name": "...", "family_name": "...",
+       "birth_date": "1980-06-15", "sex": "F", "test_code": "ALP"},
+      {"sample_id": "S-002", "given_name": "...", "family_name": "...",
+       "birth_date": "1975-03-22", "sex": "M", "test_code": "CRE"}
+    ]
+  }'
+```
 
-The real analyzer currently closes its connection without `ACK^Q03`, so the
-bridge deliberately does not guess that an item was accepted or advance it
-automatically. After each **Load from LIS**, record which exam CYANVision
-selected, wait for the connection to close, then click **Mark checked → next**.
-The next uniquely named candidate will be returned on the following load.
-The staging endpoint refuses to mix this sequence with any already-ready
-non-trial CYANVision order.
+Every `test_code` must already have a confirmed entry in
+`programs.py`'s `WORKLIST_PROGRAM_IDS`, sample IDs must be unique within the
+batch, and it refuses to stage while a connection is already mid-handshake
+(`pending_ack`). Refer to `docs/OPERATIONBLOC_API.md`-style usage: check
+`/api/cyanvision/worklist` afterward, or watch `/api/events`, to see the
+continuation loop deliver each item as the analyzer ACKs the previous one.
+
+Both this endpoint and the single-order `POST /api/cyanvision/worklist` also
+refuse (`409`) while any CRE trial candidate (below) is still ready. The
+ready queue is served oldest-first, so a trial run left over from an earlier
+session would otherwise get served to the analyzer ahead of a freshly staged
+real batch instead of the intended order - which happened in the field once
+(an unfinished trial candidate with an unconfirmed DSP.8 value got sent
+first and the analyzer dropped the connection). Clear it with
+`DELETE /api/cyanvision/cre-trials` before staging real orders.
+
+## Controlled DSP.8 selector trial
+
+The `5052` CYANVision tab also contains a supervised control-and-candidate
+trial, kept as reusable tooling for validating any *new* test code before it
+goes live (this is how `CRE`'s correct value was actually found). It stages
+the manufacturer's exact `JD123 / Johnathana / Does / GLUC` example first,
+then a set of named candidates for whatever code is currently under test.
+
+Because a value the analyzer doesn't recognize drops the connection instead
+of returning a negative ACK, the bridge can't safely tell "accepted" from
+"silently ignored" - so it never guesses. After each **Load from LIS**,
+record which exam CYANVision actually selected, then click
+**Mark checked → next** (or turn on auto-advance to skip that click after a
+dropped connection specifically - a real ACK still requires you to check the
+screen yourself, since acceptance and selection turned out to be different
+things). The staging endpoint refuses to mix this sequence with any
+already-ready non-trial CYANVision order.

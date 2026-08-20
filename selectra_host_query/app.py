@@ -21,7 +21,7 @@ SAFE_VALUE = re.compile(r"^[^|\\^&\r\n]+$")
 ASSAY_SUGGESTIONS = [
     "Uree uv sl", "Cholesterol", "SGOT", "SGPT", "Phosphatase Alc",
     "Phosphatase ALP", "Creatinine", "GGT", "Glucose pap sl", "Acide Urique",
-    "Calcium", "CALCUIM", "Phosphore", "Triglycerides", "Cholesterol HDL",
+    "CAL elitech", "Calcium", "Phosphore", "Triglycerides", "Cholesterol HDL",
     "LDH-L SL", "Proteines U", "CRP IP V3", "CRP IP v3", "BILI TOTAL BIO",
     "BILI DIRECT BIO", "CK NAK", "CK-NAC", "Proteine totale", "Albumine",
 ]
@@ -334,6 +334,9 @@ def _validated_cyanvision_order(body):
         "test_code": _validate_text(
             "CYANVision result code", body.get("test_code"), maximum=60,
         ),
+        "dsp7": _validate_text(
+            "CYANVision DSP.7", body.get("dsp7"), required=False, maximum=10,
+        ) or "1",
     }
     if any(
         any(ord(character) < 32 or ord(character) > 126 for character in str(value))
@@ -391,6 +394,13 @@ def _cyanvision_cre_trial_order(candidate):
         "sex": candidate.get("sex", "M"),
         "test_code": candidate["test_code"],
         "external_order_id": f"CYAN-CRE-TRIAL-{candidate['sequence']:02d}",
+    }
+
+
+def _ready_cyanvision_trial_sample_ids(store):
+    return {
+        order["sample_id"] for order in store.list_ready_cyanvision_orders()
+        if order.get("source") == "trial"
     }
 
 
@@ -493,6 +503,15 @@ def create_app(store, service, cyanvision_service=None, order_api_token=None):
         body = request.get_json(silent=True) or {}
         if body.get("confirmation") != "ARM CYANVISION WORKLIST":
             return jsonify({"error": "explicit ARM CYANVISION WORKLIST confirmation is required"}), 400
+        leftover_trial = _ready_cyanvision_trial_sample_ids(store)
+        if leftover_trial:
+            return jsonify({
+                "error": (
+                    "a CYANVision CRE trial run is still queued ("
+                    + ", ".join(sorted(leftover_trial))
+                    + "); clear it with DELETE /api/cyanvision/cre-trials before staging a real order"
+                )
+            }), 409
         try:
             order = _validated_cyanvision_order(body)
             allowed_codes = {item["code"] for item in _cyanvision_test_options()}
@@ -507,6 +526,67 @@ def create_app(store, service, cyanvision_service=None, order_api_token=None):
             "ok": True,
             **status_value,
             "response_preview": cyanvision_service.preview(order),
+        }), 201
+
+    @app.post("/api/cyanvision/worklist/batch")
+    def stage_cyanvision_worklist_batch():
+        """Stage several orders at once so CY014's own DSR/ACK continuation
+        loop delivers all of them in a single Load-from-LIS download, instead
+        of the operator re-pressing it once per sample. Bypasses the
+        service's single-slot stage_and_arm (which can only hold one order)
+        and writes straight to the ready queue, the same mechanism the
+        authenticated order API and the CRE trial batch already use.
+        """
+        if not cyanvision_service:
+            return jsonify({"error": "CYANVision worklist service is unavailable"}), 503
+        body = request.get_json(silent=True) or {}
+        if body.get("confirmation") != "ARM CYANVISION WORKLIST":
+            return jsonify({"error": "explicit ARM CYANVISION WORKLIST confirmation is required"}), 400
+        if cyanvision_service.status()["pending_ack"]:
+            return jsonify({
+                "error": "wait for the current CYANVision connection to close before staging a batch"
+            }), 409
+        leftover_trial = _ready_cyanvision_trial_sample_ids(store)
+        if leftover_trial:
+            return jsonify({
+                "error": (
+                    "a CYANVision CRE trial run is still queued ("
+                    + ", ".join(sorted(leftover_trial))
+                    + "); clear it with DELETE /api/cyanvision/cre-trials before staging a batch"
+                )
+            }), 409
+        raw_orders = body.get("orders")
+        if not isinstance(raw_orders, list) or not raw_orders:
+            return jsonify({"error": "'orders' must be a non-empty list"}), 400
+        allowed_codes = {item["code"] for item in _cyanvision_test_options()}
+        staged = []
+        try:
+            for raw_order in raw_orders:
+                if not isinstance(raw_order, dict):
+                    raise ValueError("each item in 'orders' must be an object")
+                order = _validated_cyanvision_order(raw_order)
+                if order["test_code"] not in allowed_codes:
+                    raise ValueError(
+                        f"'{order['test_code']}' has no confirmed outbound program name "
+                        f"(sample {order['sample_id']})"
+                    )
+                staged.append(order)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        sample_ids = [order["sample_id"] for order in staged]
+        if len(set(sample_ids)) != len(sample_ids):
+            return jsonify({"error": "duplicate sample_id within the batch"}), 400
+        for order in staged:
+            store.upsert_cyanvision_order(order, source="manual", ready=True)
+        store.add_event(
+            "local", "cyanvision_worklist_batch_staged", None,
+            f"Staged {len(staged)} CYANVision worklist item(s) for one full-list download: "
+            + ", ".join(f"{o['sample_id']}/{o['test_code']}" for o in staged),
+        )
+        return jsonify({
+            "ok": True,
+            "staged": len(staged),
+            **cyanvision_service.status(),
         }), 201
 
     @app.delete("/api/cyanvision/worklist")

@@ -4,33 +4,38 @@ These identifiers are deliberately separate from ``labo_bridge.mappings``.
 The latter maps codes observed in result OBX records to clinic parameters;
 CYANVision's worklist DSP.8 value is an analyzer-side program selection.
 
-The CY014 manual demonstrates the eighth DSP data line with ``GLUC`` but does
-not name its identifier namespace.  The numeric values below are therefore a
-controlled field trial based on ProgramID values observed in real CYANVision
-NTE.8 result metadata, not values asserted by the manual itself.
+Confirmed 2026-08-20 by a controlled field trial (see CRE_DSP8_TRIALS below)
+plus direct observation of the analyzer's own "Selection du programme"
+screen: DSP.8 selects the program correctly when it is the *exact literal
+program name shown on that screen* (e.g. "CRE"), not a numeric ID and not a
+guessed abbreviation ("CREA" was rejected - the connection dropped without
+ACK). The values below were read directly off that screen. A numeric guess
+had been used here previously (ALP=3, CRE=11, LIPASE=23, sourced from
+unrelated NTE.8 result metadata) and never actually worked.
 """
 
 from __future__ import annotations
 
 
 WORKLIST_PROGRAM_IDS = {
-    # result code -> ProgramID observed in NTE.8
-    "ALP": "3",
-    "CRE": "11",
-    "LIPASE": "23",
+    # result code -> literal program name, exactly as shown on the
+    # analyzer's own "Selection du programme" screen
+    "ALP": "ALP",
+    "CRE": "CRE",
+    "GPT": "GPT",
+    "GLUC": "GLUC",
+    "GGT": "GGT",
+    "LIPASE": "LIPASE",
+    "IRON": "IRON",
 }
 
 
-# Temporary field trial (2026-08-18): CRE's numeric ProgramID (11, above)
-# never completes the DSR/ACK handshake on the real unit, and the analyzer
-# keeps preselecting ALP regardless of what DSP.8 carries. CY014's own
-# worklist example puts a literal mnemonic in DSP.8 ("GLUC" - 4 letters, for
-# Glucose) rather than a translated numeric ID, so each entry below is one
-# candidate DSP.8 payload for a Creatinine push. They show up as ordinary
-# selectable entries in the CYANVision console's test dropdown - stage one,
-# arm it, watch the analyzer's screen for whether it preselects Creatinine
-# instead of ALP, then move to the next. Delete this block (and its entries
-# below) once the working format is confirmed and CRE is updated to match.
+# Confirms the hypothesis above and stays in place as reusable tooling for
+# validating any new code before it goes live (e.g. whatever this analyzer
+# calls the clinic's UA test - not yet seen on the visible part of the
+# program list). CRE-TRIAL-TXT="CRE" is the one that was confirmed working:
+# the analyzer's own worklist screen showed CV-02-CRE's program change from
+# the default ALP to CRE after this exact push.
 CRE_DSP8_TRIALS = {
     "CY014-TRIAL-GLUC": "GLUC",           # exact selector from the manufacturer's example
     "CRE-TRIAL-CREA": "CREA",              # 4-letter mnemonic, matches GLUC's pattern
@@ -61,7 +66,7 @@ CRE_DSP8_TRIAL_SEQUENCE = (
 
 
 def program_id_for(test_code: str) -> str:
-    """Return the field-observed worklist ProgramID for a result code."""
+    """Return the confirmed DSP.8 program name for a result code."""
     code = str(test_code or "").strip().upper()
     try:
         return WORKLIST_PROGRAM_IDS[code]

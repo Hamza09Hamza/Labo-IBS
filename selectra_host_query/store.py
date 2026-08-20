@@ -87,7 +87,8 @@ class BenchStore:
                     updated_at TEXT NOT NULL,
                     last_query_at TEXT,
                     last_delivery_at TEXT,
-                    last_error TEXT
+                    last_error TEXT,
+                    dsp7 TEXT NOT NULL DEFAULT '1'
                 );
                 CREATE TABLE IF NOT EXISTS events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -126,6 +127,14 @@ class BenchStore:
             ):
                 if column not in order_columns:
                     connection.execute(f"ALTER TABLE orders ADD COLUMN {column} {definition}")
+
+            cyanvision_columns = {
+                row[1] for row in connection.execute("PRAGMA table_info(cyanvision_orders)").fetchall()
+            }
+            if "dsp7" not in cyanvision_columns:
+                connection.execute(
+                    "ALTER TABLE cyanvision_orders ADD COLUMN dsp7 TEXT NOT NULL DEFAULT '1'"
+                )
 
             # API orders created before per-order manual arming was introduced
             # were persisted as ready immediately. Disarm them once during the
@@ -437,8 +446,8 @@ class BenchStore:
                 INSERT INTO cyanvision_orders
                     (sample_id, given_name, family_name, birth_date, sex,
                      test_code, status, source, ready, external_order_id,
-                     created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, 'staged', ?, ?, ?, ?, ?)
+                     created_at, updated_at, dsp7)
+                VALUES (?, ?, ?, ?, ?, ?, 'staged', ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(sample_id) DO UPDATE SET
                     given_name=excluded.given_name,
                     family_name=excluded.family_name,
@@ -450,12 +459,14 @@ class BenchStore:
                     ready=excluded.ready,
                     external_order_id=excluded.external_order_id,
                     updated_at=excluded.updated_at,
+                    dsp7=excluded.dsp7,
                     last_error=NULL
                 """,
                 (
                     order["sample_id"], order["given_name"], order["family_name"],
                     order["birth_date"], order["sex"], order["test_code"],
                     source, int(bool(ready)), order.get("external_order_id"), now, now,
+                    str(order.get("dsp7") or "1"),
                 ),
             )
         direction = "api" if source == "api" else "local"
