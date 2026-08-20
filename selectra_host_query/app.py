@@ -21,7 +21,7 @@ SAFE_VALUE = re.compile(r"^[^|\\^&\r\n]+$")
 ASSAY_SUGGESTIONS = [
     "Uree uv sl", "Cholesterol", "SGOT", "SGPT", "Phosphatase Alc",
     "Phosphatase ALP", "Creatinine", "GGT", "Glucose pap sl", "Acide Urique",
-    "Calcium", "CALCUIM", "Phosphore", "Triglycerides", "Cholesterol HDL",
+    "CAL elitech", "Calcium", "Phosphore", "Triglycerides", "Cholesterol HDL",
     "LDH-L SL", "Proteines U", "CRP IP V3", "CRP IP v3", "BILI TOTAL BIO",
     "BILI DIRECT BIO", "CK NAK", "CK-NAC", "Proteine totale", "Albumine",
 ]

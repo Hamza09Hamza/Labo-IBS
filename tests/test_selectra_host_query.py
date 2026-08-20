@@ -77,6 +77,16 @@ class BenchCase(unittest.TestCase):
         self.assertEqual(patient_fields[7], "19800615")
         self.assertEqual(patient_fields[8], "U")
 
+    def test_calcium_aliases_all_resolve_to_the_confirmed_working_code(self):
+        # "Calcium"->"CAL" and "CALCUIM"->"CA2+" were confirmed wrong in the
+        # field 2026-08-20: WINLAB ACKed the transport frame but rejected
+        # both at the application level (O-26=X, R record "UNKNOWN"). The
+        # analyzer's real installed method is "CAL elitech", wire code "cal".
+        for alias in ("Calcium", "CALCIUM", "CALCUIM", "CA2+", "Ca2+", "CA", "CAL elitech"):
+            self.assertEqual(protocol.test_abbreviation(alias), "cal")
+        self.assertNotEqual(protocol.test_abbreviation("Calcium"), "CAL")
+        self.assertNotEqual(protocol.test_abbreviation("CALCUIM"), "CA2+")
+
     def test_order_records_preserve_long_id_and_fill_supported_form_fields(self):
         long_id = "CLINIC-SAMPLE-20260816-0001"
         records = protocol.build_order_records({
