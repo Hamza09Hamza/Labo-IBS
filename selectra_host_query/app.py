@@ -509,6 +509,58 @@ def create_app(store, service, cyanvision_service=None, order_api_token=None):
             "response_preview": cyanvision_service.preview(order),
         }), 201
 
+    @app.post("/api/cyanvision/worklist/batch")
+    def stage_cyanvision_worklist_batch():
+        """Stage several orders at once so CY014's own DSR/ACK continuation
+        loop delivers all of them in a single Load-from-LIS download, instead
+        of the operator re-pressing it once per sample. Bypasses the
+        service's single-slot stage_and_arm (which can only hold one order)
+        and writes straight to the ready queue, the same mechanism the
+        authenticated order API and the CRE trial batch already use.
+        """
+        if not cyanvision_service:
+            return jsonify({"error": "CYANVision worklist service is unavailable"}), 503
+        body = request.get_json(silent=True) or {}
+        if body.get("confirmation") != "ARM CYANVISION WORKLIST":
+            return jsonify({"error": "explicit ARM CYANVISION WORKLIST confirmation is required"}), 400
+        if cyanvision_service.status()["pending_ack"]:
+            return jsonify({
+                "error": "wait for the current CYANVision connection to close before staging a batch"
+            }), 409
+        raw_orders = body.get("orders")
+        if not isinstance(raw_orders, list) or not raw_orders:
+            return jsonify({"error": "'orders' must be a non-empty list"}), 400
+        allowed_codes = {item["code"] for item in _cyanvision_test_options()}
+        staged = []
+        try:
+            for raw_order in raw_orders:
+                if not isinstance(raw_order, dict):
+                    raise ValueError("each item in 'orders' must be an object")
+                order = _validated_cyanvision_order(raw_order)
+                if order["test_code"] not in allowed_codes:
+                    raise ValueError(
+                        f"'{order['test_code']}' has no confirmed outbound program name "
+                        f"(sample {order['sample_id']})"
+                    )
+                staged.append(order)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        sample_ids = [order["sample_id"] for order in staged]
+        if len(set(sample_ids)) != len(sample_ids):
+            return jsonify({"error": "duplicate sample_id within the batch"}), 400
+        for order in staged:
+            store.upsert_cyanvision_order(order, source="manual", ready=True)
+        store.add_event(
+            "local", "cyanvision_worklist_batch_staged", None,
+            f"Staged {len(staged)} CYANVision worklist item(s) for one full-list download: "
+            + ", ".join(f"{o['sample_id']}/{o['test_code']}" for o in staged),
+        )
+        return jsonify({
+            "ok": True,
+            "staged": len(staged),
+            **cyanvision_service.status(),
+        }), 201
+
     @app.delete("/api/cyanvision/worklist")
     def disarm_cyanvision_worklist():
         if not cyanvision_service:
