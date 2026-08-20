@@ -77,6 +77,30 @@ class CyanVisionWorklistCase(unittest.TestCase):
         self.assertEqual(records[-1], "DSC||")
         self.assertEqual(unframe(protocol.frame(records)), records)
 
+    def test_dsp7_defaults_to_one_but_is_overridable_for_a_field_trial(self):
+        default_records = protocol.build_dsr(ORDER, QUERY, "DSR-1", "QUERY-1")
+        self.assertIn("DSP|7||1|||", default_records)
+
+        overridden = protocol.build_dsr({**ORDER, "dsp7": "2"}, QUERY, "DSR-2", "QUERY-1")
+        self.assertIn("DSP|7||2|||", overridden)
+        self.assertIn("DSP|8||CRE|||", overridden)
+
+    def test_web_api_stages_a_dsp7_override_for_a_controlled_trial(self):
+        selectra = SelectraHostQueryServer(self.store, armed=False, embedded=True)
+        client = create_app(self.store, selectra, self.service).test_client()
+        staged = client.post(
+            "/api/cyanvision/worklist",
+            json={**ORDER, "test_code": "GPT", "dsp7": "2", "confirmation": "ARM CYANVISION WORKLIST"},
+        )
+        self.assertEqual(staged.status_code, 201)
+        self.assertEqual(self.store.get_cyanvision_order(ORDER["sample_id"])["dsp7"], "2")
+
+        connection = FakeConnection()
+        self.service.handle_message(connection, QUERY)
+        sent = unframe(connection.sent[0])
+        self.assertIn("DSP|7||2|||", sent)
+        self.assertIn("DSP|8||GPT|||", sent)
+
     def test_one_order_disarms_after_positive_ack(self):
         self.service.stage_and_arm(ORDER)
         connection = FakeConnection()
@@ -386,6 +410,60 @@ class CyanVisionWorklistCase(unittest.TestCase):
         self.assertEqual(response.status_code, 409)
         self.assertIn("existing CYANVision", response.get_json()["error"])
         self.assertIsNone(self.store.get_cyanvision_order("JD123"))
+
+    def test_leftover_trial_candidate_blocks_real_orders_instead_of_jumping_the_queue(self):
+        """A trial run left ready from an earlier session must not silently
+        cut in front of a real worklist: list_ready_cyanvision_orders()
+        sorts by created_at, so an older, unfinished trial candidate would
+        otherwise be served to the analyzer before today's real batch,
+        exactly as happened in the field (CV-04-FULL / "CREATININE" was sent
+        instead of a freshly staged demo batch, and the analyzer dropped the
+        connection because that candidate's DSP.8 was never a confirmed
+        value). Staging real orders must refuse instead of racing the trial.
+        """
+        selectra = SelectraHostQueryServer(self.store, armed=False, embedded=True)
+        client = create_app(self.store, selectra, self.service).test_client()
+        client.post(
+            "/api/cyanvision/cre-trials",
+            json={"confirmation": "STAGE CYANVISION CRE TRIALS"},
+        )
+
+        single = client.post(
+            "/api/cyanvision/worklist",
+            json={**ORDER, "confirmation": "ARM CYANVISION WORKLIST"},
+        )
+        self.assertEqual(single.status_code, 409)
+        self.assertIn("trial", single.get_json()["error"])
+        self.assertIsNone(self.store.get_cyanvision_order(ORDER["sample_id"]))
+
+        batch = client.post(
+            "/api/cyanvision/worklist/batch",
+            json={
+                "orders": [{**ORDER, "sample_id": "BATCH-DURING-TRIAL"}],
+                "confirmation": "ARM CYANVISION WORKLIST",
+            },
+        )
+        self.assertEqual(batch.status_code, 409)
+        self.assertIn("trial", batch.get_json()["error"])
+        self.assertIsNone(self.store.get_cyanvision_order("BATCH-DURING-TRIAL"))
+
+        cleared = client.delete("/api/cyanvision/cre-trials")
+        self.assertEqual(cleared.status_code, 200)
+        self.assertEqual(cleared.get_json()["ready_count"], 0)
+
+        retried = client.post(
+            "/api/cyanvision/worklist/batch",
+            json={
+                "orders": [{**ORDER, "sample_id": "BATCH-DURING-TRIAL"}],
+                "confirmation": "ARM CYANVISION WORKLIST",
+            },
+        )
+        self.assertEqual(retried.status_code, 201)
+
+        connection = FakeConnection()
+        self.service.handle_message(connection, QUERY)
+        sent = unframe(connection.sent[0])
+        self.assertIn("DSP|1||BATCH-DURING-TRIAL|||", sent)
 
     @patch("selectra_host_query.app.pg.list_observed_test_codes")
     def test_web_api_lists_mapped_and_observed_cyanvision_codes(self, observed):

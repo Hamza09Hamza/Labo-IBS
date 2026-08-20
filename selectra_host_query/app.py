@@ -334,6 +334,9 @@ def _validated_cyanvision_order(body):
         "test_code": _validate_text(
             "CYANVision result code", body.get("test_code"), maximum=60,
         ),
+        "dsp7": _validate_text(
+            "CYANVision DSP.7", body.get("dsp7"), required=False, maximum=10,
+        ) or "1",
     }
     if any(
         any(ord(character) < 32 or ord(character) > 126 for character in str(value))
@@ -391,6 +394,13 @@ def _cyanvision_cre_trial_order(candidate):
         "sex": candidate.get("sex", "M"),
         "test_code": candidate["test_code"],
         "external_order_id": f"CYAN-CRE-TRIAL-{candidate['sequence']:02d}",
+    }
+
+
+def _ready_cyanvision_trial_sample_ids(store):
+    return {
+        order["sample_id"] for order in store.list_ready_cyanvision_orders()
+        if order.get("source") == "trial"
     }
 
 
@@ -493,6 +503,15 @@ def create_app(store, service, cyanvision_service=None, order_api_token=None):
         body = request.get_json(silent=True) or {}
         if body.get("confirmation") != "ARM CYANVISION WORKLIST":
             return jsonify({"error": "explicit ARM CYANVISION WORKLIST confirmation is required"}), 400
+        leftover_trial = _ready_cyanvision_trial_sample_ids(store)
+        if leftover_trial:
+            return jsonify({
+                "error": (
+                    "a CYANVision CRE trial run is still queued ("
+                    + ", ".join(sorted(leftover_trial))
+                    + "); clear it with DELETE /api/cyanvision/cre-trials before staging a real order"
+                )
+            }), 409
         try:
             order = _validated_cyanvision_order(body)
             allowed_codes = {item["code"] for item in _cyanvision_test_options()}
@@ -526,6 +545,15 @@ def create_app(store, service, cyanvision_service=None, order_api_token=None):
         if cyanvision_service.status()["pending_ack"]:
             return jsonify({
                 "error": "wait for the current CYANVision connection to close before staging a batch"
+            }), 409
+        leftover_trial = _ready_cyanvision_trial_sample_ids(store)
+        if leftover_trial:
+            return jsonify({
+                "error": (
+                    "a CYANVision CRE trial run is still queued ("
+                    + ", ".join(sorted(leftover_trial))
+                    + "); clear it with DELETE /api/cyanvision/cre-trials before staging a batch"
+                )
             }), 409
         raw_orders = body.get("orders")
         if not isinstance(raw_orders, list) or not raw_orders:

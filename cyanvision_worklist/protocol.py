@@ -83,10 +83,12 @@ def build_dsr(
             f"DSP|4||{_clean(order['family_name'])}|||",
             f"DSP|5||{_clean(order['sex']).upper()}|||",
             f"DSP|6||{birth_date}|||",
-            "DSP|7||1|||",
-            # CY014 shows the selected program in the eighth DSP data line.
-            # Result codes and analyzer ProgramIDs are distinct namespaces on
-            # the real unit (for example CRE has observed NTE.8 ProgramID 11).
+            # CY014's own example always shows "1" here and DSP.8 was assumed
+            # to be the program selector - but a multi-item continuation-loop
+            # delivery showed every item land on the same program regardless
+            # of DSP.8, so DSP.7 is exposed as an override for a controlled
+            # field trial rather than trusted as inert. Defaults to "1".
+            f"DSP|7||{_clean(order.get('dsp7')) or '1'}|||",
             f"DSP|8||{program_id_for(order['test_code'])}|||",
         ])
     records.append(f"DSC|{_clean(continuation_pointer)}|")

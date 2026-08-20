@@ -28,15 +28,24 @@ The outgoing message contains the manual's exact positional data records:
 - `DSP.4`: family name
 - `DSP.5`: sex (`M` or `F`)
 - `DSP.6`: birth date as `YYYYMMDD000000`
-- `DSP.7`: `1`
-- `DSP.8`: the outbound analyzer program selector. **Confirmed 2026-08-20**:
-  this must be the exact literal program name shown on the analyzer's own
-  "Selection du programme" screen (`ALP`, `CRE`, `GPT`, `GLUC`, `GGT`,
-  `LIPASE`, `IRON`, ...), not a numeric ID. A value the analyzer doesn't
-  recognize makes it drop the connection without sending `ACK^Q03`; a
-  recognized one gets acknowledged and the program checkbox visibly changes
-  on screen. See `cyanvision_worklist/programs.py` for the confirmed table
-  and how it was found.
+- `DSP.7`: `1` by default (CY014's own example always shows `1` here).
+  Overridable per order via `"dsp7"` in the staging request body -
+  **under investigation as of 2026-08-20**: a 7-item continuation-loop
+  delivery sent 7 distinct, correctly-formed DSP.8 values and got a real
+  positive ACK for every one, but every row landed on the same program on
+  the analyzer's own screen regardless of DSP.8. DSP.7 had never been
+  varied before that point, so it isn't ruled out as the field CY014
+  actually keys the program selection off.
+- `DSP.8`: the outbound analyzer program selector. **Confirmed single-item,
+  2026-08-20**: for one isolated (non-continuation) delivery, this must be
+  the exact literal program name shown on the analyzer's own "Selection du
+  programme" screen (`ALP`, `CRE`, `GPT`, `GLUC`, `GGT`, `LIPASE`, `IRON`,
+  ...), not a numeric ID. A value the analyzer doesn't recognize makes it
+  drop the connection without sending `ACK^Q03`; a recognized one gets
+  acknowledged and the program checkbox visibly changes on screen. See
+  `cyanvision_worklist/programs.py` for the confirmed table and how it was
+  found. **Not yet confirmed for multi-item continuation-loop delivery** -
+  see the DSP.7 note above.
 - empty `DSC`: final dataset, with no continuation page
 
 The web form is served by `run_all.py` at `http://<server-IP>:5052/`.
@@ -74,6 +83,15 @@ batch, and it refuses to stage while a connection is already mid-handshake
 (`pending_ack`). Refer to `docs/OPERATIONBLOC_API.md`-style usage: check
 `/api/cyanvision/worklist` afterward, or watch `/api/events`, to see the
 continuation loop deliver each item as the analyzer ACKs the previous one.
+
+Both this endpoint and the single-order `POST /api/cyanvision/worklist` also
+refuse (`409`) while any CRE trial candidate (below) is still ready. The
+ready queue is served oldest-first, so a trial run left over from an earlier
+session would otherwise get served to the analyzer ahead of a freshly staged
+real batch instead of the intended order - which happened in the field once
+(an unfinished trial candidate with an unconfirmed DSP.8 value got sent
+first and the analyzer dropped the connection). Clear it with
+`DELETE /api/cyanvision/cre-trials` before staging real orders.
 
 ## Controlled DSP.8 selector trial
 
