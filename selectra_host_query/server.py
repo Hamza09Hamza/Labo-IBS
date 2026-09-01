@@ -175,7 +175,10 @@ class SelectraHostQueryServer:
             for field, active in self.store.selectra_outbound_fields().items()
             if active
         }
-        return protocol.build_order_records(order, enabled)
+        extra_aliases = {
+            row["alias"]: row["target_code"] for row in self.store.list_test_aliases()
+        }
+        return protocol.build_order_records(order, enabled, extra_aliases)
 
     def _run(self):
         try:

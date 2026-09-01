@@ -159,6 +159,15 @@ h1 { max-width: 760px; margin: 0; font-size: clamp(30px, 4vw, 48px); line-height
 .policy-row [role="switch"][aria-checked="true"]::before { left: auto; right: 7px; background: var(--teal); }
 .policy-warning { margin: 12px 0 0; padding-left: 10px; border-left: 3px solid var(--amber); color: var(--muted); font-size: 11px; }
 
+.alias-body { padding: 18px 20px; }
+.alias-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .55fr) auto; gap: 14px; align-items: end; }
+.alias-form .primary-action { margin-top: 0; min-height: 44px; width: auto; padding: 0 18px; }
+.alias-list { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 8px; }
+.alias-empty { color: var(--faint); font-size: 12px; }
+.alias-chip { padding: 6px 7px 6px 9px; display: inline-flex; align-items: center; gap: 8px; border: 1px solid #a9d2cd; background: var(--teal-soft); color: var(--teal-dark); font: 600 11px var(--mono); }
+.alias-chip .alias-target { color: var(--muted); font-weight: 700; }
+.alias-chip button { width: 22px; min-height: 22px; padding: 0; display: grid; place-items: center; border: 0; background: transparent; color: inherit; }
+
 .manual-tools { margin-top: 16px; box-shadow: none; }
 .manual-tools summary { min-height: 68px; padding: 14px 19px; display: flex; align-items: center; justify-content: space-between; gap: 20px; cursor: pointer; list-style: none; }
 .manual-tools summary::-webkit-details-marker { display: none; }
@@ -293,6 +302,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
   .endpoint-strip > div:nth-child(2n) { border-right: 0; }
   .endpoint-strip > div:last-child { border-bottom: 0; }
   .policy-grid { grid-template-columns: minmax(0, 1fr); }
+  .alias-form { grid-template-columns: minmax(0, 1fr); }
   .orders-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .queue-toolbar { align-items: stretch; flex-direction: column; }
   .queue-pager { align-self: flex-end; }

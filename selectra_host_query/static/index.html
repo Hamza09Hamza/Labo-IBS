@@ -92,6 +92,20 @@
         </div>
       </details>
 
+      <details class="manual-tools panel" id="aliasPanel">
+        <summary><span><strong>Test-name mapping panel</strong><small>Add extra wording that should route to an already-installed Selectra method</small></span><span aria-hidden="true">+</span></summary>
+        <div class="alias-body">
+          <p class="policy-warning">Only maps a new spelling onto a method already confirmed on this analyzer. It never invents a new wire code, and it cannot override a built-in mapping.</p>
+          <form id="aliasForm" class="alias-form" novalidate>
+            <label class="field field-wide"><span>Word or phrase to map</span><input id="aliasWord" name="alias" autocomplete="off" required placeholder="e.g. CALCIUM SERIQUE"></label>
+            <label class="field"><span>Maps to installed method</span><select id="aliasTarget" name="target_code" required><option value="">Choose a method…</option></select></label>
+            <button class="primary-action" type="submit" id="addAliasButton"><span>Add mapping</span></button>
+          </form>
+          <div class="form-alert" id="aliasFormAlert" role="alert" hidden></div>
+          <div class="alias-list" id="aliasList"><p class="alias-empty">No custom mappings yet.</p></div>
+        </div>
+      </details>
+
       <details class="manual-tools panel">
         <summary><span><strong>Manual test order</strong><small>Development tool for staging a sample without the clinic server</small></span><span aria-hidden="true">+</span></summary>
         <div class="manual-grid">

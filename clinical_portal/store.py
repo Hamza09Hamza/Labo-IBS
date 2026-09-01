@@ -184,30 +184,44 @@ class ClinicalStore:
                 accepted += 1
         return accepted
 
-    @staticmethod
-    def _device_state(source, last_seen, now):
+    # uMEC PDS normally reports once per second. WATO's documented Ethernet
+    # HL7 menu offers 10 seconds as its fastest interval, so it must not
+    # flash "delayed" between two perfectly normal reports.
+    LIVE_AFTER = {"wato": 15}
+    OFFLINE_AFTER = {"wato": 45}
+    DEFAULT_LIVE_AFTER = 5
+    DEFAULT_OFFLINE_AFTER = 30
+
+    @classmethod
+    def _device_state(cls, source, last_seen, now):
         if last_seen is None:
             return "offline"
         age = (now - last_seen).total_seconds()
-        # uMEC PDS normally reports once per second. WATO's documented
-        # Ethernet HL7 menu offers 10 seconds as its fastest interval, so it
-        # must not flash "delayed" between two perfectly normal reports.
-        live_after = 15 if source == "wato" else 5
-        offline_after = 45 if source == "wato" else 30
+        live_after = cls.LIVE_AFTER.get(source, cls.DEFAULT_LIVE_AFTER)
+        offline_after = cls.OFFLINE_AFTER.get(source, cls.DEFAULT_OFFLINE_AFTER)
         if age <= live_after:
             return "live"
         if age <= offline_after:
             return "stale"
         return "offline"
 
-    def _parameter_snapshot(self, points, window_seconds, now):
+    def _parameter_snapshot(self, source, points, window_seconds, now):
         latest = points[-1]
+        offline_after = self.OFFLINE_AFTER.get(source, self.DEFAULT_OFFLINE_AFTER)
+        # A reading is only "current" while its source device is reachable.
+        # Once the device has gone quiet past its offline threshold, the last
+        # value it ever reported must not keep being displayed as if live -
+        # that would misrepresent an unreachable machine as a real patient
+        # reading.
+        reachable = (now - latest["timestamp"]).total_seconds() <= offline_after
+        latest_valid = latest["valid"] and reachable
+
         cutoff = now - timedelta(seconds=window_seconds or 60)
-        visible = [point for point in points if point["timestamp"] >= cutoff]
+        visible = [point for point in points if point["timestamp"] >= cutoff] if reachable else []
         valid = [point for point in visible if point["valid"]]
 
         if window_seconds == 0:
-            stat_points = [latest] if latest["valid"] else []
+            stat_points = [latest] if latest_valid else []
         else:
             stat_points = valid
         values = [point["value"] for point in stat_points]
@@ -218,9 +232,9 @@ class ClinicalStore:
             "short": latest["short"],
             "unit": latest["unit"],
             "order": latest["order"],
-            "latest": latest["value"] if latest["valid"] else None,
-            "latest_raw": latest["raw_value"],
-            "valid": latest["valid"],
+            "latest": latest["value"] if latest_valid else None,
+            "latest_raw": latest["raw_value"] if reachable else "",
+            "valid": latest_valid,
             "last_seen": _iso(latest["timestamp"]),
             "mean": sum(values) / len(values) if values else None,
             "min": min(values) if values else None,
@@ -250,7 +264,7 @@ class ClinicalStore:
                 for (cid, reading_source, code), points in self._history.items():
                     if cid != chamber_id or reading_source != source or not points:
                         continue
-                    item = self._parameter_snapshot(list(points), window_seconds, now)
+                    item = self._parameter_snapshot(source, list(points), window_seconds, now)
                     item["code"] = code
                     parameters.append(item)
                     parameter_lookup[(source, code)] = item

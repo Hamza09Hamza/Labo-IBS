@@ -465,6 +465,69 @@ async function resetOutboundFields() {
   await loadEvents();
 }
 
+function renderAliases(aliases) {
+  const list = $("#aliasList");
+  if (!aliases.length) {
+    list.innerHTML = '<p class="alias-empty">No custom mappings yet.</p>';
+    return;
+  }
+  list.innerHTML = aliases.map((item) => `
+    <span class="alias-chip">${escapeHtml(item.alias)} <span class="alias-target">→ ${escapeHtml(item.target_code)}</span><button type="button" data-remove-alias="${escapeHtml(item.alias)}" aria-label="Remove mapping for ${escapeHtml(item.alias)}">×</button></span>
+  `).join("");
+  list.querySelectorAll("[data-remove-alias]").forEach((button) => {
+    button.addEventListener("click", () => removeAlias(button.dataset.removeAlias).catch((error) => toast(error.message)));
+  });
+}
+
+async function loadAliases() {
+  const result = await api("/api/selectra/aliases");
+  const select = $("#aliasTarget");
+  const previous = select.value;
+  select.innerHTML = '<option value="">Choose a method…</option>' + result.target_codes.map((item) => `
+    <option value="${escapeHtml(item.code)}">${escapeHtml(item.label)} (${escapeHtml(item.code)})</option>
+  `).join("");
+  if (previous) select.value = previous;
+  renderAliases(result.aliases);
+}
+
+async function addAlias(event) {
+  event.preventDefault();
+  const alert = $("#aliasFormAlert");
+  alert.hidden = true;
+  const alias = $("#aliasWord").value.trim();
+  const targetCode = $("#aliasTarget").value;
+  if (!alias || !targetCode) {
+    alert.textContent = "Enter a word and choose a method.";
+    alert.hidden = false;
+    return;
+  }
+  const button = $("#addAliasButton");
+  button.disabled = true;
+  try {
+    await api("/api/selectra/aliases", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ alias, target_code: targetCode }),
+    });
+    $("#aliasWord").value = "";
+    toast(`${alias} now maps to ${targetCode}.`);
+    await loadAliases();
+    await loadEvents();
+  } catch (error) {
+    alert.textContent = error.message;
+    alert.hidden = false;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function removeAlias(alias) {
+  await api(`/api/selectra/aliases/${encodeURIComponent(alias)}`, { method: "DELETE" });
+  toast(`Removed mapping for ${alias}.`);
+  await loadAliases();
+  await loadEvents();
+}
+
 function eventClass(direction) {
   if (direction === "instrument") return "instrument";
   if (direction === "host") return "host";
@@ -725,7 +788,7 @@ async function stageOrder(event) {
 async function initialize() {
   const assays = await api("/api/assays");
   $("#assaySuggestions").innerHTML = assays.assays.map((assay) => `<option value="${escapeHtml(assay)}"></option>`).join("");
-  await Promise.all([loadStatus(), loadCyanvision(), loadCyanTrials(), loadCyanvisionTests(), loadOrders(), loadEvents()]);
+  await Promise.all([loadStatus(), loadCyanvision(), loadCyanTrials(), loadCyanvisionTests(), loadOrders(), loadEvents(), loadAliases()]);
   setInterval(() => loadStatus().catch(() => {}), 2500);
   setInterval(() => loadOrders().catch(() => {}), 2200);
   setInterval(() => loadEvents().catch(() => {}), 1200);
@@ -787,6 +850,7 @@ document.querySelectorAll("[data-outbound-field]").forEach((button) => {
   button.addEventListener("click", () => toggleOutboundField(button).catch((error) => toast(error.message)));
 });
 $("#resetOutboundFields").addEventListener("click", () => resetOutboundFields().catch((error) => toast(error.message)));
+$("#aliasForm").addEventListener("submit", addAlias);
 $("#armingButton").addEventListener("click", () => toggleLiveResponses().catch((error) => toast(error.message)));
 $("#probeButton").addEventListener("click", () => toggleContinuousProbe().catch((error) => toast(error.message)));
 $("#cyanvisionForm").addEventListener("submit", stageCyanvision);

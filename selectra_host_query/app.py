@@ -13,7 +13,7 @@ from flask import Flask, jsonify, request, send_from_directory
 from labo_bridge import mappings as bridge_mappings, pg
 from cyanvision_worklist.programs import CRE_DSP8_TRIAL_SEQUENCE, WORKLIST_PROGRAM_IDS
 
-from .protocol import build_order_records, test_abbreviation
+from .protocol import KNOWN_SHORT_CODES, build_order_records, test_abbreviation
 
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -48,6 +48,35 @@ _RANDOM_GIVEN_NAMES = [
     "ALEX", "SASHA", "TAYLOR", "MORGAN", "JULES", "ROBIN", "CASEY",
     "REMY", "LEO", "NOA",
 ]
+
+
+# Set by create_app() to the active BenchStore so the module-level order
+# validation helpers below (which run outside the request/app closure) can
+# resolve operator-maintained test-name aliases alongside the hardcoded,
+# field-confirmed KNOWN_SHORT_CODES table.
+_alias_store_ref = {"store": None}
+
+
+def _custom_aliases():
+    store = _alias_store_ref["store"]
+    if not store:
+        return {}
+    return {row["alias"]: row["target_code"] for row in store.list_test_aliases()}
+
+
+def _test_abbreviation(value):
+    return test_abbreviation(value, extra_aliases=_custom_aliases())
+
+
+def _canonical_target_codes():
+    """Unique wire codes an alias is allowed to point at, grouped by label."""
+    by_code = {}
+    for label, code in KNOWN_SHORT_CODES.items():
+        by_code.setdefault(code, label)
+    return sorted(
+        ({"code": code, "label": label} for code, label in by_code.items()),
+        key=lambda item: item["label"].casefold(),
+    )
 
 
 def _random_patient_id():
@@ -94,7 +123,7 @@ def _validated_order(body):
     if len(tests) > 40:
         raise ValueError("no more than 40 tests can be staged in one order")
     for test in tests:
-        test_abbreviation(test)
+        _test_abbreviation(test)
     birth_date = str(body.get("birth_date") or "").strip() or _random_birth_date()
     try:
         date.fromisoformat(birth_date)
@@ -165,7 +194,7 @@ def _resolve_machine_test(machine, requested):
                 continue
             if service_id is not None and target_service != service_id:
                 continue
-            wire_code = test_abbreviation(method) if machine == "selectra" else method
+            wire_code = _test_abbreviation(method) if machine == "selectra" else method
             candidates.append({
                 "machine_test": method,
                 "machine_code": wire_code,
@@ -235,7 +264,7 @@ def _resolve_selectra_tests(values):
                 method = _validate_text("Selectra test", value, maximum=60)
                 item = {
                     "machine_test": method,
-                    "machine_code": test_abbreviation(method),
+                    "machine_code": _test_abbreviation(method),
                     "param_id": None,
                     "service_tarification_id": None,
                 }
@@ -429,6 +458,7 @@ def _cyanvision_cre_trial_status(store, cyanvision_service):
 
 def create_app(store, service, cyanvision_service=None, order_api_token=None):
     app = Flask(__name__, static_folder=None)
+    _alias_store_ref["store"] = store
     configured_order_api_token = (
         order_api_token if order_api_token is not None
         else os.environ.get("LABO_ORDER_API_TOKEN", "").strip()
@@ -795,6 +825,48 @@ def create_app(store, service, cyanvision_service=None, order_api_token=None):
         )
         return jsonify({"ok": True, "fields": fields})
 
+    @app.get("/api/selectra/aliases")
+    def list_selectra_aliases():
+        return jsonify({
+            "aliases": store.list_test_aliases(),
+            "target_codes": _canonical_target_codes(),
+        })
+
+    @app.post("/api/selectra/aliases")
+    def add_selectra_alias():
+        body = request.get_json(silent=True) or {}
+        alias = _validate_text("alias word", body.get("alias"), maximum=60)
+        target_code = str(body.get("target_code") or "").strip()
+        known_codes = {item["code"] for item in _canonical_target_codes()}
+        if target_code not in known_codes:
+            return jsonify({
+                "error": (
+                    f"target_code must be one of this analyzer's confirmed installed "
+                    f"codes: {', '.join(sorted(known_codes))}"
+                )
+            }), 400
+        if alias in KNOWN_SHORT_CODES:
+            return jsonify({
+                "error": f"{alias!r} is already a confirmed mapping and cannot be overridden here"
+            }), 409
+        saved = store.add_test_alias(alias, target_code)
+        store.add_event(
+            "local", "selectra_alias_added", None,
+            f"Selectra test alias {alias!r} now maps to {target_code!r}",
+        )
+        return jsonify({"ok": True, "alias": saved})
+
+    @app.delete("/api/selectra/aliases/<path:alias>")
+    def delete_selectra_alias(alias):
+        removed = store.remove_test_alias(alias)
+        if not removed:
+            return jsonify({"error": "alias not found"}), 404
+        store.add_event(
+            "local", "selectra_alias_removed", None,
+            f"Selectra test alias {alias!r} removed",
+        )
+        return jsonify({"ok": True})
+
     @app.get("/api/v1/orders/selectra/<sample_id>")
     def api_get_selectra_order(sample_id):
         order = store.get_order(sample_id)
@@ -968,7 +1040,8 @@ def create_app(store, service, cyanvision_service=None, order_api_token=None):
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         saved = store.upsert_order(order)
-        return jsonify({"ok": True, "order": saved, "response_preview": build_order_records(saved)}), 201
+        preview = build_order_records(saved, extra_aliases=_custom_aliases())
+        return jsonify({"ok": True, "order": saved, "response_preview": preview}), 201
 
     @app.post("/api/simulate-query")
     def simulate_query():

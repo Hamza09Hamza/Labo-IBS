@@ -128,17 +128,28 @@ def _stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
 
 
-def test_abbreviation(value: str) -> str:
-    """Return this analyser's installed, case-sensitive test abbreviation."""
+def test_abbreviation(value: str, extra_aliases: dict[str, str] | None = None) -> str:
+    """Return this analyser's installed, case-sensitive test abbreviation.
+
+    ``extra_aliases`` lets an operator-maintained mapping panel add more
+    spellings for an already-confirmed wire code without touching the
+    hardcoded, field-confirmed table above. It is only ever consulted after
+    ``KNOWN_SHORT_CODES``, so a custom alias can never shadow a confirmed
+    mapping.
+    """
     clean = _clean(value)
     if clean in KNOWN_SHORT_CODES:
         return KNOWN_SHORT_CODES[clean]
     if clean in set(KNOWN_SHORT_CODES.values()) and len(clean) <= 4:
         return clean
+    if extra_aliases and clean in extra_aliases:
+        return extra_aliases[clean]
     raise ValueError(f"unknown Selectra order test {clean!r}; use an installed method")
 
 
-def build_order_records(order: dict, api_outbound_fields=None) -> list[str]:
+def build_order_records(
+    order: dict, api_outbound_fields=None, extra_aliases: dict[str, str] | None = None,
+) -> list[str]:
     """Build one protocol-aligned host response to a Selectra Q record.
 
     Direction matters: fields observed in analyser result uploads are not
@@ -160,7 +171,7 @@ def build_order_records(order: dict, api_outbound_fields=None) -> list[str]:
     sex = _clean(order.get("sex") or "M").upper()
     if sex not in {"M", "F", "U"}:
         sex = "M"
-    tests = [test_abbreviation(code) for code in order.get("tests") or []]
+    tests = [test_abbreviation(code, extra_aliases) for code in order.get("tests") or []]
     if not tests:
         raise ValueError("at least one installed Selectra test is required")
     universal_tests = "\\".join(f"^^^{code}" for code in dict.fromkeys(tests))

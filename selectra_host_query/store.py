@@ -108,6 +108,11 @@ class BenchStore:
                     value TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS test_aliases (
+                    alias TEXT PRIMARY KEY,
+                    target_code TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
                 """
             )
             # Existing installations predate API-fed orders. SQLite's
@@ -562,3 +567,30 @@ class BenchStore:
                 "SELECT * FROM events WHERE id>? ORDER BY id DESC LIMIT ?", (after, limit)
             ).fetchall()
         return [dict(row) for row in reversed(rows)]
+
+    def list_test_aliases(self) -> list[dict]:
+        with self._session() as connection:
+            rows = connection.execute(
+                "SELECT * FROM test_aliases ORDER BY target_code, alias COLLATE NOCASE"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def add_test_alias(self, alias: str, target_code: str) -> dict:
+        with self._session() as connection:
+            connection.execute(
+                """
+                INSERT INTO test_aliases (alias, target_code, created_at) VALUES (?, ?, ?)
+                ON CONFLICT(alias) DO UPDATE SET
+                    target_code=excluded.target_code, created_at=excluded.created_at
+                """,
+                (alias, target_code, utc_now()),
+            )
+            row = connection.execute(
+                "SELECT * FROM test_aliases WHERE alias=?", (alias,)
+            ).fetchone()
+        return dict(row)
+
+    def remove_test_alias(self, alias: str) -> bool:
+        with self._session() as connection:
+            cursor = connection.execute("DELETE FROM test_aliases WHERE alias=?", (alias,))
+        return cursor.rowcount > 0
